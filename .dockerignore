@@ -1,0 +1,23 @@
+# Applies to the backend image build — build context is the repo root
+# (see backend/Dockerfile's header comment for why). Keeps the build
+# context small and, more importantly, keeps secrets and local-only
+# artifacts out of any image layer.
+
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+
+.git
+.github
+.superpowers
+docs
+ops
+
+*.log
+.DS_Store
+
+# Never bake local backup dumps into an image layer.
+backups

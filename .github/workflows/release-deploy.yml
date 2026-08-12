@@ -1,0 +1,467 @@
+# ============================================================================
+# INERT — this workflow is authored now (Task 6) but cannot run for real
+# yet: this repo has no GitHub remote at all, so no `v*.*.*` tag push can
+# reach GitHub Actions, and none of the secrets below are configured. It is
+# syntax-validated (actionlint) and reviewed, not exercised. Once a remote
+# exists, the FIRST tag push will still fail fast and clearly at the
+# pre-check job's "Verify required secrets" step until every secret listed
+# below is set — it will not silently no-op or half-deploy.
+#
+# Required GitHub Actions secrets (Settings -> Secrets and variables ->
+# Actions) before this can run for real:
+#
+#   Deploy mechanics:
+#     SSH_PRIVATE_KEY_BASE64   base64 of an ed25519 private key with root
+#                              access to the target VPS (`base64 -w0 key`)
+#     SSH_KNOWN_HOSTS          `ssh-keyscan <host>` output for that host
+#     PROD_SERVER_HOST         the VPS's IP/hostname — never hardcoded in
+#                              this file; kds hardcodes its known VPS IP,
+#                              kurtar deliberately does not, since no
+#                              server has been provisioned for this
+#                              project yet
+#
+#   App boot-blocking (backend/src/config/env.validation.ts refuses to
+#   start in production without these — see that file's own comments):
+#     POSTGRES_PASSWORD       ops/docker-compose.prod.yml db password
+#     JWT_SECRET               backend/src/modules/auth/strategies/
+#                              jwt.strategy.ts throws at boot with no
+#                              fallback, in every environment
+#     WEBHOOK_SECRET           payments-core mock provider's inbound
+#                              webhook shared secret, required
+#                              unconditionally in every environment
+#     SMS_PROVIDER              MUST be "netgsm" or "twilio" in production —
+#                              "mock" (the default) is REFUSED at boot with
+#                              no escape hatch (backend/src/modules/sms/
+#                              sms.service.ts). Whichever provider is
+#                              chosen, its full credential set is also
+#                              required:
+#       netgsm: NETGSM_USERCODE, NETGSM_PASSWORD, NETGSM_MSGHEADER
+#       twilio: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
+#     PAYMENT_PROVIDER          must be set to a non-"mock" value or boot
+#                              is refused — see the KNOWN GAP note below.
+#
+#   GHCR push uses the automatic ${{ secrets.GITHUB_TOKEN }} — no extra
+#   secret needed for that.
+#
+# KNOWN GAP this workflow does not, and should not, paper over: only a
+# "mock" PaymentProvider adapter exists in the codebase today (see
+# backend/src/modules/payments-core/payment-provider.registry.ts) —
+# "iyzico"/"paytr" are accepted enum values with no implementation behind
+# them yet. Setting PAYMENT_PROVIDER to either satisfies env.validation.ts's
+# boot check, but PaymentProviderRegistry.get() throws "Unknown payment
+# provider" the moment anything actually dispatches to it. This workflow
+# authors the deploy MECHANISM; it does not invent a working payment
+# adapter that does not exist in the code, and production cannot process
+# real payments until a later task ships one.
+# ============================================================================
+
+name: Release Deployment
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.3.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+# Sequential, no cancellation — if two tags land back-to-back, deploy them
+# in order rather than letting the second stomp the first mid-flight.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/kurtar-api
+
+jobs:
+  # -------------------------------------------------------------------
+  # Gate the deploy on three things being true BEFORE any build time is
+  # burned: all required secrets are present, SSH to the target box
+  # works, and the 4750-4759 port block isn't already claimed by
+  # something that isn't kurtar's own stack. quality-gates.yml runs as
+  # its own job below and gates `build` the same way.
+  # -------------------------------------------------------------------
+  pre-check:
+    name: Pre-flight gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (composite action + compose file + doctor script)
+        uses: actions/checkout@v4
+
+      - name: Verify required secrets are present
+        env:
+          SSH_PRIVATE_KEY_BASE64: ${{ secrets.SSH_PRIVATE_KEY_BASE64 }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          SMS_PROVIDER: ${{ secrets.SMS_PROVIDER }}
+          NETGSM_USERCODE: ${{ secrets.NETGSM_USERCODE }}
+          NETGSM_PASSWORD: ${{ secrets.NETGSM_PASSWORD }}
+          NETGSM_MSGHEADER: ${{ secrets.NETGSM_MSGHEADER }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER }}
+          PAYMENT_PROVIDER: ${{ secrets.PAYMENT_PROVIDER }}
+        run: |
+          set -euo pipefail
+          required=(
+            SSH_PRIVATE_KEY_BASE64 SSH_KNOWN_HOSTS PROD_SERVER_HOST
+            POSTGRES_PASSWORD JWT_SECRET WEBHOOK_SECRET
+            SMS_PROVIDER PAYMENT_PROVIDER
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            [ -z "${!name:-}" ] && missing+=("$name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Refusing to deploy — required secrets unset or empty:"
+            for n in "${missing[@]}"; do echo "::error::  - $n"; done
+            echo "::error::See this workflow file's top-of-file comment for the full secret list."
+            exit 1
+          fi
+
+          case "$SMS_PROVIDER" in
+            netgsm)
+              for name in NETGSM_USERCODE NETGSM_PASSWORD NETGSM_MSGHEADER; do
+                [ -z "${!name:-}" ] && missing+=("$name")
+              done
+              ;;
+            twilio)
+              for name in TWILIO_ACCOUNT_SID TWILIO_AUTH_TOKEN TWILIO_PHONE_NUMBER; do
+                [ -z "${!name:-}" ] && missing+=("$name")
+              done
+              ;;
+            *)
+              echo "::error::SMS_PROVIDER must be 'netgsm' or 'twilio' in production (got '${SMS_PROVIDER}') — 'mock' is refused at boot with no escape hatch."
+              exit 1
+              ;;
+          esac
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Refusing to deploy — SMS_PROVIDER=${SMS_PROVIDER} but its credentials are missing:"
+            for n in "${missing[@]}"; do echo "::error::  - $n"; done
+            exit 1
+          fi
+
+          if [ "$PAYMENT_PROVIDER" = "mock" ]; then
+            echo "::error::PAYMENT_PROVIDER=mock is refused at boot in production (backend/src/config/env.validation.ts)."
+            exit 1
+          fi
+
+          echo "All required secrets present."
+
+      - name: Setup SSH and probe the target box
+        uses: ./.github/actions/setup-ssh
+        with:
+          ssh-private-key-base64: ${{ secrets.SSH_PRIVATE_KEY_BASE64 }}
+          ssh-known-hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+          server-host: ${{ secrets.PROD_SERVER_HOST }}
+
+      - name: Port-conflict check (4750-4759 block)
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          # Ports kurtar's prod stack owns (ops/docker-compose.prod.yml):
+          # 4750 api, 4754 db, 4755 redis. Anything ELSE already bound in
+          # the reserved 4750-4759 block belongs to some other process on
+          # this (possibly shared) box and would collide.
+          ssh -n "root@${PROD_SERVER_HOST}" bash -s -- <<'PROBE'
+          set -euo pipefail
+          owned="4750 4754 4755"
+          bound=$(ss -ltn 2>/dev/null | awk '{print $4}' | grep -oE '[0-9]+$' | sort -un || true)
+          conflict=0
+          for p in $bound; do
+            if [ "$p" -ge 4750 ] && [ "$p" -le 4759 ]; then
+              case " $owned " in
+                *" $p "*) ;;
+                *)
+                  echo "::error::Port $p in the 4750-4759 block is bound but is not one of kurtar's own ports ($owned)."
+                  conflict=1
+                  ;;
+              esac
+            fi
+          done
+          if [ "$conflict" -ne 0 ]; then
+            exit 1
+          fi
+          echo "No unexpected port conflicts in the 4750-4759 block."
+          PROBE
+
+      - name: Ship compose file + scripts (needed for the dry-run doctor probe)
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          ssh "root@${PROD_SERVER_HOST}" 'mkdir -p /root/kurtar'
+          scp -o ServerAliveInterval=15 \
+            ops/docker-compose.prod.yml \
+            scripts/db-migration-doctor.sh \
+            scripts/backup-database.sh \
+            "root@${PROD_SERVER_HOST}:/root/kurtar/"
+
+      - name: Migration doctor — dry run
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          ssh "root@${PROD_SERVER_HOST}" '
+            set -euo pipefail
+            cd /root/kurtar
+            chmod +x db-migration-doctor.sh
+            ./db-migration-doctor.sh docker-compose.prod.yml api kurtar_db_prod kurtar kurtar --dry-run
+          '
+
+  # Blocking quality gate: lint + typecheck + unit + real-DB tests +
+  # migration parity. No image is built from a red suite.
+  quality:
+    name: Quality gates
+    uses: ./.github/workflows/quality-gates.yml
+
+  # -------------------------------------------------------------------
+  # Build the backend image and push it to GHCR under the resolved tag.
+  # -------------------------------------------------------------------
+  build:
+    name: Build & push to GHCR
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [pre-check, quality]
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve version from tag
+        id: version
+        # Read via env: (not inlined into the shell via ${{ }}) so a
+        # maintainer-supplied workflow_dispatch tag can never break out of
+        # the shell before the regex validation gets a chance to reject it.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            v="$INPUT_TAG"
+          else
+            v="${GITHUB_REF#refs/tags/}"
+          fi
+          [[ "$v" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Tag '$v' is not vX.Y.Z"; exit 1; }
+          echo "VERSION=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v5
+        with:
+          # Build context is the repo root — see backend/Dockerfile's
+          # header comment (npm workspace, single root lockfile).
+          context: .
+          file: ./backend/Dockerfile
+          target: production
+          push: true
+          tags: |
+            ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.VERSION }}
+            ${{ env.GHCR_IMAGE }}:latest
+          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
+          cache-to:   type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
+
+  # -------------------------------------------------------------------
+  # SSH deploy: pull the new image, apply migrations against it via the
+  # doctor BEFORE the long-running api container is ever swapped to it
+  # (docker compose run --rm spins up a one-off container from the
+  # freshly-pulled image on the same network — the migration either lands
+  # cleanly or the deploy aborts here, before any traffic sees new code
+  # against an old schema), then recreate the api container.
+  # -------------------------------------------------------------------
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: build
+    environment: production
+    steps:
+      - name: Checkout (for compose file + scripts)
+        uses: actions/checkout@v4
+
+      - name: Setup SSH (no probe — pre-check already validated it)
+        uses: ./.github/actions/setup-ssh
+        with:
+          ssh-private-key-base64: ${{ secrets.SSH_PRIVATE_KEY_BASE64 }}
+          ssh-known-hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+          server-host: ${{ secrets.PROD_SERVER_HOST }}
+          probe: 'false'
+
+      - name: Render .env.production
+        env:
+          GHCR_OWNER: ${{ github.repository_owner }}
+          IMAGE_TAG: ${{ needs.build.outputs.version }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_EXPIRES_IN: ${{ vars.JWT_EXPIRES_IN }}
+          JWT_REFRESH_EXPIRES_IN: ${{ vars.JWT_REFRESH_EXPIRES_IN }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          SMS_PROVIDER: ${{ secrets.SMS_PROVIDER }}
+          NETGSM_USERCODE: ${{ secrets.NETGSM_USERCODE }}
+          NETGSM_PASSWORD: ${{ secrets.NETGSM_PASSWORD }}
+          NETGSM_MSGHEADER: ${{ secrets.NETGSM_MSGHEADER }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER }}
+          PAYMENT_PROVIDER: ${{ secrets.PAYMENT_PROVIDER }}
+        run: |
+          set -euo pipefail
+          cat > .env.production.rendered <<ENV
+          # Auto-generated by GitHub Actions for ${IMAGE_TAG}.
+          # backend/src/config/env.validation.ts aborts container boot on
+          # a missing required var — see this workflow's top comment.
+
+          GHCR_OWNER=${GHCR_OWNER}
+          IMAGE_TAG=${IMAGE_TAG}
+          NODE_ENV=production
+          KURTAR_API_PORT=4750
+
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+          DATABASE_URL=postgresql://kurtar:${POSTGRES_PASSWORD}@db:5432/kurtar
+          REDIS_URL=redis://redis:6379
+
+          JWT_SECRET=${JWT_SECRET}
+          JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-15m}
+          JWT_REFRESH_EXPIRES_IN=${JWT_REFRESH_EXPIRES_IN:-30d}
+
+          WEBHOOK_SECRET=${WEBHOOK_SECRET}
+
+          SMS_PROVIDER=${SMS_PROVIDER}
+          NETGSM_USERCODE=${NETGSM_USERCODE}
+          NETGSM_PASSWORD=${NETGSM_PASSWORD}
+          NETGSM_MSGHEADER=${NETGSM_MSGHEADER}
+          TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+          TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+          TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+
+          PAYMENT_PROVIDER=${PAYMENT_PROVIDER}
+          ENV
+
+      - name: Ship compose file + scripts + env to the server
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          ssh "root@${PROD_SERVER_HOST}" 'mkdir -p /root/kurtar'
+          scp -o ServerAliveInterval=15 \
+            ops/docker-compose.prod.yml \
+            scripts/db-migration-doctor.sh \
+            scripts/backup-database.sh \
+            "root@${PROD_SERVER_HOST}:/root/kurtar/"
+          # Atomic swap: land at a sibling .new path, then rename in
+          # place — a network blip mid-scp never leaves a truncated
+          # .env.production for compose to read on the next command.
+          # Atomic rename, then symlink .env -> .env.production. Compose
+          # auto-loads a file literally named .env for its own variable
+          # interpolation (GHCR_OWNER, POSTGRES_PASSWORD in ops/docker-
+          # compose.prod.yml) on any invocation that omits --env-file —
+          # including db-migration-doctor.sh's internal `docker compose
+          # run` calls, which have no way to know the rendered file is
+          # named .env.production. This job's own compose commands below
+          # still pass --env-file .env.production explicitly either way;
+          # the symlink is what makes the doctor script resolve the same
+          # variables.
+          scp -o ServerAliveInterval=15 \
+            .env.production.rendered \
+            "root@${PROD_SERVER_HOST}:/root/kurtar/.env.production.new"
+          ssh "root@${PROD_SERVER_HOST}" \
+            'cd /root/kurtar && mv .env.production.new .env.production && ln -sf .env.production .env'
+
+      - name: Backup before touching anything
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          ssh "root@${PROD_SERVER_HOST}" '
+            set -euo pipefail
+            cd /root/kurtar
+            chmod +x backup-database.sh
+            if docker ps --format "{{.Names}}" | grep -q "^kurtar_db_prod$"; then
+              ./backup-database.sh prod
+            else
+              echo "kurtar_db_prod not running yet (first deploy) — nothing to back up."
+            fi
+          '
+
+      - name: Pull new image, bring up db/redis
+        id: pull
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          ssh "root@${PROD_SERVER_HOST}" '
+            set -euo pipefail
+            cd /root/kurtar
+            docker compose -f docker-compose.prod.yml --env-file .env.production pull
+            docker compose -f docker-compose.prod.yml --env-file .env.production up -d db redis
+            for i in $(seq 1 30); do
+              status=$(docker inspect -f "{{.State.Health.Status}}" kurtar_db_prod 2>/dev/null || echo starting)
+              [ "$status" = "healthy" ] && break
+              sleep 2
+            done
+            [ "$status" = "healthy" ] || { echo "::error::db did not become healthy"; exit 1; }
+          '
+
+      - name: Apply migrations (doctor gate, then migrate deploy)
+        id: migrate
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          ssh "root@${PROD_SERVER_HOST}" '
+            set -euo pipefail
+            cd /root/kurtar
+            chmod +x db-migration-doctor.sh
+            ./db-migration-doctor.sh docker-compose.prod.yml api kurtar_db_prod kurtar kurtar
+            docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --workdir /app/backend api npx prisma migrate deploy
+          '
+
+      - name: Swap the api container to the new image
+        id: swap
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          ssh "root@${PROD_SERVER_HOST}" '
+            set -euo pipefail
+            cd /root/kurtar
+            docker compose -f docker-compose.prod.yml --env-file .env.production up -d api
+          '
+
+      - name: Post-deploy health probe (from the box itself)
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          ssh "root@${PROD_SERVER_HOST}" '
+            set -euo pipefail
+            for i in 1 2 3 4 5; do
+              curl -fsS --max-time 10 http://127.0.0.1:4750/api/health > /dev/null && exit 0
+              sleep 5
+            done
+            echo "::error::api container is not answering /api/health after deploy"
+            exit 1
+          '
+
+      - name: Cleanup workspace
+        if: always()
+        run: rm -f .env.production.rendered

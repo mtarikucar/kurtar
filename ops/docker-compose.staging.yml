@@ -1,0 +1,81 @@
+# Staging stack — same shape as ops/docker-compose.prod.yml, shifted +10
+# to its own port block (4760-4765) and its own volume/network/container
+# names, so staging and prod can run on the same shared VPS side by side
+# without ever colliding.
+#
+# Port map:
+#   4760 -> api
+#   4764 -> db     (postgis, localhost-bound)
+#   4765 -> redis  (localhost-bound)
+#
+# Required in ./.env.staging (see backend/.env.example for the full
+# app-level variable list; POSTGRES_PASSWORD is compose-only). Retention
+# for scripts/backup-database.sh staging backups is 3 days (vs 14 for
+# prod) — staging data has no long-term recovery value.
+
+name: kurtar-staging
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: kurtar_db_staging
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kurtar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: kurtar_staging
+    volumes:
+      - kurtar_pgdata_staging:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:4764:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kurtar -d kurtar_staging"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - kurtar_net_staging
+
+  redis:
+    image: redis:7-alpine
+    container_name: kurtar_redis_staging
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "127.0.0.1:4765:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - kurtar_net_staging
+
+  api:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-api:${IMAGE_TAG:-current}
+    container_name: kurtar_api_staging
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env.staging
+    ports:
+      - "4760:4750"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4750/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - kurtar_net_staging
+
+volumes:
+  kurtar_pgdata_staging:
+
+networks:
+  kurtar_net_staging:
+    name: kurtar_net_staging
