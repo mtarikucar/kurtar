@@ -38,3 +38,22 @@ export function isReservationTransitionAllowed(
 ): boolean {
   return RESERVATION_TRANSITIONS[from].includes(to);
 }
+
+/**
+ * The inverse of RESERVATION_TRANSITIONS: every status that is allowed to
+ * transition INTO `to`. This is what a guarded UPDATE's WHERE clause
+ * actually needs ("only move the row if it's currently in one of these
+ * starting statuses") — reservations.service.ts and
+ * payment-settle.service.ts both derive their compound-WHERE status lists
+ * from this function rather than hand-typing them a second time, so the
+ * transition table in this file is the single source of truth instead of
+ * decorative documentation next to hand-written duplicates that can drift
+ * from it silently.
+ */
+export function allowedFromStatusesFor(
+  to: ReservationStatus,
+): ReservationStatus[] {
+  return (Object.keys(RESERVATION_TRANSITIONS) as ReservationStatus[]).filter(
+    (from) => RESERVATION_TRANSITIONS[from].includes(to),
+  );
+}

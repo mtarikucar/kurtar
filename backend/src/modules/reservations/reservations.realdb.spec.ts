@@ -2,6 +2,7 @@ import { ConfigService } from "@nestjs/config";
 import { PrismaClient } from "@prisma/client";
 import { ReservationsService } from "./reservations.service";
 import { OfferStockService } from "./offer-stock.service";
+import * as reservationCodeUtil from "./reservation-code.util";
 import { PaymentProviderRegistry } from "../payments-core/payment-provider.registry";
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { MockPaymentProvider } from "../payments-core/adapters/mock-payment-provider";
@@ -9,15 +10,37 @@ import { MockPaymentProvider } from "../payments-core/adapters/mock-payment-prov
 /**
  * Real-DB concurrency proof for the reservations state machine — Task 4's
  * two hardest races (oversell, redeem-idempotency) plus the cancel
- * compensation path. Only runs when TEST_DATABASE_URL is set (Task 2/3's
- * realdb gate pattern — see prisma/schema.realdb.spec.ts,
- * auth-refresh-rotation.realdb.spec.ts). See payment-settle.realdb.spec.ts
- * for the webhook/sweeper side of the same state machine.
+ * compensation path, and (I3) proof that a reservation-code collision
+ * retries the WHOLE transaction against real Postgres. Only runs when
+ * TEST_DATABASE_URL is set (Task 2/3's realdb gate pattern — see
+ * prisma/schema.realdb.spec.ts, auth-refresh-rotation.realdb.spec.ts). See
+ * payment-settle.realdb.spec.ts for the webhook/sweeper side of the same
+ * state machine.
+ *
+ * [I8] Every cleanup delete below is scoped to THIS suite's own rows
+ * (this suite's storeId, this suite's phone prefix) rather than table-wide
+ * `deleteMany({})` calls — Jest's `--maxWorkers=2` runs test FILES in true
+ * parallel worker processes against the SAME database, so an unscoped
+ * delete here could wipe rows payment-settle.realdb.spec.ts (running
+ * concurrently in the other worker) still depends on, or vice versa.
+ * Cleanup failures are logged rather than silently swallowed.
  */
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const d = TEST_DATABASE_URL ? describe : describe.skip;
 
 const WEBHOOK_SECRET = "realdb-test-webhook-secret";
+const PHONE_PREFIX = "+9055512";
+
+async function safeCleanup(label: string, fn: () => Promise<unknown>) {
+  try {
+    await fn();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[reservations.realdb.spec.ts cleanup] ${label} failed: ${(err as Error).message}`,
+    );
+  }
+}
 
 function buildReservationsHarness(prisma: PrismaClient) {
   const registry = new PaymentProviderRegistry();
@@ -110,7 +133,7 @@ async function seedUsers(prisma: PrismaClient, count: number) {
     Array.from({ length: count }, () => {
       const n = userSeedCounter++;
       return prisma.user.create({
-        data: { phoneE164: `+9055512${n.toString().padStart(5, "0")}` },
+        data: { phoneE164: `${PHONE_PREFIX}${n.toString().padStart(5, "0")}` },
       });
     }),
   );
@@ -141,21 +164,37 @@ d("ReservationsService — real DB concurrency", () => {
 
   afterAll(async () => {
     if (!prisma) return;
-    await prisma.refund.deleteMany({ where: {} }).catch(() => {});
-    await prisma.payment
-      .deleteMany({ where: { reservation: { storeId } } })
-      .catch(() => {});
-    await prisma.reservation.deleteMany({ where: { storeId } }).catch(() => {});
-    await prisma.dailyOffer.deleteMany({ where: { storeId } }).catch(() => {});
-    await prisma.user
-      .deleteMany({ where: { phoneE164: { startsWith: "+90555" } } })
-      .catch(() => {});
+    await safeCleanup("refund", () =>
+      prisma.refund.deleteMany({
+        where: { payment: { reservation: { storeId } } },
+      }),
+    );
+    await safeCleanup("payment", () =>
+      prisma.payment.deleteMany({ where: { reservation: { storeId } } }),
+    );
+    await safeCleanup("reservation", () =>
+      prisma.reservation.deleteMany({ where: { storeId } }),
+    );
+    await safeCleanup("dailyOffer", () =>
+      prisma.dailyOffer.deleteMany({ where: { storeId } }),
+    );
+    await safeCleanup("user", () =>
+      prisma.user.deleteMany({
+        where: { phoneE164: { startsWith: PHONE_PREFIX } },
+      }),
+    );
     // Some tests seed their own additional BagTemplate (see createBagTemplate
     // call sites below) — deleteMany by storeId sweeps all of them, not just
     // the one from beforeAll.
-    await prisma.bagTemplate.deleteMany({ where: { storeId } }).catch(() => {});
-    await prisma.store.delete({ where: { id: storeId } }).catch(() => {});
-    await prisma.merchant.delete({ where: { id: merchantId } }).catch(() => {});
+    await safeCleanup("bagTemplate", () =>
+      prisma.bagTemplate.deleteMany({ where: { storeId } }),
+    );
+    await safeCleanup("store", () =>
+      prisma.store.delete({ where: { id: storeId } }),
+    );
+    await safeCleanup("merchant", () =>
+      prisma.merchant.delete({ where: { id: merchantId } }),
+    );
     await prisma.$disconnect();
   });
 
@@ -305,5 +344,66 @@ d("ReservationsService — real DB concurrency", () => {
       where: { id: offer.id },
     });
     expect(finalOffer.qtyRedeemed).toBe(2); // reservation.qty, exactly once — not 4
+  }, 15_000);
+
+  it("[I3] a reservation-code collision against a REAL unique constraint retries the whole transaction (fresh stock claim included) and succeeds", async () => {
+    const { service } = buildReservationsHarness(prisma);
+    const pickupStartAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
+    const pickupEndAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
+
+    const bagTemplateA = await createBagTemplate(prisma, storeId, 5000);
+    const offerA = await seedOffer(
+      prisma,
+      bagTemplateA.id,
+      storeId,
+      5,
+      pickupStartAt,
+      pickupEndAt,
+    );
+    const [userA] = await seedUsers(prisma, 1);
+    // Seed a real reservation first to get a genuine `code` value already
+    // present in the DB — this is what the second create() below will
+    // collide against.
+    const first = await service.create(userA.id, offerA.id, 1);
+    const collidingCode = first.code;
+
+    const bagTemplateB = await createBagTemplate(prisma, storeId, 5000);
+    const offerB = await seedOffer(
+      prisma,
+      bagTemplateB.id,
+      storeId,
+      5,
+      pickupStartAt,
+      pickupEndAt,
+    );
+    const [userB] = await seedUsers(prisma, 1);
+
+    // Force the FIRST code-generation attempt for the second reservation
+    // to collide with the first reservation's real code — a genuine
+    // unique-constraint violation against real Postgres, not a mock.
+    // Every subsequent call falls through to the real random generator.
+    const codeSpy = jest
+      .spyOn(reservationCodeUtil, "generateReservationCode")
+      .mockReturnValueOnce(collidingCode);
+
+    try {
+      const second = await service.create(userB.id, offerB.id, 1);
+
+      expect(second.reservationId).not.toBe(first.reservationId);
+      expect(second.code).not.toBe(collidingCode);
+      // Proves the WHOLE transaction retried, not just the failed INSERT
+      // (the pre-fix version would have thrown Postgres error 25P02 on a
+      // same-transaction retry — see reservations.service.ts's
+      // createReservationWithRetry doc comment) — offerB's stock reflects
+      // exactly one successful claim, not a half-applied one from the
+      // aborted first attempt.
+      const finalOfferB = await prisma.dailyOffer.findUniqueOrThrow({
+        where: { id: offerB.id },
+      });
+      expect(finalOfferB.qtyReserved).toBe(1);
+      expect(codeSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      codeSpy.mockRestore();
+    }
   }, 15_000);
 });

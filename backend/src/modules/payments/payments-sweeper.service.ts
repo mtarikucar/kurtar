@@ -72,9 +72,12 @@ export class PaymentsSweeperService {
   }
 
   /**
-   * Not private — the sweeper-vs-webhook race realdb spec calls this
-   * directly (racing it against PaymentSettleService.settle() for the
-   * same merchantOid) rather than waiting on the cron schedule.
+   * Not private — payment-settle.realdb.spec.ts's sweeper-vs-webhook race
+   * instantiates this service directly and races a real call to this
+   * method (queryStatus -> branch -> settle()) against a real webhook
+   * delivery through PaymentsWebhookController, for the same merchantOid,
+   * rather than waiting on the cron schedule or hand-rolling a synthetic
+   * event that bypasses this method's own branching logic.
    */
   async sweepOne(
     merchantOid: string,

@@ -6,6 +6,8 @@ import { PaymentProviderRegistry } from "../payments-core/payment-provider.regis
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { MockPaymentProvider } from "../payments-core/adapters/mock-payment-provider";
 import { PaymentSettleService } from "./payment-settle.service";
+import { PaymentsSweeperService } from "./payments-sweeper.service";
+import { PaymentsWebhookController } from "./payments-webhook.controller";
 import { ParsedWebhookEvent } from "../payments-core/payment-provider.interface";
 
 /**
@@ -16,11 +18,24 @@ import { ParsedWebhookEvent } from "../payments-core/payment-provider.interface"
  * shared harness rationale (this file duplicates a small amount of setup
  * rather than sharing a test-utils module, matching this repo's existing
  * realdb spec convention of self-contained files).
+ *
+ * [I8] Every cleanup delete below is scoped to THIS suite's own rows
+ * (tracked externalEventIds, this suite's storeId, this suite's phone
+ * prefix) rather than table-wide `deleteMany({})` calls — Jest's
+ * `--maxWorkers=2` runs test FILES in true parallel worker processes
+ * against the SAME database, so an unscoped delete in this file's
+ * afterAll could wipe rows reservations.realdb.spec.ts (running
+ * concurrently in the other worker) still depends on, or vice versa.
+ * Cleanup failures are logged rather than silently swallowed — a
+ * swallowed cleanup failure is exactly the kind of bug (like the
+ * unscoped-delete interference above) that stays invisible until it
+ * corrupts an unrelated test run.
  */
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const d = TEST_DATABASE_URL ? describe : describe.skip;
 
 const WEBHOOK_SECRET = "realdb-test-webhook-secret";
+const PHONE_PREFIX = "+9055513";
 
 function buildHarness(prisma: PrismaClient) {
   const registry = new PaymentProviderRegistry();
@@ -37,7 +52,20 @@ function buildHarness(prisma: PrismaClient) {
     facade,
   );
   const settle = new PaymentSettleService(prisma as any, offerStock, facade);
-  return { reservations, settle, mockProvider };
+  const sweeper = new PaymentsSweeperService(prisma as any, facade, settle);
+  const webhookController = new PaymentsWebhookController(facade, settle);
+  return { reservations, settle, sweeper, webhookController, mockProvider };
+}
+
+async function safeCleanup(label: string, fn: () => Promise<unknown>) {
+  try {
+    await fn();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[payment-settle.realdb.spec.ts cleanup] ${label} failed: ${(err as Error).message}`,
+    );
+  }
 }
 
 async function seedMerchantStoreTemplate(
@@ -81,7 +109,7 @@ let seedCounter = 0;
 
 // Each call seeds its OWN BagTemplate (rather than sharing one across the
 // describe block) so seedOffer's (bagTemplateId, offerDate) unique pair
-// never collides across the 3 tests below — mirrors
+// never collides across the tests below — mirrors
 // reservations.realdb.spec.ts's identical fix for the same reason.
 async function seedOfferAndReservation(
   prisma: PrismaClient,
@@ -90,7 +118,7 @@ async function seedOfferAndReservation(
 ) {
   const n = seedCounter++;
   const user = await prisma.user.create({
-    data: { phoneE164: `+9055513${n.toString().padStart(5, "0")}` },
+    data: { phoneE164: `${PHONE_PREFIX}${n.toString().padStart(5, "0")}` },
   });
   const bagTemplate = await prisma.bagTemplate.create({
     data: {
@@ -124,6 +152,11 @@ d("PaymentSettleService — real DB concurrency", () => {
   let prisma: PrismaClient;
   let merchantId: string;
   let storeId: string;
+  // [I8] Tracks every externalEventId this suite creates so
+  // webhookEventLog cleanup can be scoped to exactly those rows instead of
+  // a table-wide deleteMany({}) that could delete rows another
+  // concurrently-running suite created.
+  const externalEventIds: string[] = [];
 
   beforeAll(async () => {
     const url = new URL(TEST_DATABASE_URL!);
@@ -138,21 +171,41 @@ d("PaymentSettleService — real DB concurrency", () => {
 
   afterAll(async () => {
     if (!prisma) return;
-    await prisma.webhookEventLog.deleteMany({}).catch(() => {});
-    await prisma.refund.deleteMany({}).catch(() => {});
-    await prisma.payment
-      .deleteMany({ where: { reservation: { storeId } } })
-      .catch(() => {});
-    await prisma.reservation.deleteMany({ where: { storeId } }).catch(() => {});
-    await prisma.dailyOffer.deleteMany({ where: { storeId } }).catch(() => {});
-    await prisma.user
-      .deleteMany({ where: { phoneE164: { startsWith: "+90555" } } })
-      .catch(() => {});
+    await safeCleanup("webhookEventLog", () =>
+      prisma.webhookEventLog.deleteMany({
+        where: { externalEventId: { in: externalEventIds } },
+      }),
+    );
+    await safeCleanup("refund", () =>
+      prisma.refund.deleteMany({
+        where: { payment: { reservation: { storeId } } },
+      }),
+    );
+    await safeCleanup("payment", () =>
+      prisma.payment.deleteMany({ where: { reservation: { storeId } } }),
+    );
+    await safeCleanup("reservation", () =>
+      prisma.reservation.deleteMany({ where: { storeId } }),
+    );
+    await safeCleanup("dailyOffer", () =>
+      prisma.dailyOffer.deleteMany({ where: { storeId } }),
+    );
+    await safeCleanup("user", () =>
+      prisma.user.deleteMany({
+        where: { phoneE164: { startsWith: PHONE_PREFIX } },
+      }),
+    );
     // seedMerchantStoreTemplate's own BagTemplate plus one per
     // seedOfferAndReservation() call — sweep them all by storeId.
-    await prisma.bagTemplate.deleteMany({ where: { storeId } }).catch(() => {});
-    await prisma.store.delete({ where: { id: storeId } }).catch(() => {});
-    await prisma.merchant.delete({ where: { id: merchantId } }).catch(() => {});
+    await safeCleanup("bagTemplate", () =>
+      prisma.bagTemplate.deleteMany({ where: { storeId } }),
+    );
+    await safeCleanup("store", () =>
+      prisma.store.delete({ where: { id: storeId } }),
+    );
+    await safeCleanup("merchant", () =>
+      prisma.merchant.delete({ where: { id: merchantId } }),
+    );
     await prisma.$disconnect();
   });
 
@@ -163,6 +216,9 @@ d("PaymentSettleService — real DB concurrency", () => {
       reservations,
       storeId,
     );
+    const offerBefore = await prisma.dailyOffer.findUniqueOrThrow({
+      where: { id: offer.id },
+    });
 
     const event: ParsedWebhookEvent = {
       merchantOid: created.payment.merchantOid,
@@ -170,6 +226,7 @@ d("PaymentSettleService — real DB concurrency", () => {
       totalCents: created.totalCents,
       externalEventId: `evt-idempotency-${created.reservationId}`,
     };
+    externalEventIds.push(event.externalEventId);
 
     const outcomes = await Promise.all([
       settle.settle(event),
@@ -190,44 +247,17 @@ d("PaymentSettleService — real DB concurrency", () => {
     });
     expect(reservation.status).toBe("CONFIRMED");
 
-    // Stock was claimed once at create() and is untouched by a successful
-    // settle — confirm it wasn't double-released or otherwise disturbed
-    // by the 3x delivery.
+    // [tautology fix] Stock was claimed once at create() and is untouched
+    // by a successful settle — assert against the value CAPTURED right
+    // after create(), not a loose lower bound that would pass even if a
+    // bug released or double-claimed stock.
     const finalOffer = await prisma.dailyOffer.findUniqueOrThrow({
       where: { id: offer.id },
     });
-    expect(finalOffer.qtyReserved).toBeGreaterThanOrEqual(1);
+    expect(finalOffer.qtyReserved).toBe(offerBefore.qtyReserved);
   }, 15_000);
 
-  it("amount mismatch: a paid webhook reporting totalCents-1 does not settle; Payment stays INTENT", async () => {
-    const { reservations, settle } = buildHarness(prisma);
-    const { created } = await seedOfferAndReservation(
-      prisma,
-      reservations,
-      storeId,
-    );
-
-    const outcome = await settle.settle({
-      merchantOid: created.payment.merchantOid,
-      status: "success",
-      totalCents: created.totalCents - 1,
-      externalEventId: `evt-mismatch-${created.reservationId}`,
-    });
-
-    expect(outcome).toBe("amount_mismatch");
-
-    const payment = await prisma.payment.findUniqueOrThrow({
-      where: { merchantOid: created.payment.merchantOid },
-    });
-    expect(payment.status).toBe("INTENT");
-
-    const reservation = await prisma.reservation.findUniqueOrThrow({
-      where: { id: created.reservationId },
-    });
-    expect(reservation.status).toBe("PENDING_PAYMENT");
-  }, 15_000);
-
-  it("sweeper vs webhook race: a late success settle racing a sweeper-style expiry settle resolves to exactly one effect, never both", async () => {
+  it("[C2] amount mismatch is quarantined: Payment FAILED, Reservation EXPIRED, stock released — not left stuck in INTENT forever", async () => {
     const { reservations, settle } = buildHarness(prisma);
     const { offer, created } = await seedOfferAndReservation(
       prisma,
@@ -238,36 +268,96 @@ d("PaymentSettleService — real DB concurrency", () => {
       where: { id: offer.id },
     });
 
-    const successEvent: ParsedWebhookEvent = {
+    const externalEventId = `evt-mismatch-${created.reservationId}`;
+    externalEventIds.push(externalEventId);
+
+    const outcome = await settle.settle({
+      merchantOid: created.payment.merchantOid,
+      status: "success",
+      totalCents: created.totalCents - 1,
+      externalEventId,
+    });
+
+    expect(outcome).toBe("amount_mismatch_quarantined");
+
+    const payment = await prisma.payment.findUniqueOrThrow({
+      where: { merchantOid: created.payment.merchantOid },
+    });
+    expect(payment.status).toBe("FAILED");
+
+    const reservation = await prisma.reservation.findUniqueOrThrow({
+      where: { id: created.reservationId },
+    });
+    expect(reservation.status).toBe("EXPIRED");
+
+    const finalOffer = await prisma.dailyOffer.findUniqueOrThrow({
+      where: { id: offer.id },
+    });
+    expect(finalOffer.qtyReserved).toBe(
+      offerBefore.qtyReserved - reservation.qty,
+    );
+  }, 15_000);
+
+  it("[I5] sweeper vs webhook race: the REAL sweeper (queryStatus -> branch -> settle) racing a REAL webhook delivery resolves to exactly one effect, never both", async () => {
+    const { reservations, sweeper, webhookController, mockProvider } =
+      buildHarness(prisma);
+    const { offer, created } = await seedOfferAndReservation(
+      prisma,
+      reservations,
+      storeId,
+    );
+    const offerBefore = await prisma.dailyOffer.findUniqueOrThrow({
+      where: { id: offer.id },
+    });
+
+    // Force the sweeper's own queryStatus call to see "pending" — the
+    // real-world scenario this race models is the provider's success
+    // webhook being in flight/delayed while the sweeper's OWN poll of the
+    // provider still sees no confirmation. Without pinning this, the
+    // webhook side's real parseWebhook() call (which also updates the
+    // mock provider's internal status, by design — see
+    // MockPaymentProvider's doc comment) could race ahead of the
+    // sweeper's queryStatus() and make both sides observe "paid",
+    // collapsing this into a same-outcome race instead of the
+    // opposite-outcome race this spec exists to prove.
+    jest
+      .spyOn(mockProvider, "queryStatus")
+      .mockResolvedValueOnce({ status: "pending" });
+
+    const { body, headers } = mockProvider.buildWebhookRequest({
       merchantOid: created.payment.merchantOid,
       status: "success",
       totalCents: created.totalCents,
-      externalEventId: `evt-webhook-${created.reservationId}`,
-    };
-    // The sweeper synthesizes exactly this shape (payments-sweeper.service.ts)
-    // for a payment it judged stale/unpaid — different externalEventId, same
-    // merchantOid, opposite outcome.
-    const sweepEvent: ParsedWebhookEvent = {
-      merchantOid: created.payment.merchantOid,
-      status: "failed",
-      totalCents: created.totalCents,
-      externalEventId: `evt-sweep-${created.reservationId}`,
-    };
+    });
+    const parsedBody = JSON.parse(body) as { eventId: string };
+    externalEventIds.push(parsedBody.eventId);
+    const fakeReq = {
+      body: parsedBody,
+      rawBody: Buffer.from(body),
+      headers,
+    } as any;
 
-    const [webhookOutcome, sweepOutcome] = await Promise.all([
-      settle.settle(successEvent),
-      settle.settle(sweepEvent),
+    await Promise.all([
+      sweeper.sweepOne(created.payment.merchantOid, created.totalCents),
+      webhookController.handle(fakeReq),
     ]);
+    // Both calls always resolve (never throw) by design — the outcome has
+    // to be read back from the DB, not from either call's return value.
 
-    // Exactly one call produced a terminal effect; the other lost the
-    // race and no-opped.
-    const outcomes = [webhookOutcome, sweepOutcome];
-    const terminalOutcomes = outcomes.filter(
-      (o) => o === "confirmed" || o === "expired",
-    );
-    const noopOutcomes = outcomes.filter((o) => o === "already_terminal");
-    expect(terminalOutcomes).toHaveLength(1);
-    expect(noopOutcomes).toHaveLength(1);
+    // [I8] The sweeper mints its own externalEventId internally
+    // (`sweep:<merchantOid>:<random>` — payments-sweeper.service.ts) that
+    // this test never sees directly. merchantOid itself is already
+    // globally unique per reservation (embeds a timestamp + random
+    // suffix), so filtering WebhookEventLog by that prefix reliably picks
+    // up exactly the row this race created, for scoped cleanup.
+    const sweepLogs = await prisma.webhookEventLog.findMany({
+      where: {
+        externalEventId: {
+          startsWith: `sweep:${created.payment.merchantOid}:`,
+        },
+      },
+    });
+    externalEventIds.push(...sweepLogs.map((row) => row.externalEventId));
 
     const reservation = await prisma.reservation.findUniqueOrThrow({
       where: { id: created.reservationId },
@@ -279,14 +369,12 @@ d("PaymentSettleService — real DB concurrency", () => {
       where: { id: offer.id },
     });
 
-    if (terminalOutcomes[0] === "confirmed") {
-      // The success settle won the race.
-      expect(reservation.status).toBe("CONFIRMED");
+    if (reservation.status === "CONFIRMED") {
+      // The webhook won the race.
       expect(payment.status).toBe("PAID");
-      // Stock was never released — still exactly what create() claimed.
       expect(finalOffer.qtyReserved).toBe(offerBefore.qtyReserved);
     } else {
-      // The (simulated) sweeper's expiry won the race.
+      // The sweeper's expiry won the race.
       expect(reservation.status).toBe("EXPIRED");
       expect(payment.status).toBe("FAILED");
       // Stock was released back — never both confirmed AND released.

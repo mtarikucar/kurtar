@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { ReservationsService } from "./reservations.service";
 
 function buildFakeTx(overrides: Record<string, any> = {}) {
@@ -36,7 +37,10 @@ function buildDeps() {
   const tx = buildFakeTx();
   const prisma = {
     $transaction: jest.fn((cb: any) => cb(tx)),
-    payment: { update: jest.fn().mockResolvedValue({}) },
+    payment: {
+      update: jest.fn().mockResolvedValue({}),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     reservation: {
       findUnique: jest.fn(),
       count: jest.fn(),
@@ -52,6 +56,27 @@ function buildDeps() {
     refund: jest.fn(),
   };
   return { tx, prisma, offerStock, facade };
+}
+
+/**
+ * cancel()'s reservation.updateMany is called once per candidate starting
+ * status (PENDING_PAYMENT, then CONFIRMED) until one matches — see
+ * reservations.service.ts's CANCELLABLE_FROM loop. This makes the mock
+ * behave like the real compound-WHERE update: only the call whose
+ * `where.status` equals the reservation's TRUE current status "matches".
+ */
+function mockCancelReservationUpdate(tx: any, trueStatus: string) {
+  tx.reservation.updateMany.mockImplementation((args: any) =>
+    Promise.resolve({ count: args.where.status === trueStatus ? 1 : 0 }),
+  );
+}
+
+function uniqueCodeViolation() {
+  return new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+    code: "P2002",
+    clientVersion: "6.19.0",
+    meta: { target: ["code"] },
+  });
 }
 
 describe("ReservationsService.create", () => {
@@ -123,6 +148,58 @@ describe("ReservationsService.create", () => {
     expect(result.payment.redirectUrl).toBe("https://pay");
   });
 
+  it("[I3] retries the WHOLE transaction (fresh stock claim included) on a reservation-code collision, not just the failed INSERT", async () => {
+    const { tx, prisma, offerStock, facade } = buildDeps();
+    tx.dailyOffer.findUnique.mockResolvedValue({
+      id: "offer1",
+      storeId: "store1",
+      pickupStartAt: new Date("2026-08-13T18:00:00.000Z"),
+      bagTemplate: { priceCents: 5000 },
+    });
+    offerStock.claim.mockResolvedValue(true);
+    tx.reservation.create
+      .mockRejectedValueOnce(uniqueCodeViolation())
+      .mockResolvedValueOnce({ id: "resv1", code: "K-EFGH" });
+    facade.createIntent.mockResolvedValue({ providerRef: "ref1" });
+
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+    );
+    const result = await service.create("user1", "offer1", 1);
+
+    expect(result.reservationId).toBe("resv1");
+    // The retry re-ran the WHOLE transaction, including re-claiming
+    // stock — not just a second INSERT attempt inside an already-aborted
+    // transaction (which is what the pre-fix code did, and which would
+    // have failed with Postgres error 25P02 on the retry, not another
+    // P2002).
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(offerStock.claim).toHaveBeenCalledTimes(2);
+    expect(tx.reservation.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("[I3] gives up after MAX_CODE_ATTEMPTS consecutive collisions and propagates the error", async () => {
+    const { tx, prisma, offerStock, facade } = buildDeps();
+    tx.dailyOffer.findUnique.mockResolvedValue({
+      id: "offer1",
+      storeId: "store1",
+      pickupStartAt: new Date("2026-08-13T18:00:00.000Z"),
+      bagTemplate: { priceCents: 5000 },
+    });
+    offerStock.claim.mockResolvedValue(true);
+    tx.reservation.create.mockRejectedValue(uniqueCodeViolation());
+
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+    );
+    await expect(service.create("user1", "offer1", 1)).rejects.toThrow();
+    expect(prisma.$transaction).toHaveBeenCalledTimes(5); // MAX_CODE_ATTEMPTS
+  });
+
   it("compensates (Payment FAILED, Reservation EXPIRED, stock released) when createIntent fails, and returns 503", async () => {
     const { tx, prisma, offerStock, facade } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
@@ -153,8 +230,9 @@ describe("ReservationsService.create", () => {
       where: { merchantOid: expect.any(String), status: "INTENT" },
       data: { status: "FAILED" },
     });
+    // [I4] Derived from allowedFromStatusesFor("EXPIRED") = ["PENDING_PAYMENT"].
     expect(tx.reservation.updateMany).toHaveBeenCalledWith({
-      where: { id: "resv1", status: "PENDING_PAYMENT" },
+      where: { id: "resv1", status: { in: ["PENDING_PAYMENT"] } },
       data: { status: "EXPIRED" },
     });
     expect(offerStock.release).toHaveBeenCalledWith(tx, "offer1", 1);
@@ -183,6 +261,32 @@ describe("ReservationsService.create", () => {
     );
 
     expect(tx.reservation.updateMany).not.toHaveBeenCalled();
+    expect(offerStock.release).not.toHaveBeenCalled();
+  });
+
+  it("[C1] does NOT double-release stock in compensation when the Reservation already left PENDING_PAYMENT (e.g. the user cancelled it first)", async () => {
+    const { tx, prisma, offerStock, facade } = buildDeps();
+    tx.dailyOffer.findUnique.mockResolvedValue({
+      id: "offer1",
+      storeId: "store1",
+      pickupStartAt: new Date("2026-08-13T18:00:00.000Z"),
+      bagTemplate: { priceCents: 5000 },
+    });
+    offerStock.claim.mockResolvedValue(true);
+    tx.reservation.create.mockResolvedValue({ id: "resv1", code: "K-ABCD" });
+    facade.createIntent.mockRejectedValue(new Error("provider down"));
+    tx.payment.updateMany.mockResolvedValue({ count: 1 }); // Payment WAS still INTENT
+    tx.reservation.updateMany.mockResolvedValue({ count: 0 }); // but Reservation already left PENDING_PAYMENT
+
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+    );
+    await expect(service.create("user1", "offer1", 1)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+
     expect(offerStock.release).not.toHaveBeenCalled();
   });
 });
@@ -229,7 +333,7 @@ describe("ReservationsService.cancel", () => {
     );
   });
 
-  it("throws the uniform RESERVATION_NOT_CANCELLABLE error past the deadline", async () => {
+  it("throws the uniform RESERVATION_NOT_CANCELLABLE error past the deadline (neither candidate status matches)", async () => {
     const { tx, prisma, offerStock, facade } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ cancelDeadlineAt: new Date(Date.now() - 1000) }),
@@ -244,6 +348,28 @@ describe("ReservationsService.cancel", () => {
     const err = await service.cancel("user1", "resv1").catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
     expect(err.response.errorCode).toBe("RESERVATION_NOT_CANCELLABLE");
+    expect(offerStock.release).not.toHaveBeenCalled();
+  });
+
+  it("[C1] terminates a still-live Payment intent in the SAME transaction as the cancel", async () => {
+    const { tx, prisma, offerStock, facade } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation(),
+    );
+    mockCancelReservationUpdate(tx, "PENDING_PAYMENT");
+    offerStock.release.mockResolvedValue(true);
+
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+    );
+    await service.cancel("user1", "resv1");
+
+    expect(tx.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: "pay1", status: { in: ["INTENT", "PROCESSING"] } },
+      data: { status: "FAILED" },
+    });
   });
 
   it("PENDING_PAYMENT cancel releases stock and does NOT call refund", async () => {
@@ -251,7 +377,7 @@ describe("ReservationsService.cancel", () => {
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
-    tx.reservation.updateMany.mockResolvedValue({ count: 1 });
+    mockCancelReservationUpdate(tx, "PENDING_PAYMENT");
     offerStock.release.mockResolvedValue(true);
     const service = new ReservationsService(
       prisma as any,
@@ -270,7 +396,7 @@ describe("ReservationsService.cancel", () => {
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ status: "CONFIRMED" }),
     );
-    tx.reservation.updateMany.mockResolvedValue({ count: 1 });
+    mockCancelReservationUpdate(tx, "CONFIRMED");
     offerStock.release.mockResolvedValue(true);
     facade.refund.mockResolvedValue({ refundRef: "mock-refund-1" });
 
@@ -293,12 +419,36 @@ describe("ReservationsService.cancel", () => {
     });
   });
 
-  it("a refund failure does not throw — cancellation already committed, failure is recorded", async () => {
+  it("[I2] derives the refund decision from the IN-TRANSACTION match, not the stale pre-transaction read — a webhook confirming concurrently must still trigger a refund", async () => {
+    const { tx, prisma, offerStock, facade } = buildDeps();
+    // The pre-transaction read (used only for not-found/not-owner checks)
+    // is stale: it still shows PENDING_PAYMENT.
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation({ status: "PENDING_PAYMENT" }),
+    );
+    // But by the time the transaction actually runs, a concurrent webhook
+    // has already confirmed+paid it — only the CONFIRMED-targeted
+    // updateMany matches.
+    mockCancelReservationUpdate(tx, "CONFIRMED");
+    offerStock.release.mockResolvedValue(true);
+    facade.refund.mockResolvedValue({ refundRef: "mock-refund-2" });
+
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+    );
+    await service.cancel("user1", "resv1");
+
+    expect(facade.refund).toHaveBeenCalledWith("KRVxxx", 5000);
+  });
+
+  it("a provider-side refund failure records a FAILED Refund row (no money moved, safe to retry)", async () => {
     const { tx, prisma, offerStock, facade } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ status: "CONFIRMED" }),
     );
-    tx.reservation.updateMany.mockResolvedValue({ count: 1 });
+    mockCancelReservationUpdate(tx, "CONFIRMED");
     offerStock.release.mockResolvedValue(true);
     facade.refund.mockRejectedValue(new Error("provider down"));
     prisma.refund.create = jest.fn().mockResolvedValue({});
@@ -313,6 +463,54 @@ describe("ReservationsService.cancel", () => {
     expect(result.status).toBe("CANCELLED_BY_USER");
     expect(prisma.refund.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ status: "FAILED" }),
+    });
+    // No refundRef — the provider call never returned one.
+    expect(prisma.refund.create).toHaveBeenCalledWith({
+      data: expect.not.objectContaining({ pspRefundId: expect.anything() }),
+    });
+  });
+
+  it("[I1] a bookkeeping failure AFTER a successful provider refund is recorded as SENT with the real refundRef, never FAILED (prevents a double-refund on manual retry)", async () => {
+    const { tx, prisma, offerStock, facade } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation({ status: "CONFIRMED" }),
+    );
+    mockCancelReservationUpdate(tx, "CONFIRMED");
+    offerStock.release.mockResolvedValue(true);
+    facade.refund.mockResolvedValue({ refundRef: "mock-refund-3" });
+    prisma.refund.create = jest.fn().mockResolvedValue({});
+    prisma.payment.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+
+    // First $transaction call is cancel()'s own; the second is the
+    // refund-bookkeeping transaction, which fails AFTER the provider
+    // refund above already succeeded.
+    let transactionCall = 0;
+    prisma.$transaction = jest.fn((cb: any) => {
+      transactionCall += 1;
+      if (transactionCall === 1) return cb(tx);
+      throw new Error("db blip recording the refund");
+    });
+
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+    );
+    const result = await service.cancel("user1", "resv1");
+
+    expect(result.status).toBe("CANCELLED_BY_USER");
+    expect(prisma.refund.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        status: "SENT",
+        pspRefundId: "mock-refund-3",
+      }),
+    });
+    expect(prisma.refund.create).not.toHaveBeenCalledWith({
+      data: expect.objectContaining({ status: "FAILED" }),
+    });
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: "pay1", status: "PAID" },
+      data: { status: "REFUNDED" },
     });
   });
 });
@@ -385,6 +583,11 @@ describe("ReservationsService.redeem", () => {
 
     const result = await service.redeem("mu1", "merchant1", "resv1");
     expect(result.status).toBe("REDEEMED");
+    // [I4] Derived from allowedFromStatusesFor("REDEEMED") = ["CONFIRMED"].
+    expect(tx.reservation.updateMany).toHaveBeenCalledWith({
+      where: { id: "resv1", status: { in: ["CONFIRMED"] } },
+      data: expect.objectContaining({ status: "REDEEMED" }),
+    });
     expect(tx.dailyOffer.update).toHaveBeenCalledWith({
       where: { id: "offer1" },
       data: { qtyRedeemed: { increment: 1 } },

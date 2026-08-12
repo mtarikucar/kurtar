@@ -5,6 +5,7 @@ function buildFakeTx(overrides: Record<string, any> = {}) {
   return {
     payment: {
       findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       updateMany: jest.fn(),
       ...overrides.payment,
     },
@@ -27,15 +28,11 @@ function buildDeps() {
 }
 
 function uniqueViolation() {
-  const err = new Prisma.PrismaClientKnownRequestError(
-    "Unique constraint failed",
-    {
-      code: "P2002",
-      clientVersion: "6.19.0",
-      meta: { target: ["externalEventId"] },
-    },
-  );
-  return err;
+  return new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+    code: "P2002",
+    clientVersion: "6.19.0",
+    meta: { target: ["externalEventId"] },
+  });
 }
 
 const baseEvent = {
@@ -105,6 +102,7 @@ describe("PaymentSettleService.settle — success path", () => {
     const { prisma, tx, offerStock, facade } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(paidPayment());
     tx.payment.updateMany.mockResolvedValue({ count: 1 });
+    tx.reservation.updateMany.mockResolvedValue({ count: 1 });
     const service = new PaymentSettleService(
       prisma as any,
       offerStock as any,
@@ -120,16 +118,21 @@ describe("PaymentSettleService.settle — success path", () => {
       },
       data: { status: "PAID", paidAt: expect.any(Date) },
     });
+    // [I4] The WHERE derives from allowedFromStatusesFor("CONFIRMED"),
+    // which is ["PENDING_PAYMENT"] — asserted as the concrete list here
+    // since that's the observable contract callers depend on.
     expect(tx.reservation.updateMany).toHaveBeenCalledWith({
-      where: { id: "resv1", status: "PENDING_PAYMENT" },
+      where: { id: "resv1", status: { in: ["PENDING_PAYMENT"] } },
       data: { status: "CONFIRMED" },
     });
     expect(offerStock.release).not.toHaveBeenCalled();
   });
 
-  it("amount mismatch: does NOT settle, Payment untouched", async () => {
+  it("[C2] amount mismatch is quarantined: Payment -> FAILED, Reservation -> EXPIRED, stock released", async () => {
     const { prisma, tx, offerStock, facade } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(paidPayment({ amountCents: 5001 }));
+    tx.payment.updateMany.mockResolvedValue({ count: 1 });
+    tx.reservation.updateMany.mockResolvedValue({ count: 1 });
     const service = new PaymentSettleService(
       prisma as any,
       offerStock as any,
@@ -137,15 +140,28 @@ describe("PaymentSettleService.settle — success path", () => {
     );
 
     const outcome = await service.settle(baseEvent); // totalCents: 5000, expected 5001
-    expect(outcome).toBe("amount_mismatch");
-    expect(tx.payment.updateMany).not.toHaveBeenCalled();
-    expect(tx.reservation.updateMany).not.toHaveBeenCalled();
+    expect(outcome).toBe("amount_mismatch_quarantined");
+    expect(tx.payment.updateMany).toHaveBeenCalledWith({
+      where: {
+        merchantOid: "KRVabc",
+        status: { in: ["INTENT", "PROCESSING"] },
+      },
+      data: { status: "FAILED" },
+    });
+    expect(tx.reservation.updateMany).toHaveBeenCalledWith({
+      where: { id: "resv1", status: { in: ["PENDING_PAYMENT"] } },
+      data: { status: "EXPIRED" },
+    });
+    expect(offerStock.release).toHaveBeenCalledWith(tx, "offer1", 2);
   });
 
-  it("no-ops when the Payment already left INTENT/PROCESSING (e.g. sweeper-expired first)", async () => {
+  it("[C2] a benign already-PAID payment reports 'already_terminal' (duplicate delivery, different event id)", async () => {
     const { prisma, tx, offerStock, facade } = buildDeps();
-    tx.payment.findUnique.mockResolvedValue(paidPayment({ status: "FAILED" }));
+    tx.payment.findUnique.mockResolvedValue(paidPayment());
     tx.payment.updateMany.mockResolvedValue({ count: 0 });
+    tx.payment.findUniqueOrThrow.mockResolvedValue(
+      paidPayment({ status: "PAID" }),
+    );
     const service = new PaymentSettleService(
       prisma as any,
       offerStock as any,
@@ -155,6 +171,39 @@ describe("PaymentSettleService.settle — success path", () => {
     const outcome = await service.settle(baseEvent);
     expect(outcome).toBe("already_terminal");
     expect(tx.reservation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("[C2] a success event arriving after Payment was already FAILED is elevated to 'charged_after_failed', not the benign no-op", async () => {
+    const { prisma, tx, offerStock, facade } = buildDeps();
+    tx.payment.findUnique.mockResolvedValue(paidPayment());
+    tx.payment.updateMany.mockResolvedValue({ count: 0 });
+    tx.payment.findUniqueOrThrow.mockResolvedValue(
+      paidPayment({ status: "FAILED" }),
+    );
+    const service = new PaymentSettleService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+    );
+
+    const outcome = await service.settle(baseEvent);
+    expect(outcome).toBe("charged_after_failed");
+  });
+
+  it("[C2] Payment settles PAID but the reservation is no longer confirmable -> rolls back (returns 'orphaned_success')", async () => {
+    const { prisma, tx, offerStock, facade } = buildDeps();
+    tx.payment.findUnique.mockResolvedValue(paidPayment());
+    tx.payment.updateMany.mockResolvedValue({ count: 1 });
+    tx.reservation.updateMany.mockResolvedValue({ count: 0 }); // reservation no longer PENDING_PAYMENT
+    const service = new PaymentSettleService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+    );
+
+    const outcome = await service.settle(baseEvent);
+    expect(outcome).toBe("orphaned_success");
+    expect(tx.reservation.updateMany).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -176,6 +225,7 @@ describe("PaymentSettleService.settle — failure path", () => {
     const { prisma, tx, offerStock, facade } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(pendingPayment());
     tx.payment.updateMany.mockResolvedValue({ count: 1 });
+    tx.reservation.updateMany.mockResolvedValue({ count: 1 });
     const service = new PaymentSettleService(
       prisma as any,
       offerStock as any,
@@ -192,7 +242,7 @@ describe("PaymentSettleService.settle — failure path", () => {
       data: { status: "FAILED" },
     });
     expect(tx.reservation.updateMany).toHaveBeenCalledWith({
-      where: { id: "resv1", status: "PENDING_PAYMENT" },
+      where: { id: "resv1", status: { in: ["PENDING_PAYMENT"] } },
       data: { status: "EXPIRED" },
     });
     expect(offerStock.release).toHaveBeenCalledWith(tx, "offer1", 2);
@@ -204,6 +254,7 @@ describe("PaymentSettleService.settle — failure path", () => {
       pendingPayment({ amountCents: 999999 }),
     );
     tx.payment.updateMany.mockResolvedValue({ count: 1 });
+    tx.reservation.updateMany.mockResolvedValue({ count: 1 });
     const service = new PaymentSettleService(
       prisma as any,
       offerStock as any,
@@ -212,5 +263,37 @@ describe("PaymentSettleService.settle — failure path", () => {
 
     const outcome = await service.settle(failedEvent);
     expect(outcome).toBe("expired");
+  });
+
+  it("no-ops when the Payment already left INTENT/PROCESSING (e.g. already settled elsewhere)", async () => {
+    const { prisma, tx, offerStock, facade } = buildDeps();
+    tx.payment.findUnique.mockResolvedValue(pendingPayment({ status: "PAID" }));
+    tx.payment.updateMany.mockResolvedValue({ count: 0 });
+    const service = new PaymentSettleService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+    );
+
+    const outcome = await service.settle(failedEvent);
+    expect(outcome).toBe("already_terminal");
+    expect(tx.reservation.updateMany).not.toHaveBeenCalled();
+    expect(offerStock.release).not.toHaveBeenCalled();
+  });
+
+  it("[C1] does NOT double-release stock when the Reservation already left PENDING_PAYMENT (e.g. a prior cancel() already released it)", async () => {
+    const { prisma, tx, offerStock, facade } = buildDeps();
+    tx.payment.findUnique.mockResolvedValue(pendingPayment());
+    tx.payment.updateMany.mockResolvedValue({ count: 1 }); // Payment WAS still INTENT
+    tx.reservation.updateMany.mockResolvedValue({ count: 0 }); // but Reservation already left PENDING_PAYMENT
+    const service = new PaymentSettleService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+    );
+
+    const outcome = await service.settle(failedEvent);
+    expect(outcome).toBe("expired");
+    expect(offerStock.release).not.toHaveBeenCalled();
   });
 });

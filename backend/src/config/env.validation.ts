@@ -41,6 +41,14 @@
  *    "Unknown payment provider" error the moment such a provider is
  *    actually dispatched to (modules/payments-core/payment-provider.registry.ts)
  *    — no adapter ever self-registers for an id nothing implements.
+ *  - WEBHOOK_SECRET is required in production alongside DATABASE_URL/
+ *    REDIS_URL (added to REQUIRED_IN_PRODUCTION below), not left to be
+ *    enforced only incidentally by MockPaymentProvider's own constructor
+ *    check. That constructor check still exists and still fires in every
+ *    environment (there's no acceptable-to-run-without-it mode, mirroring
+ *    JWT_SECRET) — this is the primary, intentional enforcement point;
+ *    that one is defense in depth for dev/test, where this loop doesn't
+ *    apply.
  */
 
 export const VALID_NODE_ENVS = [
@@ -51,7 +59,11 @@ export const VALID_NODE_ENVS = [
 ] as const;
 export type ValidNodeEnv = (typeof VALID_NODE_ENVS)[number];
 
-const REQUIRED_IN_PRODUCTION = ["DATABASE_URL", "REDIS_URL"] as const;
+const REQUIRED_IN_PRODUCTION = [
+  "DATABASE_URL",
+  "REDIS_URL",
+  "WEBHOOK_SECRET",
+] as const;
 
 export const VALID_PAYMENT_PROVIDERS = ["mock", "iyzico", "paytr"] as const;
 export type ValidPaymentProvider = (typeof VALID_PAYMENT_PROVIDERS)[number];

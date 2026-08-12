@@ -2,6 +2,7 @@ import { ReservationStatus } from "@prisma/client";
 import {
   RESERVATION_TRANSITIONS,
   isReservationTransitionAllowed,
+  allowedFromStatusesFor,
 } from "./reservation-transitions";
 
 const ALL_STATUSES: ReservationStatus[] = [
@@ -58,5 +59,35 @@ describe("RESERVATION_TRANSITIONS — every (from, to) pair, explicitly", () => 
     expect(Object.keys(RESERVATION_TRANSITIONS).sort()).toEqual(
       [...ALL_STATUSES].sort(),
     );
+  });
+});
+
+describe("allowedFromStatusesFor — [I4] the inverse lookup reservations.service.ts/payment-settle.service.ts derive their WHERE clauses from", () => {
+  it("CANCELLED_BY_USER is reachable from PENDING_PAYMENT and CONFIRMED only (reservations.service.ts's cancel())", () => {
+    expect(allowedFromStatusesFor("CANCELLED_BY_USER").sort()).toEqual(
+      ["CONFIRMED", "PENDING_PAYMENT"].sort(),
+    );
+  });
+
+  it("REDEEMED is reachable from CONFIRMED only (reservations.service.ts's redeem())", () => {
+    expect(allowedFromStatusesFor("REDEEMED")).toEqual(["CONFIRMED"]);
+  });
+
+  it("CONFIRMED is reachable from PENDING_PAYMENT only (payment-settle.service.ts's success branch)", () => {
+    expect(allowedFromStatusesFor("CONFIRMED")).toEqual(["PENDING_PAYMENT"]);
+  });
+
+  it("EXPIRED is reachable from PENDING_PAYMENT only (payment-settle.service.ts's failure/quarantine branch, reservations.service.ts's compensateFailedIntent)", () => {
+    expect(allowedFromStatusesFor("EXPIRED")).toEqual(["PENDING_PAYMENT"]);
+  });
+
+  it("no status can transition into itself, and terminal statuses are unreachable as a 'to' from anything", () => {
+    for (const to of [
+      "REDEEMED",
+      "NO_SHOW",
+      "CANCELLED_BY_MERCHANT",
+    ] as ReservationStatus[]) {
+      expect(allowedFromStatusesFor(to).includes(to)).toBe(false);
+    }
   });
 });
