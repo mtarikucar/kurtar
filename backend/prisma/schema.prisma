@@ -37,6 +37,16 @@ enum UserStatus {
   DELETED
 }
 
+/// Which principal table a RefreshToken row belongs to. Task 3's adaptation
+/// of the Task-2 RefreshToken model (originally User-only) to the three
+/// actor types auth issues tokens for. See the RefreshToken model comment
+/// for the full FK/CHECK story.
+enum PrincipalType {
+  CONSUMER
+  MERCHANT
+  ADMIN
+}
+
 enum MerchantVerificationStatus {
   DRAFT
   SUBMITTED
@@ -223,11 +233,31 @@ model PhoneOtp {
 }
 
 /// Per-session refresh tokens. Only the hash is stored, mirroring kds.
+///
+/// Task 3 adaptation: kds's RefreshToken is User-only (single actor type).
+/// kurtar auth issues tokens for three actor types (CONSUMER/MERCHANT/ADMIN),
+/// so a single row must be able to belong to any one of User, MerchantUser,
+/// or AdminUser. Chosen approach (documented in the Task 3 brief as the
+/// recommended option): `principalType` discriminates the row, `userId`
+/// stays but becomes nullable, and two new nullable FKs
+/// (`merchantUserId`, `adminUserId`) cover the other two actors. A
+/// hand-written CHECK constraint (added in the admin_users migration, since
+/// Prisma's DSL cannot express multi-column CHECKs) enforces that EXACTLY
+/// the one FK column matching `principalType` is set and the other two are
+/// NULL — so a row can never point at two principals at once, or none.
 model RefreshToken {
   id String @id @default(cuid())
 
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  principalType PrincipalType
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  merchantUserId String?
+  merchantUser   MerchantUser? @relation(fields: [merchantUserId], references: [id], onDelete: Cascade)
+
+  adminUserId String?
+  adminUser   AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
 
   tokenHash String    @unique
   familyId  String
@@ -239,6 +269,8 @@ model RefreshToken {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([merchantUserId])
+  @@index([adminUserId])
   @@index([familyId])
   @@map("refresh_tokens")
 }
@@ -278,6 +310,26 @@ model NotificationPreference {
   updatedAt DateTime @updatedAt
 
   @@map("notification_preferences")
+}
+
+/// Platform admin — the third actor type auth issues tokens for (Task 3).
+/// Deliberately minimal: no roles/permissions model beyond `active`, since
+/// nothing in the current brief set needs finer-grained admin authorization
+/// yet.
+model AdminUser {
+  id String @id @default(cuid())
+
+  email        String  @unique
+  passwordHash String
+  name         String
+  active       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+
+  @@map("admin_users")
 }
 
 // ========================================
@@ -335,6 +387,8 @@ model MerchantUser {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
 
   @@map("merchant_users")
 }
