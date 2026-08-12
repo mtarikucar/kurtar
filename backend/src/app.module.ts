@@ -17,6 +17,7 @@ import { PaymentsModule } from "./modules/payments/payments.module";
 import { MerchantsModule } from "./modules/merchants/merchants.module";
 import { StoresModule } from "./modules/stores/stores.module";
 import { OffersModule } from "./modules/offers/offers.module";
+import { DiscoveryModule } from "./modules/discovery/discovery.module";
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { OffersModule } from "./modules/offers/offers.module";
     OffersModule,
     MerchantsModule,
     StoresModule,
+    DiscoveryModule,
   ],
   providers: [
     // Applies the matching THROTTLER_PROFILES tier to every route; auth
