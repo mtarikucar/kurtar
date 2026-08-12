@@ -1,4 +1,8 @@
-import { validate, VALID_NODE_ENVS } from "./env.validation";
+import {
+  validate,
+  VALID_NODE_ENVS,
+  VALID_PAYMENT_PROVIDERS,
+} from "./env.validation";
 
 describe("env.validation — NODE_ENV enumeration (fail-fast)", () => {
   it("refuses to boot when NODE_ENV is missing entirely", () => {
@@ -23,12 +27,18 @@ describe("env.validation — NODE_ENV enumeration (fail-fast)", () => {
     },
   );
 
-  it("accepts NODE_ENV=production when DATABASE_URL/REDIS_URL are set", () => {
+  it("accepts NODE_ENV=production when DATABASE_URL/REDIS_URL are set and a non-mock PAYMENT_PROVIDER is configured", () => {
+    // Task 4 additionally requires a real (non-mock) PAYMENT_PROVIDER in
+    // production — see the dedicated describe block below. "iyzico" is not
+    // implemented yet (PaymentProviderRegistry.get() would 404 the first
+    // time it's actually dispatched to), but env.validation only asserts
+    // the *value* is one this enum recognizes, not that an adapter exists.
     expect(() =>
       validate({
         NODE_ENV: "production",
         DATABASE_URL: "postgresql://x",
         REDIS_URL: "redis://x",
+        PAYMENT_PROVIDER: "iyzico",
       }),
     ).not.toThrow();
   });
@@ -51,4 +61,47 @@ describe("env.validation — DATABASE_URL/REDIS_URL production requirement", () 
       expect.stringContaining("DATABASE_URL"),
     );
   });
+});
+
+describe("env.validation — PAYMENT_PROVIDER enumeration + prod-mock refusal (Task 4)", () => {
+  it("accepts PAYMENT_PROVIDER unset in development (defaults to mock)", () => {
+    expect(() => validate({ NODE_ENV: "development" })).not.toThrow();
+  });
+
+  it("accepts PAYMENT_PROVIDER=mock explicitly in development/test/staging", () => {
+    for (const env of ["development", "test", "staging"] as const) {
+      expect(() =>
+        validate({ NODE_ENV: env, PAYMENT_PROVIDER: "mock" }),
+      ).not.toThrow();
+    }
+  });
+
+  it("refuses to boot on an unrecognized PAYMENT_PROVIDER value", () => {
+    expect(() =>
+      validate({ NODE_ENV: "development", PAYMENT_PROVIDER: "stripe" }),
+    ).toThrow(/PAYMENT_PROVIDER must be one of/);
+  });
+
+  it("refuses to boot with PAYMENT_PROVIDER=mock (or unset) in production", () => {
+    const base = {
+      NODE_ENV: "production",
+      DATABASE_URL: "postgresql://x",
+      REDIS_URL: "redis://x",
+    };
+    expect(() => validate({ ...base })).toThrow(
+      /PAYMENT_PROVIDER=mock \(or unset\) is not allowed in production/,
+    );
+    expect(() => validate({ ...base, PAYMENT_PROVIDER: "mock" })).toThrow(
+      /PAYMENT_PROVIDER=mock \(or unset\) is not allowed in production/,
+    );
+  });
+
+  it.each(VALID_PAYMENT_PROVIDERS.filter((provider) => provider !== "mock"))(
+    "accepts the recognized-but-not-yet-implemented provider %s as a value (adapter absence is a registry-level 404, not a boot refusal)",
+    (provider) => {
+      expect(() =>
+        validate({ NODE_ENV: "development", PAYMENT_PROVIDER: provider }),
+      ).not.toThrow();
+    },
+  );
 });

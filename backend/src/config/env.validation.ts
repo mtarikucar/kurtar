@@ -21,6 +21,26 @@
  *    development/test/staging we allow them to be missing (later tasks
  *    may not need the DB yet) but log a clear warning so the gap isn't
  *    silent.
+ *  - PAYMENT_PROVIDER (Task 4) extends this same enum-and-refuse pattern
+ *    rather than living as an ad-hoc check inside the payments-core module
+ *    (the way SmsService validates SMS_PROVIDER from inside its own
+ *    constructor). Two things are enforced, at the exact same boot moment
+ *    as the NODE_ENV check above:
+ *      1. An unrecognized value refuses to boot, in every environment —
+ *         mirrors the NODE_ENV enum check exactly.
+ *      2. "mock" (the default when unset) refuses to boot in production —
+ *         mirrors SmsService's mock-SMS-in-production refusal. The money
+ *         path must never silently run against an in-memory fake provider
+ *         in prod.
+ *    A recognized-but-not-yet-implemented value (iyzico, paytr — no
+ *    adapter exists yet) is intentionally NOT refused here: nothing in
+ *    this module knows which provider ids currently have a registered
+ *    adapter, and hand-maintaining that list here would be a second,
+ *    driftable source of truth alongside payments-core's actual
+ *    registrations. PaymentProviderRegistry.get() already throws a clear
+ *    "Unknown payment provider" error the moment such a provider is
+ *    actually dispatched to (modules/payments-core/payment-provider.registry.ts)
+ *    — no adapter ever self-registers for an id nothing implements.
  */
 
 export const VALID_NODE_ENVS = [
@@ -33,6 +53,9 @@ export type ValidNodeEnv = (typeof VALID_NODE_ENVS)[number];
 
 const REQUIRED_IN_PRODUCTION = ["DATABASE_URL", "REDIS_URL"] as const;
 
+export const VALID_PAYMENT_PROVIDERS = ["mock", "iyzico", "paytr"] as const;
+export type ValidPaymentProvider = (typeof VALID_PAYMENT_PROVIDERS)[number];
+
 function isBlank(value: unknown): boolean {
   return value === undefined || value === null || value === "";
 }
@@ -41,6 +64,13 @@ function isValidNodeEnv(value: unknown): value is ValidNodeEnv {
   return (
     typeof value === "string" &&
     (VALID_NODE_ENVS as readonly string[]).includes(value)
+  );
+}
+
+function isValidPaymentProvider(value: unknown): value is ValidPaymentProvider {
+  return (
+    typeof value === "string" &&
+    (VALID_PAYMENT_PROVIDERS as readonly string[]).includes(value)
   );
 }
 
@@ -77,6 +107,30 @@ export function validate(
   if (missing.length > 0) {
     throw new Error(
       `Refusing to boot: missing required environment variable(s) in production: ${missing.join(", ")}.`,
+    );
+  }
+
+  const rawPaymentProvider = config.PAYMENT_PROVIDER;
+  if (
+    !isBlank(rawPaymentProvider) &&
+    !isValidPaymentProvider(rawPaymentProvider)
+  ) {
+    throw new Error(
+      `Refusing to boot: PAYMENT_PROVIDER must be one of ${VALID_PAYMENT_PROVIDERS.join(", ")} (got ${JSON.stringify(
+        rawPaymentProvider,
+      )}).`,
+    );
+  }
+  const paymentProvider: ValidPaymentProvider = isBlank(rawPaymentProvider)
+    ? "mock"
+    : (rawPaymentProvider as ValidPaymentProvider);
+
+  if (paymentProvider === "mock" && isProduction) {
+    throw new Error(
+      "Refusing to boot: PAYMENT_PROVIDER=mock (or unset) is not allowed in " +
+        "production. The mock provider is an in-memory fake with no real " +
+        "settlement — configure PAYMENT_PROVIDER=iyzico or PAYMENT_PROVIDER=paytr " +
+        "once that adapter is implemented.",
     );
   }
 
