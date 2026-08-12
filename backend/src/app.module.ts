@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { resolveEnvFilePath } from "./config/env-file";
 import { validate } from "./config/env.validation";
 import { HealthModule } from "./modules/health/health.module";
+import { PrismaModule } from "./prisma/prisma.module";
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { HealthModule } from "./modules/health/health.module";
       envFilePath: resolveEnvFilePath(),
       validate,
     }),
+    PrismaModule,
     HealthModule,
   ],
 })
