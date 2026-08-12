@@ -381,6 +381,11 @@ model MerchantUser {
   merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
 
   email        String           @unique
+  // The signing owner/contact's display name, captured once at
+  // POST /api/merchants/signup (Task 5) — the OWNER MerchantUser created
+  // there is the only merchant_users row Task 5 ever creates, so this is
+  // never backfilled from anywhere else.
+  name         String
   passwordHash String
   role         MerchantUserRole @default(OWNER)
   lastLoginAt  DateTime?
@@ -520,6 +525,11 @@ model DailyOffer {
   pickupEndAt   DateTime
 
   status      OfferStatus @default(DRAFT)
+  // Set by POST /api/offers/:id/schedule (Task 5) — the publish-scheduler
+  // cron selects SCHEDULED rows with publishAt <= now() and flips them to
+  // PUBLISHED the same way the manual /publish endpoint does. Never read
+  // once an offer leaves SCHEDULED.
+  publishAt   DateTime?
   publishedAt DateTime?
   // Optimistic-concurrency token for the atomic reserve/redeem write path
   // (Task 4).
