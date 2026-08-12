@@ -1,9 +1,15 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { APP_GUARD } from "@nestjs/core";
 import { resolveEnvFilePath } from "./config/env-file";
 import { validate } from "./config/env.validation";
+import { THROTTLER_PROFILES } from "./common/config/throttler.config";
 import { HealthModule } from "./modules/health/health.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { SmsModule } from "./modules/sms/sms.module";
+import { OtpModule } from "./modules/otp/otp.module";
+import { AuthModule } from "./modules/auth/auth.module";
 
 @Module({
   imports: [
@@ -16,8 +22,20 @@ import { PrismaModule } from "./prisma/prisma.module";
       envFilePath: resolveEnvFilePath(),
       validate,
     }),
+    // Registered globally so every `@Throttle({ default: { ... } })`
+    // override (auth's OTP/login/refresh endpoints) has a live "default"
+    // throttler to bind to — see common/config/throttler.config.ts.
+    ThrottlerModule.forRoot(THROTTLER_PROFILES),
     PrismaModule,
     HealthModule,
+    SmsModule,
+    OtpModule,
+    AuthModule,
+  ],
+  providers: [
+    // Applies the matching THROTTLER_PROFILES tier to every route; auth
+    // endpoints additionally narrow with per-route @Throttle() overrides.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

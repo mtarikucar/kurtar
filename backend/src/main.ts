@@ -1,12 +1,17 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.use(helmet());
+  // Required for the auth module's httpOnly refresh-token cookie (web
+  // panel transport) — Express doesn't parse cookies into req.cookies
+  // without this.
+  app.use(cookieParser());
   app.setGlobalPrefix("api");
   app.useGlobalPipes(
     new ValidationPipe({
