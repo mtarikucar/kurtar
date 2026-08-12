@@ -122,6 +122,26 @@ describe("MockPaymentProvider", () => {
     );
   });
 
+  it("forceRefundFailure() makes the next refund() call for that merchantOid throw exactly once", async () => {
+    const provider = new MockPaymentProvider(
+      configWithSecret(),
+      new PaymentProviderRegistry(),
+    );
+    await provider.createIntent({
+      merchantOid: "oid-forced",
+      amountCents: 1000,
+      idempotencyKey: "k",
+    });
+    provider.forceRefundFailure("oid-forced");
+
+    await expect(provider.refund("oid-forced", 1000)).rejects.toThrow(
+      /Simulated refund failure/,
+    );
+    // One-shot: the retry succeeds normally and is recorded.
+    const result = await provider.refund("oid-forced", 1000);
+    expect(result.refundRef).toEqual(expect.stringContaining("mock-refund-"));
+  });
+
   describe("parseWebhook", () => {
     it("rejects a request missing/mismatching the webhook secret header", async () => {
       const provider = new MockPaymentProvider(

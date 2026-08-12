@@ -6,7 +6,12 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { Reservation, ReservationStatus } from "@prisma/client";
+import {
+  Prisma,
+  RefundReason,
+  Reservation,
+  ReservationStatus,
+} from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { isUniqueConstraintViolation } from "../../common/utils/prisma-error.util";
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
@@ -27,6 +32,11 @@ const CANCEL_DEADLINE_BEFORE_PICKUP_MS = 2 * 60 * 60 * 1000; // 2h
 const CANCELLABLE_FROM = allowedFromStatusesFor("CANCELLED_BY_USER");
 const REDEEMABLE_FROM = allowedFromStatusesFor("REDEEMED");
 const EXPIRABLE_FROM = allowedFromStatusesFor("EXPIRED");
+// [Task 5] Same derivation, feeding cancelAllForOffer's CONFIRMED branch
+// (the merchant-cancel / suspend kill-switch fan-out) below.
+const CANCELLED_BY_MERCHANT_FROM = allowedFromStatusesFor(
+  "CANCELLED_BY_MERCHANT",
+);
 
 export interface CreateReservationResult {
   reservationId: string;
@@ -51,6 +61,35 @@ export interface ListReservationsResult {
   page: number;
   limit: number;
 }
+
+/** [Task 5] cancelAllForOffer's DB-write-only result — see its doc comment. */
+export interface OfferCancelFanOutResult {
+  expiredCount: number;
+  cancelledCount: number;
+  toRefund: Array<{
+    reservationId: string;
+    paymentId: string;
+    merchantOid: string;
+    amountCents: number;
+  }>;
+}
+
+/** [Task 5] refundMany's per-reservation outcome — never throws, only reports. */
+export interface RefundBatchOutcome {
+  reservationId: string;
+  ok: boolean;
+  refundRef?: string;
+  error?: string;
+}
+
+/** Reasons cancelAllForOffer/refundMany accept — a merchant's own cancel
+ * always reports MERCHANT_CANCEL; an admin-triggered suspend kill-switch
+ * (modules/merchants) reports ADMIN, since the acting party differs even
+ * though the DB-level mechanics are identical. */
+export type OfferCancelReason = Extract<
+  RefundReason,
+  "MERCHANT_CANCEL" | "ADMIN"
+>;
 
 function offerUnavailableError() {
   return new ConflictException({
@@ -412,11 +451,13 @@ export class ReservationsService {
     });
 
     if (wasConfirmed) {
-      await this.refundOnCancel(
+      await this.refundForCancellation(
         payment.id,
         payment.merchantOid,
         payment.amountCents,
         reservationId,
+        "USER_CANCEL",
+        "CONSUMER",
       );
     }
 
@@ -437,33 +478,45 @@ export class ReservationsService {
    *     the customer at the provider. The fallback path below always
    *     carries the real refundRef and a status that reads as "sent,
    *     needs reconciliation" (SENT), never FAILED.
+   *
+   * [Task 5] Generalized from the original single-caller `refundOnCancel`
+   * (reason/requestedByType hardcoded to USER_CANCEL/CONSUMER) so
+   * cancelAllForOffer's merchant-cancel / suspend kill-switch fan-out
+   * reuses the EXACT same bookkeeping instead of duplicating it — the
+   * whole point of the Task 4 finding this ports forward. Returns a
+   * result instead of void (still never throws) so a batch caller
+   * (refundMany) can collect per-item outcomes without a failure
+   * anywhere aborting the batch.
    */
-  private async refundOnCancel(
+  private async refundForCancellation(
     paymentId: string,
     merchantOid: string,
     amountCents: number,
     reservationId: string,
-  ): Promise<void> {
+    reason: RefundReason,
+    requestedByType: string,
+  ): Promise<{ ok: boolean; refundRef?: string; error?: string }> {
     let refundRef: string;
     try {
       const refund = await this.facade.refund(merchantOid, amountCents);
       refundRef = refund.refundRef;
     } catch (err) {
+      const message = (err as Error).message;
       this.logger.error(
-        `CRITICAL: provider refund call failed for reservation ${reservationId} (merchantOid=${merchantOid}): ${(err as Error).message}`,
+        `CRITICAL: provider refund call failed for reservation ${reservationId} (merchantOid=${merchantOid}): ${message}`,
       );
       await this.prisma.refund
         .create({
           data: {
             paymentId,
             amountCents,
-            reason: "USER_CANCEL",
+            reason,
             status: "FAILED",
-            requestedByType: "CONSUMER",
+            requestedByType,
           },
         })
         .catch(() => undefined);
-      return;
+      return { ok: false, error: message };
     }
 
     try {
@@ -472,10 +525,10 @@ export class ReservationsService {
           data: {
             paymentId,
             amountCents,
-            reason: "USER_CANCEL",
+            reason,
             pspRefundId: refundRef,
             status: "DONE",
-            requestedByType: "CONSUMER",
+            requestedByType,
           },
         });
         await tx.payment.updateMany({
@@ -483,24 +536,28 @@ export class ReservationsService {
           data: { status: "REFUNDED" },
         });
       });
+      return { ok: true, refundRef };
     } catch (err) {
       // [I1] Money already moved at the provider (refundRef is real) —
       // this is a bookkeeping failure, not a refund failure. Never write
       // FAILED here; that would tell ops "retry the refund" and cause a
       // double refund. SENT communicates "provider confirmed, our books
-      // aren't caught up yet" for manual reconciliation instead.
+      // aren't caught up yet" for manual reconciliation instead. Reported
+      // as ok:true (the refund itself genuinely succeeded) — the message
+      // is still logged CRITICAL for ops to find.
+      const message = (err as Error).message;
       this.logger.error(
-        `CRITICAL: provider refund SUCCEEDED (refundRef=${refundRef}) for reservation ${reservationId} but recording it failed — money moved, bookkeeping incomplete; needs manual reconciliation, NOT a retry: ${(err as Error).message}`,
+        `CRITICAL: provider refund SUCCEEDED (refundRef=${refundRef}) for reservation ${reservationId} but recording it failed — money moved, bookkeeping incomplete; needs manual reconciliation, NOT a retry: ${message}`,
       );
       await this.prisma.refund
         .create({
           data: {
             paymentId,
             amountCents,
-            reason: "USER_CANCEL",
+            reason,
             pspRefundId: refundRef,
             status: "SENT",
-            requestedByType: "CONSUMER",
+            requestedByType,
           },
         })
         .catch((inner) => {
@@ -514,7 +571,136 @@ export class ReservationsService {
           data: { status: "REFUNDED" },
         })
         .catch(() => undefined);
+      return { ok: true, refundRef };
     }
+  }
+
+  /**
+   * [Task 5] Transactional core of the merchant-cancel (offers.service.ts)
+   * / suspend kill-switch (merchants.service.ts) reservation fan-out —
+   * pure DB writes against the `tx` the CALLER is already inside (tx-first
+   * parameter, matching OfferStockService.claim/release's own convention),
+   * so the caller composes this with the DailyOffer status transition and
+   * the offer.cancelled.v1 outbox insert in ONE transaction: all three
+   * commit or roll back together, and an offer that turns out not to be in
+   * a cancellable status (checked by the caller's own guarded update
+   * BEFORE calling this) never reaches this method at all. NO provider I/O
+   * here — see refundMany() below for the outside-tx refund calls this
+   * feeds.
+   *
+   * Every reservation currently PENDING_PAYMENT or CONFIRMED for this
+   * offer is a candidate; each one's actual transition is its own
+   * compound-WHERE guarded update (the same pattern as
+   * cancel()/expireAndRelease()), so a concurrent webhook/sweeper settling
+   * one of these mid-fan-out loses the race cleanly — the guard simply
+   * won't match, that reservation is left for whatever DID win to have
+   * already handled its own stock release, and it's never double-released
+   * here.
+   *
+   * No `reason` parameter here (unlike refundMany, right below): the
+   * reservation-level transition is always CONFIRMED -> CANCELLED_BY_MERCHANT
+   * regardless of whether a merchant's own cancel or an admin-triggered
+   * suspend caused it — the schema has no separate CANCELLED_BY_ADMIN
+   * status, so there is nothing for this method's own writes to branch on.
+   * `reason` only becomes meaningful once real money moves (the Refund
+   * row's RefundReason), which is exactly refundMany's job.
+   */
+  async cancelAllForOffer(
+    tx: Prisma.TransactionClient,
+    offerId: string,
+  ): Promise<OfferCancelFanOutResult> {
+    const candidates = await tx.reservation.findMany({
+      where: { offerId, status: { in: ["PENDING_PAYMENT", "CONFIRMED"] } },
+      include: { payment: true },
+    });
+
+    let expiredCount = 0;
+    const toRefund: OfferCancelFanOutResult["toRefund"] = [];
+
+    for (const reservation of candidates) {
+      if (!reservation.payment) {
+        // Invariant violation (every Reservation is created with a
+        // Payment row in the same transaction) — never expected in
+        // practice; skip rather than let one bad row abort the whole
+        // fan-out for every other reservation on this offer.
+        this.logger.error(
+          `Reservation ${reservation.id} has no Payment row during offer cancel fan-out for offer ${offerId} (data invariant violated) — skipping.`,
+        );
+        continue;
+      }
+      const payment = reservation.payment;
+
+      // Terminate a still-live intent first (lock order Payment then
+      // Reservation, matching cancel()/expireAndRelease() elsewhere in
+      // this file).
+      await tx.payment.updateMany({
+        where: { id: payment.id, status: { in: ["INTENT", "PROCESSING"] } },
+        data: { status: "FAILED" },
+      });
+
+      if (reservation.status === "PENDING_PAYMENT") {
+        const updated = await tx.reservation.updateMany({
+          where: { id: reservation.id, status: { in: EXPIRABLE_FROM } },
+          data: { status: "EXPIRED" },
+        });
+        if (updated.count === 0) continue; // lost a race — no stock to release
+        await this.offerStock.release(tx, offerId, reservation.qty);
+        expiredCount++;
+        continue;
+      }
+
+      // CONFIRMED -> CANCELLED_BY_MERCHANT (the schema's only allowed
+      // target from CONFIRMED that a merchant-side action reaches, per
+      // reservation-transitions.ts — used for both reasons this method
+      // accepts, MERCHANT_CANCEL and ADMIN, since the reservation-level
+      // transition itself doesn't distinguish who triggered it).
+      const updated = await tx.reservation.updateMany({
+        where: {
+          id: reservation.id,
+          status: { in: CANCELLED_BY_MERCHANT_FROM },
+        },
+        data: { status: "CANCELLED_BY_MERCHANT" },
+      });
+      if (updated.count === 0) continue;
+      await this.offerStock.release(tx, offerId, reservation.qty);
+      toRefund.push({
+        reservationId: reservation.id,
+        paymentId: payment.id,
+        merchantOid: payment.merchantOid,
+        amountCents: payment.amountCents,
+      });
+    }
+
+    return { expiredCount, cancelledCount: toRefund.length, toRefund };
+  }
+
+  /**
+   * [Task 5] Provider refund calls for a batch of just-cancelled CONFIRMED
+   * reservations (cancelAllForOffer's `toRefund` list), run strictly
+   * OUTSIDE any transaction — same rule as refundForCancellation, which
+   * this loops. A single failed call never aborts the batch: every
+   * outcome is collected and returned so the caller can report
+   * per-reservation success/failure instead of losing the other refunds
+   * to one failure.
+   */
+  async refundMany(
+    items: OfferCancelFanOutResult["toRefund"],
+    reason: OfferCancelReason,
+  ): Promise<RefundBatchOutcome[]> {
+    const requestedByType = reason === "ADMIN" ? "ADMIN" : "MERCHANT";
+    const results: RefundBatchOutcome[] = [];
+    for (const item of items) {
+      const outcome = await this.refundForCancellation(
+        item.paymentId,
+        item.merchantOid,
+        item.amountCents,
+        item.reservationId,
+        reason,
+        requestedByType,
+      );
+      results.push({ reservationId: item.reservationId, ...outcome });
+    }
+    return results;
   }
 
   async redeem(

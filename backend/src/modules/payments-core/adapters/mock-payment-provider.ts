@@ -56,6 +56,7 @@ export class MockPaymentProvider implements PaymentProvider, OnModuleInit {
   private readonly intents = new Map<string, MockIntentState>();
   private readonly refundLog: MockRefundLogEntry[] = [];
   private readonly webhookSecret: string;
+  private readonly forcedRefundFailures = new Set<string>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -118,6 +119,13 @@ export class MockPaymentProvider implements PaymentProvider, OnModuleInit {
     merchantOid: string,
     amountCents: number,
   ): Promise<RefundResult> {
+    if (this.forcedRefundFailures.delete(merchantOid)) {
+      // [Task 5] One-shot failure injected by forceRefundFailure() below —
+      // consumed on use, so a caller's retry (or a different
+      // merchantOid in the same batch) succeeds normally. Mirrors a real
+      // provider genuinely rejecting one refund call in a batch.
+      throw new Error(`Simulated refund failure for ${merchantOid}`);
+    }
     const intent = this.intents.get(merchantOid);
     if (!intent) {
       throw new Error(`Mock intent not found: ${merchantOid}`);
@@ -233,6 +241,16 @@ export class MockPaymentProvider implements PaymentProvider, OnModuleInit {
 
   getRefundLog(): readonly MockRefundLogEntry[] {
     return this.refundLog;
+  }
+
+  /**
+   * [Task 5] Test-only: make the NEXT refund() call for this merchantOid
+   * throw, simulating a provider-side refund failure — used by the
+   * merchant-cancel-fan-out realdb spec's "one refund fails, the other
+   * still gets recorded" case. One-shot (see refund()'s doc comment).
+   */
+  forceRefundFailure(merchantOid: string): void {
+    this.forcedRefundFailures.add(merchantOid);
   }
 
   /** Test-only escape hatch for specs that need an intent to exist without going through createIntent(). */
