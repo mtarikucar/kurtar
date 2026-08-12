@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+coverage/
+
+# Environment variables — never commit real env files, only *.example
+.env
+.env.*
+!.env.example
+
+# Internal planning workspace
+.superpowers/
+
+# Logs
+*.log
+
+# OS
+.DS_Store

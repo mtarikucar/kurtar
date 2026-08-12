@@ -1,0 +1,15 @@
+{
+  "name": "kurtar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kurtar — Türkiye için gün-sonu sürpriz paket pazaryeri (TGTG modeli)",
+  "workspaces": [
+    "backend"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "npm run dev -w backend"
+  }
+}
