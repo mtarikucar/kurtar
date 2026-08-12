@@ -5,7 +5,12 @@ import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: true additionally populates req.rawBody (a Buffer) alongside
+  // the normal parsed req.body — the payments webhook controller needs
+  // the raw bytes for provider signature verification
+  // (modules/payments-core/payment-provider.interface.ts's
+  // parseWebhook(rawBody, headers)); every other route is unaffected.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.use(helmet());
   // Required for the auth module's httpOnly refresh-token cookie (web

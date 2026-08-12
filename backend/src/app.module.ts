@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { APP_GUARD } from "@nestjs/core";
 import { resolveEnvFilePath } from "./config/env-file";
@@ -10,6 +11,9 @@ import { PrismaModule } from "./prisma/prisma.module";
 import { SmsModule } from "./modules/sms/sms.module";
 import { OtpModule } from "./modules/otp/otp.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { PaymentsCoreModule } from "./modules/payments-core/payments-core.module";
+import { ReservationsModule } from "./modules/reservations/reservations.module";
+import { PaymentsModule } from "./modules/payments/payments.module";
 
 @Module({
   imports: [
@@ -26,11 +30,16 @@ import { AuthModule } from "./modules/auth/auth.module";
     // override (auth's OTP/login/refresh endpoints) has a live "default"
     // throttler to bind to — see common/config/throttler.config.ts.
     ThrottlerModule.forRoot(THROTTLER_PROFILES),
+    // Powers @Cron in PaymentsSweeperService (Task 4).
+    ScheduleModule.forRoot(),
     PrismaModule,
     HealthModule,
     SmsModule,
     OtpModule,
     AuthModule,
+    PaymentsCoreModule,
+    ReservationsModule,
+    PaymentsModule,
   ],
   providers: [
     // Applies the matching THROTTLER_PROFILES tier to every route; auth
