@@ -203,12 +203,23 @@ jobs:
           PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
         run: |
           set -euo pipefail
-          ssh "root@${PROD_SERVER_HOST}" 'mkdir -p /root/kurtar'
+          ssh "root@${PROD_SERVER_HOST}" 'mkdir -p /root/kurtar/scripts'
           scp -o ServerAliveInterval=15 \
             ops/docker-compose.prod.yml \
+            "root@${PROD_SERVER_HOST}:/root/kurtar/"
+          # scripts/ land in an actual scripts/ subdirectory, not flat in
+          # /root/kurtar/ — backup-database.sh derives its own project
+          # root as the PARENT of the directory it lives in
+          # (PROJECT_ROOT="$(dirname "$SCRIPT_DIR")", see the script's own
+          # comment), matching this repo's real layout (scripts/foo.sh,
+          # repo root one level up). A flat copy would make PROJECT_ROOT
+          # resolve to /root instead of /root/kurtar, silently pointing
+          # both the backup output directory and .env.production lookup
+          # at the wrong place.
+          scp -o ServerAliveInterval=15 \
             scripts/db-migration-doctor.sh \
             scripts/backup-database.sh \
-            "root@${PROD_SERVER_HOST}:/root/kurtar/"
+            "root@${PROD_SERVER_HOST}:/root/kurtar/scripts/"
 
       - name: Migration doctor — dry run
         env:
@@ -218,8 +229,8 @@ jobs:
           ssh "root@${PROD_SERVER_HOST}" '
             set -euo pipefail
             cd /root/kurtar
-            chmod +x db-migration-doctor.sh
-            ./db-migration-doctor.sh docker-compose.prod.yml api kurtar_db_prod kurtar kurtar --dry-run
+            chmod +x scripts/db-migration-doctor.sh
+            ./scripts/db-migration-doctor.sh docker-compose.prod.yml api kurtar_db_prod kurtar kurtar --dry-run
           '
 
   # Blocking quality gate: lint + typecheck + unit + real-DB tests +
@@ -390,12 +401,20 @@ jobs:
           PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
         run: |
           set -euo pipefail
-          ssh "root@${PROD_SERVER_HOST}" 'mkdir -p /root/kurtar'
+          ssh "root@${PROD_SERVER_HOST}" 'mkdir -p /root/kurtar/scripts'
           scp -o ServerAliveInterval=15 \
             ops/docker-compose.prod.yml \
+            "root@${PROD_SERVER_HOST}:/root/kurtar/"
+          # scripts/ nested under /root/kurtar/scripts, not flat — see the
+          # pre-check job's identical shipping step for why (backup-
+          # database.sh derives its project root as the parent of its own
+          # directory, matching this repo's real scripts/ layout; a flat
+          # copy would silently break both its backup output path and its
+          # .env.production lookup).
+          scp -o ServerAliveInterval=15 \
             scripts/db-migration-doctor.sh \
             scripts/backup-database.sh \
-            "root@${PROD_SERVER_HOST}:/root/kurtar/"
+            "root@${PROD_SERVER_HOST}:/root/kurtar/scripts/"
           # Atomic swap: land at a sibling .new path, then rename in
           # place — a network blip mid-scp never leaves a truncated
           # .env.production for compose to read on the next command.
@@ -423,11 +442,25 @@ jobs:
           ssh "root@${PROD_SERVER_HOST}" '
             set -euo pipefail
             cd /root/kurtar
-            chmod +x backup-database.sh
+            chmod +x scripts/backup-database.sh
             if docker ps --format "{{.Names}}" | grep -q "^kurtar_db_prod$"; then
-              ./backup-database.sh prod
-              ls -t backups/database/backup_prod_*.sql.gz | head -n1 > .last-backup-path
-              echo "Backup recorded: $(cat .last-backup-path)"
+              ./scripts/backup-database.sh prod
+              # backup-database.sh writes under its own PROJECT_ROOT
+              # (parent of scripts/, i.e. /root/kurtar — see the shipping
+              # step above), which is this same cwd, so the glob below
+              # lines up with what it just wrote. Guarded rather than
+              # assumed: an unmatched glob makes `ls` exit non-zero, which
+              # under set -euo pipefail would otherwise abort this whole
+              # step (and, since it runs after a REAL successful backup,
+              # skip every later step including both rollback steps) even
+              # though the backup itself already succeeded.
+              if ls -t backups/database/backup_prod_*.sql.gz >/dev/null 2>&1; then
+                ls -t backups/database/backup_prod_*.sql.gz | head -n1 > .last-backup-path
+                echo "Backup recorded: $(cat .last-backup-path)"
+              else
+                echo "::warning::backup-database.sh reported success but no backup_prod_*.sql.gz file was found afterward under $(pwd)/backups/database — not recording a backup path."
+                rm -f .last-backup-path
+              fi
             else
               rm -f .last-backup-path
               echo "kurtar_db_prod not running yet (first deploy) — nothing to back up."
@@ -460,8 +493,8 @@ jobs:
           ssh "root@${PROD_SERVER_HOST}" '
             set -euo pipefail
             cd /root/kurtar
-            chmod +x db-migration-doctor.sh
-            ./db-migration-doctor.sh docker-compose.prod.yml api kurtar_db_prod kurtar kurtar
+            chmod +x scripts/db-migration-doctor.sh
+            ./scripts/db-migration-doctor.sh docker-compose.prod.yml api kurtar_db_prod kurtar kurtar
             docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --workdir /app/backend api npx prisma migrate deploy
           '
 
