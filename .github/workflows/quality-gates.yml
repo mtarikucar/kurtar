@@ -312,10 +312,36 @@ jobs:
           fi
 
           # A brand-new branch's first push reports an all-zero `before`
-          # SHA, which is not a valid ref — fall back to just the tip
-          # commit's own message in that case.
+          # SHA (not a valid ref) — and so does EVERY tag push, always,
+          # since the tag ref itself didn't exist before (this matters
+          # here: release-deploy.yml `uses:` this workflow as its own
+          # `quality` job, triggered by a `v*.*.*` tag push). Falling back
+          # to just the tip commit in that case would only re-check the
+          # one commit the tag happens to point at, silently skipping
+          # every other commit the release actually contains. Prefer the
+          # range of commits on HEAD that aren't already reachable from
+          # main instead — on a tag cut cleanly from main that range is
+          # normally empty (those commits were already scanned by this
+          # same workflow's own `push: branches: [main]` trigger when they
+          # landed); it's non-empty exactly when there's something a prior
+          # run hasn't already checked, which is exactly what's worth
+          # checking here. Only fall back to the tip-commit-only check if
+          # neither remote nor local main is resolvable at all.
           if [ -z "$base" ] || ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
-            messages=$(git log -1 --format='%H%n%B%n---' "$head")
+            range=""
+            if git rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
+              range="origin/main..${head}"
+            elif git rev-parse --verify --quiet main >/dev/null 2>&1; then
+              range="main..${head}"
+            fi
+
+            messages=""
+            if [ -n "$range" ]; then
+              messages=$(git log --format='%H%n%B%n---' "$range" 2>/dev/null || true)
+            fi
+            if [ -z "$messages" ]; then
+              messages=$(git log -1 --format='%H%n%B%n---' "$head")
+            fi
           else
             messages=$(git log --format='%H%n%B%n---' "${base}..${head}")
           fi

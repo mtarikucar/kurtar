@@ -12,6 +12,13 @@
 # app-level variable list; POSTGRES_PASSWORD is compose-only). Retention
 # for scripts/backup-database.sh staging backups is 3 days (vs 14 for
 # prod) — staging data has no long-term recovery value.
+#
+# IMAGE_TAG has no default (${IMAGE_TAG:?...}, not ${IMAGE_TAG:-current}) —
+# it must always be an explicit release version, the same tag release-
+# deploy.yml's build job actually pushed. (A prior draft of this file
+# defaulted to :current, a tag the build job never pushes — that would
+# have silently broken `docker compose pull` the first time IMAGE_TAG was
+# left unset, rather than failing loudly.)
 
 name: kurtar-staging
 
@@ -52,7 +59,7 @@ services:
       - kurtar_net_staging
 
   api:
-    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-api:${IMAGE_TAG:-current}
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-api:${IMAGE_TAG:?IMAGE_TAG is required}
     container_name: kurtar_api_staging
     restart: unless-stopped
     depends_on:

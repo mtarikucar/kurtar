@@ -311,6 +311,30 @@ jobs:
           server-host: ${{ secrets.PROD_SERVER_HOST }}
           probe: 'false'
 
+      # Recorded BEFORE anything below touches the server, so a failure
+      # partway through has something concrete to roll back to. Absent
+      # (.previous-image not written) on a genuinely first-ever deploy —
+      # the rollback steps at the end treat that as "nothing to revert
+      # to" rather than guessing.
+      - name: Capture the currently-deployed image (for rollback)
+        id: capture
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          ssh "root@${PROD_SERVER_HOST}" '
+            set -euo pipefail
+            mkdir -p /root/kurtar
+            cd /root/kurtar
+            if docker inspect --format "{{.Config.Image}}" kurtar_api_prod >/dev/null 2>&1; then
+              docker inspect --format "{{.Config.Image}}" kurtar_api_prod > .previous-image
+              echo "Captured previous image: $(cat .previous-image)"
+            else
+              rm -f .previous-image
+              echo "No previous kurtar_api_prod container found (first-ever deploy) — nothing to capture."
+            fi
+          '
+
       - name: Render .env.production
         env:
           GHCR_OWNER: ${{ github.repository_owner }}
@@ -392,6 +416,7 @@ jobs:
             'cd /root/kurtar && mv .env.production.new .env.production && ln -sf .env.production .env'
 
       - name: Backup before touching anything
+        id: backup
         env:
           PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
         run: |
@@ -401,7 +426,10 @@ jobs:
             chmod +x backup-database.sh
             if docker ps --format "{{.Names}}" | grep -q "^kurtar_db_prod$"; then
               ./backup-database.sh prod
+              ls -t backups/database/backup_prod_*.sql.gz | head -n1 > .last-backup-path
+              echo "Backup recorded: $(cat .last-backup-path)"
             else
+              rm -f .last-backup-path
               echo "kurtar_db_prod not running yet (first deploy) — nothing to back up."
             fi
           '
@@ -449,6 +477,7 @@ jobs:
           '
 
       - name: Post-deploy health probe (from the box itself)
+        id: health
         env:
           PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
         run: |
@@ -460,6 +489,77 @@ jobs:
             done
             echo "::error::api container is not answering /api/health after deploy"
             exit 1
+          '
+
+      # -------------------------------------------------------------------
+      # Rollback, in two independent parts. Only fires within THIS job (the
+      # tag-triggered `deploy` job, which never runs unless `pre-check` has
+      # already confirmed PROD_SERVER_HOST is set and reachable — so this
+      # can never target an empty/nonexistent host), and only once the
+      # pre-deploy backup has actually run (steps.capture, and — for the
+      # DB-restore note below — regardless of whether the backup itself
+      # found anything to back up).
+      #
+      # Part 1 always attempts to get the api service serving again on the
+      # previous, known-good image — that is safe to automate.
+      # Part 2 never attempts to automatically undo a database migration —
+      # that mirrors db-migration-doctor.sh's own policy of never auto-
+      # resolving to --applied; a partially-applied migration needs a
+      # human to look at it. It only surfaces exactly what an operator
+      # needs: whether migrate-deploy ran at all, and the backup file to
+      # restore from if the schema does need reverting too.
+      # -------------------------------------------------------------------
+      - name: "Rollback: revert api container to previous image"
+        if: failure() && steps.capture.conclusion == 'success' && (steps.pull.conclusion == 'failure' || steps.migrate.conclusion == 'failure' || steps.swap.conclusion == 'failure' || steps.health.conclusion == 'failure')
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          ssh "root@${PROD_SERVER_HOST}" '
+            set -euo pipefail
+            cd /root/kurtar
+            echo "::warning::Deploy failed — attempting to roll back the api container to its previous image."
+
+            if [ ! -s .previous-image ]; then
+              echo "::error::No previous image was captured (this was the first-ever deploy) — nothing to roll the api container back to. db/redis are left running; investigate manually before retrying."
+              exit 1
+            fi
+
+            prev_image=$(cat .previous-image)
+            prev_tag=${prev_image##*:}
+            echo "Reverting api service to previous image tag: ${prev_tag}"
+
+            if [ -f .env.production ]; then
+              sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${prev_tag}/" .env.production
+            fi
+
+            docker compose -f docker-compose.prod.yml --env-file .env.production up -d --force-recreate api
+
+            for i in 1 2 3 4 5; do
+              curl -fsS --max-time 10 http://127.0.0.1:4750/api/health > /dev/null && { echo "Rollback succeeded — api is healthy again on ${prev_tag}."; exit 0; }
+              sleep 5
+            done
+            echo "::error::Rolled the api container back to ${prev_tag} but it is still not answering /api/health. Manual intervention required."
+            exit 1
+          '
+
+      - name: "Rollback: surface DB restore instructions if the schema may have changed"
+        if: failure() && steps.migrate.conclusion != 'skipped' && steps.migrate.conclusion != 'cancelled'
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          set -euo pipefail
+          ssh "root@${PROD_SERVER_HOST}" '
+            set -euo pipefail
+            cd /root/kurtar
+            echo "::warning::The migrate-deploy step ran, and may have applied this release migrations, before the failure. This workflow never auto-restores the database -- reverting a partially-applied migration safely requires human judgement, matching db-migration-doctor.sh own policy of never auto-resolving to --applied."
+            if [ -s .last-backup-path ]; then
+              backup_file=$(cat .last-backup-path)
+              echo "::error::If the schema needs reverting too, restore the pre-deploy backup:"
+              echo "  gunzip -c ${backup_file} | docker exec -i kurtar_db_prod psql -U kurtar -d kurtar"
+            else
+              echo "::error::No pre-deploy backup file was recorded -- check the backup step log before assuming there is nothing to restore (this may be the first-ever deploy against an empty database)."
+            fi
           '
 
       - name: Cleanup workspace

@@ -81,14 +81,35 @@ fi
 log "Dumping '$DB_NAME' from $POSTGRES_CONTAINER as user '$DB_USER'"
 log "Target: $BACKUP_FILE"
 
-# pg_dump in stream mode -> gzip -> file. The PIPESTATUS check below
-# catches the case where pg_dump fails but gzip succeeds writing an
-# empty (or partial) stream.
+# pg_dump in stream mode -> gzip -> file.
+#
+# -e is disabled for just the pipeline itself: under `set -e`, a failing
+# pg_dump makes the whole pipeline's exit status non-zero (pipefail is
+# on), which would abort the script on this line via -e BEFORE the
+# PIPESTATUS checks below ever run — skipping both the diagnostic and the
+# `rm -f` cleanup, and leaving a corrupt partial .sql.gz on disk.
+#
+# PIPESTATUS itself is captured into a plain array (`pipe_status=(...)`)
+# in the SAME statement, not read field-by-field across two separate
+# `dump_rc=${PIPESTATUS[0]}` / `gzip_rc=${PIPESTATUS[1]}` assignments —
+# PIPESTATUS reflects only the most recently completed pipeline, and a
+# bare variable assignment is itself a (trivial, one-element) pipeline in
+# bash's grammar, so the FIRST such assignment would already overwrite
+# PIPESTATUS before the second one ever reads index 1 (fails hard with
+# "PIPESTATUS[1]: unbound variable" under `set -u`, which is on here).
+#
+# -e is re-enabled once both exit codes are safely captured in
+# pipe_status; the explicit `exit 1` below still aborts the script (and
+# the caller's deploy) exactly as before, once cleanup has actually run.
+set +e
 docker exec "$POSTGRES_CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" \
   | gzip -c > "$BACKUP_FILE"
+pipe_status=("${PIPESTATUS[@]}")
+set -e
 
-dump_rc=${PIPESTATUS[0]}
-gzip_rc=${PIPESTATUS[1]}
+dump_rc=${pipe_status[0]}
+gzip_rc=${pipe_status[1]}
+
 if [ "$dump_rc" -ne 0 ] || [ "$gzip_rc" -ne 0 ]; then
   err "Pipeline failed: pg_dump=$dump_rc gzip=$gzip_rc"
   rm -f "$BACKUP_FILE"

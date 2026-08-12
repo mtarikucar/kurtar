@@ -24,6 +24,13 @@
 #   KURTAR_API_PORT, NODE_ENV=production, JWT_SECRET, WEBHOOK_SECRET,
 #   SMS_PROVIDER (+ its credential set), PAYMENT_PROVIDER.
 #
+# IMAGE_TAG has no default (${IMAGE_TAG:?...}, not ${IMAGE_TAG:-latest}) —
+# it must always be an explicit release version (e.g. v0.3.0), the same
+# tag release-deploy.yml's build job actually pushed. A silent :latest/
+# :current fallback here would let `docker compose pull` succeed against
+# whatever happens to be sitting under that mutable tag instead of failing
+# loudly when the caller forgot to set IMAGE_TAG.
+#
 # Migrations are NOT run automatically on container start (see
 # scripts/db-migration-doctor.sh) — the deploy workflow runs
 # `prisma migrate deploy` against the freshly-pulled image as a one-off
@@ -72,7 +79,7 @@ services:
       - kurtar_net_prod
 
   api:
-    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-api:${IMAGE_TAG:-latest}
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-api:${IMAGE_TAG:?IMAGE_TAG is required}
     container_name: kurtar_api_prod
     restart: unless-stopped
     depends_on:
