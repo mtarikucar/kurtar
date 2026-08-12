@@ -33,6 +33,29 @@ const REFRESH_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
 const REFRESH_COOKIE = "refreshToken";
 const REFRESH_COOKIE_PATH = "/api/auth";
 
+/**
+ * A web panel MUST declare cookie-only transport on every auth call
+ * (login/verify/refresh) by sending `X-Client-Transport: cookie` — this is
+ * what lets the server strip the refresh token out of the JSON response
+ * body on the calls that matter most: the INITIAL login/verify issuance,
+ * not just later /refresh rotations. (A review caught that returning the
+ * fresh 30-day refresh token in JS-readable JSON on every login response —
+ * regardless of transport — defeated the httpOnly cookie's XSS protection
+ * for exactly the token it exists to protect.) Callers that omit the
+ * header (the RN mobile app, which has no meaningful cookie jar and reads
+ * the token from SecureStore instead) get the token in the body, as
+ * before.
+ */
+const CLIENT_TRANSPORT_HEADER = "x-client-transport";
+const COOKIE_TRANSPORT_VALUE = "cookie";
+
+function wantsCookieOnlyTransport(req: Request): boolean {
+  const value = req.header(CLIENT_TRANSPORT_HEADER);
+  return (
+    typeof value === "string" && value.toLowerCase() === COOKIE_TRANSPORT_VALUE
+  );
+}
+
 function setRefreshCookie(res: Response, token: string, expiresAt: Date) {
   res.cookie(REFRESH_COOKIE, token, {
     httpOnly: true,
@@ -69,19 +92,19 @@ export class AuthController {
 
   /**
    * Sets the refresh cookie on every response (harmless for callers that
-   * ignore it) and, per the brief's dual-transport requirement, ALSO
-   * returns the raw refresh token in the JSON body for the mobile
-   * consumer app (documented target: RN SecureStore, which has no browser
-   * cookie jar) — UNLESS `stripBody` is set, which the /refresh handler
-   * uses when the caller demonstrably already authenticated via the
-   * cookie (a web-panel session): that caller's next refresh token is
-   * already in the fresh cookie, so repeating it in JS-readable JSON adds
-   * exposure for no benefit (kds's stripRefreshToken pattern).
+   * ignore it) and returns the raw refresh token in the JSON body UNLESS
+   * `stripBody` is set. Every call site below computes `stripBody` from
+   * `wantsCookieOnlyTransport(req)` — i.e. the caller's OWN declared
+   * transport, checked on every issuing endpoint (login/verify AND
+   * refresh), not inferred after the fact from whether a cookie happened
+   * to be presented. `/refresh` additionally ORs in "a cookie was actually
+   * presented this call" as a defense-in-depth fallback for a web client
+   * that, for whatever reason, didn't send the header on a later refresh.
    */
   private respond<T extends IssuedTokens>(
     res: Response,
     result: T,
-    stripBody = false,
+    stripBody: boolean,
   ) {
     setRefreshCookie(res, result.refreshToken, result.refreshTokenExpiresAt);
     return stripBody ? stripRefreshToken(result) : result;
@@ -99,13 +122,14 @@ export class AuthController {
   @Post("otp/verify")
   async verifyOtp(
     @Body() dto: OtpVerifyDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.verifyConsumerOtp(
       dto.phone,
       dto.code,
     );
-    return this.respond(res, result);
+    return this.respond(res, result, wantsCookieOnlyTransport(req));
   }
 
   @Public()
@@ -113,13 +137,14 @@ export class AuthController {
   @Post("merchant/login")
   async merchantLogin(
     @Body() dto: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.merchantLogin(
       dto.email,
       dto.password,
     );
-    return this.respond(res, result);
+    return this.respond(res, result, wantsCookieOnlyTransport(req));
   }
 
   @Public()
@@ -127,10 +152,11 @@ export class AuthController {
   @Post("admin/login")
   async adminLogin(
     @Body() dto: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.adminLogin(dto.email, dto.password);
-    return this.respond(res, result);
+    return this.respond(res, result, wantsCookieOnlyTransport(req));
   }
 
   @Public()
@@ -148,9 +174,15 @@ export class AuthController {
     }
 
     const result = await this.tokenService.refresh(token);
-    // Cookie-mode caller (web panel) — the cookie already carries the new
-    // token forward; don't also put it in the JSON body.
-    return this.respond(res, result, !!fromCookie);
+    // Strip when the caller declared cookie transport OR actually
+    // presented a cookie this call (the cookie already carries the new
+    // token forward either way; repeating it in JS-readable JSON adds
+    // exposure for no benefit — kds's stripRefreshToken pattern).
+    return this.respond(
+      res,
+      result,
+      wantsCookieOnlyTransport(req) || !!fromCookie,
+    );
   }
 
   // @Public(): logout's whole job is "revoke the presented refresh token's
