@@ -216,7 +216,7 @@ d("OffersService.publishDueScheduled — real DB", () => {
     ).toBeNull();
   }, 15_000);
 
-  it("a due SCHEDULED offer whose pickup window has already passed is skipped, not published", async () => {
+  it("a due SCHEDULED offer whose pickup window has already passed is terminalized to CANCELLED, not retried forever", async () => {
     const { offers } = buildHarness(prisma);
     const now = new Date();
 
@@ -240,13 +240,24 @@ d("OffersService.publishDueScheduled — real DB", () => {
     offerIds.push(expiredWindowOffer.id);
 
     const result = await offers.publishDueScheduled();
-    expect(result.failedCount).toBeGreaterThanOrEqual(1);
+    expect(result.expiredCount).toBeGreaterThanOrEqual(1);
 
     const final = await prisma.dailyOffer.findUniqueOrThrow({
       where: { id: expiredWindowOffer.id },
     });
-    // Left SCHEDULED — never silently published with an already-passed
-    // pickup window, and never crashes the rest of the sweep either.
-    expect(final.status).toBe("SCHEDULED");
+    // Terminalized to CANCELLED — never silently published with an
+    // already-passed pickup window, and (unlike a bare "skip and log")
+    // never crashes the rest of the sweep AND never sits SCHEDULED
+    // forever, re-selected and re-failed on every future tick.
+    expect(final.status).toBe("CANCELLED");
+
+    // Proof it's actually terminal, not just "happened to be CANCELLED
+    // this tick": a second sweep no longer selects it at all (it's not
+    // SCHEDULED anymore), so it can't be re-terminalized or counted again.
+    await offers.publishDueScheduled();
+    const stillThere = await prisma.dailyOffer.findUniqueOrThrow({
+      where: { id: expiredWindowOffer.id },
+    });
+    expect(stillThere.status).toBe("CANCELLED");
   }, 15_000);
 });

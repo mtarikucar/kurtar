@@ -55,6 +55,15 @@ function notStoreOwnerError() {
   });
 }
 
+function bagTemplateInactiveError() {
+  return new ConflictException({
+    statusCode: 409,
+    errorCode: "BAG_TEMPLATE_INACTIVE",
+    message:
+      "This bag template has been deactivated and can no longer be used for new offers.",
+  });
+}
+
 /**
  * DailyOffer lifecycle (§3 of the brief) — every status change is a
  * compound-WHERE guarded update deriving its "from" list from
@@ -96,6 +105,7 @@ export class OffersService {
     });
     if (!bagTemplate) throw bagTemplateNotFoundError();
     if (bagTemplate.store.merchantId !== merchantId) throw notStoreOwnerError();
+    if (!bagTemplate.active) throw bagTemplateInactiveError();
 
     const pickupStartAt = new Date(dto.pickupStartAt);
     const pickupEndAt = new Date(dto.pickupEndAt);
@@ -206,14 +216,26 @@ export class OffersService {
 
   /**
    * Called every minute by OffersPublishSchedulerService. Best-effort,
-   * per-offer: one offer failing to publish (e.g. its window slipped into
-   * the past between being scheduled and the cron catching up) is logged
-   * and skipped, never aborting the rest of the sweep — same philosophy as
-   * PaymentsSweeperService.sweepStaleIntents.
+   * per-offer: one offer failing to publish is logged and skipped, never
+   * aborting the rest of the sweep — same philosophy as
+   * PaymentsSweeperService.sweepStaleIntents. One failure mode gets more
+   * than a skip, though: an offer whose pickup window had ALREADY passed
+   * by the time its publishAt arrived (OFFER_PICKUP_WINDOW_PASSED) stays
+   * SCHEDULED forever if left alone — this same query re-selects it every
+   * single minute, forever, since nothing about "skip and log" ever
+   * changes its status. That specific case gets actively terminalized to
+   * CANCELLED (a guarded transition already valid from SCHEDULED per
+   * offer-transitions.ts — no map change needed) so it drops out of this
+   * query for good. No reservation fan-out is needed for the
+   * terminalization: a SCHEDULED offer was never PUBLISHED, and
+   * OfferStockService.claim only matches PUBLISHED offers, so it is
+   * IMPOSSIBLE for one to have any reservations against it.
    */
-  async publishDueScheduled(
-    now: Date = new Date(),
-  ): Promise<{ publishedCount: number; failedCount: number }> {
+  async publishDueScheduled(now: Date = new Date()): Promise<{
+    publishedCount: number;
+    failedCount: number;
+    expiredCount: number;
+  }> {
     const due = await this.prisma.dailyOffer.findMany({
       where: { status: "SCHEDULED", publishAt: { lte: now } },
       select: { id: true },
@@ -221,18 +243,55 @@ export class OffersService {
 
     let publishedCount = 0;
     let failedCount = 0;
+    let expiredCount = 0;
     for (const { id } of due) {
       try {
         await this.publishOffer(id);
         publishedCount++;
       } catch (err) {
+        const errorCode =
+          err instanceof ConflictException
+            ? (err.getResponse() as { errorCode?: string } | string)
+            : undefined;
+        const code =
+          typeof errorCode === "object" ? errorCode.errorCode : undefined;
+
+        if (code === "OFFER_PICKUP_WINDOW_PASSED") {
+          const terminalized = await this.terminalizeExpiredScheduled(id);
+          if (terminalized) {
+            expiredCount++;
+            this.logger.warn(
+              `Publish-scheduler: offer ${id}'s pickup window had already passed before it could be published — terminalized to CANCELLED instead of retrying forever.`,
+            );
+            continue;
+          }
+        }
+
         failedCount++;
         this.logger.warn(
           `Publish-scheduler: offer ${id} failed to publish: ${(err as Error).message}`,
         );
       }
     }
-    return { publishedCount, failedCount };
+    return { publishedCount, failedCount, expiredCount };
+  }
+
+  /**
+   * Guarded SCHEDULED -> CANCELLED transition for an offer whose window
+   * expired before it ever got published. No offer.cancelled.v1 outbox
+   * row here: that event exists for cancellations that might have
+   * affected live reservations/refunds (see cancelOne below); this one
+   * provably never had any, so there is nothing downstream to reconcile.
+   */
+  private async terminalizeExpiredScheduled(offerId: string): Promise<boolean> {
+    const updated = await this.prisma.dailyOffer.updateMany({
+      where: {
+        id: offerId,
+        status: { in: allowedFromStatusesFor("CANCELLED") },
+      },
+      data: { status: "CANCELLED" },
+    });
+    return updated.count > 0;
   }
 
   async schedule(merchantId: string, offerId: string, dto: ScheduleOfferDto) {

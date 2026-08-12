@@ -10,6 +10,7 @@ import { TokenService } from "./services/token.service";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { ActorsGuard } from "./guards/actors.guard";
+import { MerchantApprovalGuard } from "./guards/merchant-approval.guard";
 
 @Module({
   imports: [
@@ -32,12 +33,16 @@ import { ActorsGuard } from "./guards/actors.guard";
     TokenService,
     JwtStrategy,
     // Global auth pipeline: every route requires a valid access token
-    // unless annotated @Public(); ActorsGuard then narrows by @Actors().
-    // Registration order matters — Nest runs APP_GUARDs in the order
-    // they're provided, and ActorsGuard reads req.user, which JwtAuthGuard
-    // (via Passport) is what populates.
+    // unless annotated @Public(); ActorsGuard then narrows by @Actors();
+    // MerchantApprovalGuard then narrows MERCHANT-actor requests further
+    // to APPROVED-only unless annotated @AllowUnapprovedMerchant() (Task 5
+    // review finding — see that guard's doc comment). Registration order
+    // matters — Nest runs APP_GUARDs in the order they're provided, and
+    // both ActorsGuard and MerchantApprovalGuard read req.user, which
+    // JwtAuthGuard (via Passport) is what populates.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: ActorsGuard },
+    { provide: APP_GUARD, useClass: MerchantApprovalGuard },
   ],
   exports: [AuthService, TokenService],
 })

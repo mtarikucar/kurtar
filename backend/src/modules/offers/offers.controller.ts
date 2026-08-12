@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { Actors } from "../auth/decorators/actors.decorator";
+import { AllowUnapprovedMerchant } from "../auth/decorators/allow-unapproved-merchant.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { CreateOfferDto } from "./dto/create-offer.dto";
 import { ListOffersMineQueryDto } from "./dto/list-offers-mine-query.dto";
@@ -11,6 +12,8 @@ import { OffersService } from "./offers.service";
 export class OffersController {
   constructor(private readonly offers: OffersService) {}
 
+  // create/publish/schedule/close/cancel all require APPROVED by default —
+  // MerchantApprovalGuard.
   @Post()
   create(
     @CurrentUser("merchantId") merchantId: string,
@@ -19,7 +22,9 @@ export class OffersController {
     return this.offers.create(merchantId, dto);
   }
 
+  // Read stays available regardless of status.
   @Get("mine")
+  @AllowUnapprovedMerchant()
   listMine(
     @CurrentUser("merchantId") merchantId: string,
     @Query() query: ListOffersMineQueryDto,

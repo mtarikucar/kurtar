@@ -3,8 +3,39 @@ import { ReservationsService } from "../reservations/reservations.service";
 import { OfferStockService } from "../reservations/offer-stock.service";
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { PaymentProviderRegistry } from "../payments-core/payment-provider.registry";
+import { istanbulDateKey } from "../../common/utils/istanbul-date.util";
 import { OffersService } from "./offers.service";
 import type { CreateOfferDto } from "./dto/create-offer.dto";
+
+// Turkey has observed a single, permanent UTC+3 offset year-round since
+// September 2016 (no DST) — so an Istanbul wall-clock time converts to
+// UTC via a fixed 3-hour subtraction, no timezone library needed.
+const ISTANBUL_UTC_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Builds a pickup window safely in the MIDDLE of a future Istanbul
+ * calendar day (comfortably far from midnight in either direction), so
+ * the fixture is never flaky regardless of what wall-clock time the test
+ * actually runs at. The previous version derived offerDate via
+ * `new Date(pickupStartAt.getTime() + 3h).toISOString().slice(0,10)` —
+ * hacky arithmetic that silently picked the WRONG Istanbul calendar day
+ * whenever the suite ran within a few hours of Istanbul midnight (see
+ * offer-window.rules.ts's own doc comment for why UTC-day and
+ * Istanbul-day can differ), failing with OFFER_WINDOW_NOT_SAME_DAY.
+ */
+function fixedFutureIstanbulWindow(daysAhead: number) {
+  const targetDay = istanbulDateKey(
+    new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000),
+  );
+  const [year, month, day] = targetDay.split("-").map(Number);
+  const pickupStartAt = new Date(
+    Date.UTC(year, month - 1, day, 12, 0) - ISTANBUL_UTC_OFFSET_MS, // 12:00 Istanbul
+  );
+  const pickupEndAt = new Date(
+    Date.UTC(year, month - 1, day, 14, 0) - ISTANBUL_UTC_OFFSET_MS, // 14:00 Istanbul
+  );
+  return { offerDate: targetDay, pickupStartAt, pickupEndAt };
+}
 
 /**
  * Real-DB proof of the brief's "Unique (bagTemplateId, offerDate) surfaced
@@ -94,11 +125,11 @@ d(
         },
       });
 
-      const pickupStartAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
-      const pickupEndAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
-      const offerDate = new Date(pickupStartAt.getTime() + 3 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10); // approximates the Europe/Istanbul calendar day for this window
+      // 3 days out, mid-day Istanbul — comfortably future (never trips
+      // OFFER_WINDOW_NOT_FUTURE) and comfortably non-boundary (never trips
+      // OFFER_WINDOW_NOT_SAME_DAY), regardless of when this suite runs.
+      const { offerDate, pickupStartAt, pickupEndAt } =
+        fixedFutureIstanbulWindow(3);
 
       const dto: CreateOfferDto = {
         bagTemplateId: bagTemplate.id,

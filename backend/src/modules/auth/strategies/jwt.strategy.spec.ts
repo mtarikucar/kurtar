@@ -61,12 +61,13 @@ describe("JwtStrategy.validate", () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
-  it("returns a MERCHANT principal with merchantId + role", async () => {
+  it("returns a MERCHANT principal with merchantId + role + merchantVerificationStatus", async () => {
     const prisma = makePrisma();
     prisma.merchantUser.findUnique.mockResolvedValue({
       id: "mu1",
       merchantId: "m1",
       role: "OWNER",
+      merchant: { verificationStatus: "APPROVED" },
     });
     const strategy = new JwtStrategy(makeConfig("test-secret"), prisma as any);
 
@@ -82,7 +83,28 @@ describe("JwtStrategy.validate", () => {
       actor: "MERCHANT",
       merchantId: "m1",
       role: "OWNER",
+      merchantVerificationStatus: "APPROVED",
     });
+  });
+
+  it("reflects a SUSPENDED merchant's status on the principal (fresh per request, not baked into the JWT)", async () => {
+    const prisma = makePrisma();
+    prisma.merchantUser.findUnique.mockResolvedValue({
+      id: "mu1",
+      merchantId: "m1",
+      role: "OWNER",
+      merchant: { verificationStatus: "SUSPENDED" },
+    });
+    const strategy = new JwtStrategy(makeConfig("test-secret"), prisma as any);
+
+    const result = await strategy.validate({
+      sub: "mu1",
+      actor: "MERCHANT",
+      merchantId: "m1",
+      role: "OWNER",
+    });
+
+    expect(result.merchantVerificationStatus).toBe("SUSPENDED");
   });
 
   it("rejects a MERCHANT whose row no longer exists", async () => {

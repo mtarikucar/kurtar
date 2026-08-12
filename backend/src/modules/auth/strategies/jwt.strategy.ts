@@ -2,7 +2,7 @@ import { ExtractJwt, Strategy } from "passport-jwt";
 import { PassportStrategy } from "@nestjs/passport";
 import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { PrincipalType } from "@prisma/client";
+import { MerchantVerificationStatus, PrincipalType } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 
 export interface JwtPayload {
@@ -12,12 +12,23 @@ export interface JwtPayload {
   role?: string;
 }
 
-/** The shape `@CurrentUser()` resolves to on every authenticated request. */
+/**
+ * The shape `@CurrentUser()` resolves to on every authenticated request.
+ *
+ * `merchantVerificationStatus` is populated fresh on EVERY request (this
+ * strategy already re-reads the MerchantUser row per request; the review
+ * that added this field piggybacks on that same read rather than adding a
+ * second query) — never baked into the signed JWT itself, so a merchant
+ * suspended mid-session is blocked on their very next request, not only
+ * after their 15-minute access token expires. MerchantApprovalGuard
+ * (../guards/merchant-approval.guard.ts) is what actually enforces it.
+ */
 export interface AuthenticatedPrincipal {
   id: string;
   actor: PrincipalType;
   merchantId?: string;
   role?: string;
+  merchantVerificationStatus?: MerchantVerificationStatus;
 }
 
 @Injectable()
@@ -62,7 +73,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (payload.actor === "MERCHANT") {
       const merchantUser = await this.prisma.merchantUser.findUnique({
         where: { id: payload.sub },
-        select: { id: true, merchantId: true, role: true },
+        select: {
+          id: true,
+          merchantId: true,
+          role: true,
+          merchant: { select: { verificationStatus: true } },
+        },
       });
       if (!merchantUser) {
         throw new UnauthorizedException("Account no longer exists");
@@ -72,6 +88,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         actor: "MERCHANT",
         merchantId: merchantUser.merchantId,
         role: merchantUser.role,
+        merchantVerificationStatus: merchantUser.merchant.verificationStatus,
       };
     }
 

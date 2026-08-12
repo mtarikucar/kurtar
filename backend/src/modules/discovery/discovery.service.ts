@@ -11,6 +11,7 @@ import {
 } from "../../common/utils/istanbul-date.util";
 import { buildDiscoveryOffersCacheKey } from "./discovery-cache-key.util";
 import { DiscoveryCacheService } from "./discovery-cache.service";
+import { escapeLikePattern } from "./like-escape.util";
 import { DiscoveryMapQueryDto } from "./dto/discovery-map-query.dto";
 import { DiscoveryOffersQueryDto } from "./dto/discovery-offers-query.dto";
 
@@ -29,8 +30,18 @@ export interface DiscoveryOfferItem {
     originalValueCentsMin: number;
     originalValueCentsMax: number;
   };
-  pickupStartAt: Date;
-  pickupEndAt: Date;
+  // ISO strings, not Date — deliberately. A cache HIT round-trips through
+  // JSON.stringify/JSON.parse (discovery-cache.service.ts), which turns a
+  // Date into a string on write but never revives it back into a Date on
+  // read; a cache MISS previously kept real Date objects straight from
+  // $queryRaw. That meant the SAME field was a Date on a cache miss and a
+  // string (mistyped as Date) on a cache hit — a type that lied depending
+  // on cache state. Converting explicitly at the DB-read boundary (see
+  // queryOffers below) makes cache-hit and cache-miss produce identically
+  // shaped, honestly-typed objects; the HTTP response was always going to
+  // serialize to a string either way.
+  pickupStartAt: string;
+  pickupEndAt: string;
   qtyLeft: number;
   coverImageUrl: string | null;
 }
@@ -81,10 +92,14 @@ function parseDietFlags(diet: string | undefined): DietFlag[] | undefined {
 
 /**
  * @Public discovery surface (§4 of the brief) — PostGIS-backed nearby
- * search, a map-pin bbox query, and a store's public profile. Every SELECT
- * below names its columns explicitly and never joins the merchants table
- * at all: there is no code path here that CAN leak taxId/iban/legalName,
- * by construction, not by remembering to omit a field.
+ * search, a map-pin bbox query, and a store's public profile. The offers
+ * and map queries JOIN "merchants" (needed to filter out anything but an
+ * APPROVED merchant — see the `m."verificationStatus"` condition below,
+ * added after a review found a SUSPENDED merchant's already-published
+ * offers stayed visible/bookable indefinitely) but every SELECT list is
+ * still hand-picked and never includes a single merchant column: there is
+ * no code path here that CAN leak taxId/iban/legalName, by construction,
+ * not by remembering to omit a field.
  *
  * SQL injection discipline: every dynamic filter fragment is built with
  * Prisma.sql/Prisma.join, so every value (lat/lng, radius, category, diet
@@ -137,6 +152,14 @@ export class DiscoveryService {
       Prisma.sql`d."qtyReserved" < d."qtyTotal"`,
       Prisma.sql`d."pickupEndAt" > now()`,
       Prisma.sql`s."active" = true`,
+      Prisma.sql`bt."active" = true`,
+      // A SUSPENDED (or never-APPROVED) merchant's offers must never
+      // surface publicly — the suspend kill-switch cancels every ACTIVE
+      // offer at the moment of suspension, but that's a one-shot sweep,
+      // not a standing gate: without this filter, an offer published
+      // BEFORE suspension (or one somehow created after via a missed
+      // write-path check) would stay visible and bookable indefinitely.
+      Prisma.sql`m."verificationStatus" = 'APPROVED'`,
       Prisma.sql`ST_DWithin(s."location", ${point}, ${query.radiusM})`,
     ];
     if (query.category) {
@@ -160,7 +183,15 @@ export class DiscoveryService {
       );
     }
     if (query.q) {
-      conditions.push(Prisma.sql`bt."title" ILIKE ${`%${query.q}%`}`);
+      // escapeLikePattern neutralizes %/_ as ILIKE wildcards in the
+      // user's search term (see like-escape.util.ts) — the value itself
+      // is still a bound parameter either way (Prisma.sql), this is about
+      // LIKE PATTERN semantics, not SQL injection. ESCAPE '\' is fixed
+      // SQL text (not derived from the request), so it's safe to inline.
+      const escaped = escapeLikePattern(query.q);
+      conditions.push(
+        Prisma.sql`bt."title" ILIKE ${`%${escaped}%`} ESCAPE '\\'`,
+      );
     }
 
     const whereClause = Prisma.join(conditions, " AND ");
@@ -206,6 +237,7 @@ export class DiscoveryService {
       FROM "daily_offers" d
       JOIN "stores" s ON s."id" = d."storeId"
       JOIN "bag_templates" bt ON bt."id" = d."bagTemplateId"
+      JOIN "merchants" m ON m."id" = s."merchantId"
       WHERE ${whereClause}
       ORDER BY ST_Distance(s."location", ${point}) ASC
       LIMIT ${query.pageSize} OFFSET ${offset}
@@ -227,8 +259,8 @@ export class DiscoveryService {
         originalValueCentsMin: r.originalValueCentsMin,
         originalValueCentsMax: r.originalValueCentsMax,
       },
-      pickupStartAt: r.pickupStartAt,
-      pickupEndAt: r.pickupEndAt,
+      pickupStartAt: r.pickupStartAt.toISOString(),
+      pickupEndAt: r.pickupEndAt.toISOString(),
       qtyLeft: r.qtyLeft,
       coverImageUrl: r.coverImageUrl,
     }));
@@ -260,6 +292,10 @@ export class DiscoveryService {
       Prisma.sql`d."qtyReserved" < d."qtyTotal"`,
       Prisma.sql`d."pickupEndAt" > now()`,
       Prisma.sql`s."active" = true`,
+      Prisma.sql`bt."active" = true`,
+      // Same reasoning as queryOffers above — a SUSPENDED merchant's pins
+      // must not show up on the map either.
+      Prisma.sql`m."verificationStatus" = 'APPROVED'`,
       Prisma.sql`ST_Intersects(s."location"::geometry, ST_MakeEnvelope(${query.west}, ${query.south}, ${query.east}, ${query.north}, 4326))`,
     ];
     if (query.category) {
@@ -287,6 +323,7 @@ export class DiscoveryService {
       FROM "daily_offers" d
       JOIN "stores" s ON s."id" = d."storeId"
       JOIN "bag_templates" bt ON bt."id" = d."bagTemplateId"
+      JOIN "merchants" m ON m."id" = s."merchantId"
       WHERE ${whereClause}
       GROUP BY s."id", s."latitude", s."longitude"
     `);
@@ -301,16 +338,23 @@ export class DiscoveryService {
   }
 
   /**
-   * Public store profile — @Public, so `active: true` is part of the
+   * Public store profile — @Public, so `active: true` AND the owning
+   * merchant's `verificationStatus: 'APPROVED'` are both part of the
    * lookup itself (not a separate check after fetching): an inactive
-   * store 404s exactly like a nonexistent one, matching the "deactivating
-   * hides it from discovery" decision in stores.service.ts and avoiding
-   * leaking "this store exists but is inactive" to an unauthenticated
-   * caller.
+   * store, or a store whose merchant is DRAFT/SUSPENDED/etc., 404s exactly
+   * like a nonexistent one — matching the "deactivating hides it from
+   * discovery" decision in stores.service.ts (extended, after a review
+   * finding, to "a non-APPROVED merchant's stores are hidden too") and
+   * avoiding leaking "this store exists but is inactive/unapproved" to an
+   * unauthenticated caller.
    */
   async storeProfile(storeId: string) {
     const store = await this.prisma.store.findFirst({
-      where: { id: storeId, active: true },
+      where: {
+        id: storeId,
+        active: true,
+        merchant: { verificationStatus: "APPROVED" },
+      },
       select: {
         id: true,
         name: true,
@@ -330,12 +374,15 @@ export class DiscoveryService {
     // query builder can't express (same limitation OfferStockService's
     // raw-SQL claim/release documents) — filtered in application code
     // instead of raw SQL here since the result set is already scoped to
-    // one store on one day (small, not a raw-SQL-worthy hot path).
+    // one store on one day (small, not a raw-SQL-worthy hot path). The
+    // store-level query above already guarantees an APPROVED merchant, so
+    // only bagTemplate.active needs its own filter here.
     const rawOffers = await this.prisma.dailyOffer.findMany({
       where: {
         storeId,
         status: "PUBLISHED",
         offerDate: offerDateToDbDate(todayKey),
+        bagTemplate: { active: true },
       },
       include: {
         bagTemplate: {

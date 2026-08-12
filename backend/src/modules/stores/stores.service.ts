@@ -26,14 +26,6 @@ function notOwnerError() {
   });
 }
 
-function merchantNotApprovedError() {
-  return new ForbiddenException({
-    statusCode: 403,
-    errorCode: "MERCHANT_NOT_APPROVED",
-    message: "Only an APPROVED merchant can create stores.",
-  });
-}
-
 /**
  * Store CRUD, owner-scoped to the calling merchant (§2 of the brief).
  * Every write that touches latitude/longitude also sets the PostGIS
@@ -41,34 +33,30 @@ function merchantNotApprovedError() {
  * the Prisma write — latitude/longitude stay the source of truth for
  * display, `location` exists purely as discovery's spatial index column.
  *
+ * "Only an APPROVED merchant can write here" is enforced ONE level up, by
+ * MerchantApprovalGuard (modules/auth/guards/merchant-approval.guard.ts) —
+ * NOT re-checked here. A security review found the previous design (an
+ * ad-hoc `verificationStatus !== 'APPROVED'` check living only in this
+ * method) let a SUSPENDED merchant re-toggle `active: true` on an existing
+ * store through update() (which had no check at all) and create bag
+ * templates/offers through other services entirely — a scattered,
+ * easy-to-forget-on-the-next-surface pattern. The guard is now the single
+ * enforcement point for every MERCHANT-actor write, current and future.
+ *
  * Deactivating a store (`active: false`) hides it from every discovery
- * surface (modules/discovery filters `stores.active = true`) but does NOT
- * cancel its offers — a deliberate decision: a store might go inactive
- * for reasons unrelated to today's already-published offers (temporary
- * closure, reworking its profile), and force-cancelling live reservations
- * as a side effect of a visibility toggle would be surprising. A merchant
- * who wants offers cancelled uses POST /offers/:id/cancel explicitly.
+ * surface (modules/discovery filters `stores.active = true`, and now also
+ * `merchants.verificationStatus = 'APPROVED'`) but does NOT cancel its
+ * offers — a deliberate decision: a store might go inactive for reasons
+ * unrelated to today's already-published offers (temporary closure,
+ * reworking its profile), and force-cancelling live reservations as a
+ * side effect of a visibility toggle would be surprising. A merchant who
+ * wants offers cancelled uses POST /offers/:id/cancel explicitly.
  */
 @Injectable()
 export class StoresService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(merchantId: string, dto: CreateStoreDto): Promise<Store> {
-    const merchant = await this.prisma.merchant.findUnique({
-      where: { id: merchantId },
-      select: { verificationStatus: true },
-    });
-    if (!merchant) {
-      throw new NotFoundException({
-        statusCode: 404,
-        errorCode: "MERCHANT_NOT_FOUND",
-        message: "Merchant not found.",
-      });
-    }
-    if (merchant.verificationStatus !== "APPROVED") {
-      throw merchantNotApprovedError();
-    }
-
     validateStoreCoordinates(dto.latitude, dto.longitude);
 
     return this.prisma.$transaction(async (tx) => {

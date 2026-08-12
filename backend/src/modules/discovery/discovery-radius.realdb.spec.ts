@@ -157,6 +157,15 @@ d("DiscoveryService — real DB radius search", () => {
         tradeName: "Discovery Realdb Test Fırın",
         taxId: `DISC${Date.now()}`.slice(0, 10),
         iban: "TR330006100519786457841326",
+        // Explicit APPROVED — a review found this spec previously relied
+        // on the schema's DRAFT default (never set explicitly here) and
+        // still asserted the offers WERE visible, which meant it was
+        // silently codifying the exact hole it should have caught: nothing
+        // in discovery.service.ts filtered by merchant verificationStatus
+        // at all, so a DRAFT (or SUSPENDED) merchant's offers were just as
+        // visible as an APPROVED one's. See the dedicated
+        // "non-APPROVED merchant" test below for the negative case.
+        verificationStatus: "APPROVED",
       },
     });
     merchantId = merchant.id;
@@ -253,5 +262,113 @@ d("DiscoveryService — real DB radius search", () => {
     );
     expect(unfilteredIds).not.toContain(soldOutOffer.id);
     expect(unfilteredIds).not.toContain(closedOffer.id);
+  }, 15_000);
+
+  it("a DRAFT merchant's and a SUSPENDED merchant's PUBLISHED offers never surface, even in-radius", async () => {
+    const { service } = buildHarness(prisma);
+
+    // Self-contained fixture (own merchants/stores/offers, own cleanup at
+    // the end of this test) — deliberately NOT sharing the describe-level
+    // APPROVED merchant, since the whole point is a DIFFERENT merchant
+    // whose verificationStatus is NOT APPROVED.
+    const draftMerchant = await prisma.merchant.create({
+      data: {
+        legalName: "Draft Merchant Discovery Realdb Test",
+        tradeName: "Draft Merchant Discovery Realdb Test",
+        taxId: `DISCD${Date.now()}`.slice(0, 10),
+        iban: "TR330006100519786457841326",
+        // verificationStatus defaults to DRAFT — never approved.
+      },
+    });
+    const suspendedMerchant = await prisma.merchant.create({
+      data: {
+        legalName: "Suspended Merchant Discovery Realdb Test",
+        tradeName: "Suspended Merchant Discovery Realdb Test",
+        taxId: `DISCS${Date.now()}`.slice(0, 10),
+        iban: "TR330006100519786457841326",
+        verificationStatus: "SUSPENDED",
+      },
+    });
+
+    const draftStore = await seedStore(
+      prisma,
+      draftMerchant.id,
+      "Draft Merchant Store",
+      100,
+    );
+    const suspendedStore = await seedStore(
+      prisma,
+      suspendedMerchant.id,
+      "Suspended Merchant Store",
+      100,
+    );
+
+    const { offer: draftOffer } = await seedOffer(prisma, draftStore.id, {});
+    const { offer: suspendedOffer } = await seedOffer(
+      prisma,
+      suspendedStore.id,
+      {},
+    );
+
+    try {
+      const result = await service.searchOffers(offersQuery({ radiusM: 3000 }));
+      const ids = result.items.map((i) => i.offerId);
+
+      expect(ids).not.toContain(draftOffer.id);
+      expect(ids).not.toContain(suspendedOffer.id);
+
+      // Also prove the storeProfile surface hides them (404s), and the map
+      // surface omits their pins — both discovery entry points, not just
+      // the offers list.
+      await expect(service.storeProfile(draftStore.id)).rejects.toMatchObject({
+        response: { errorCode: "STORE_NOT_FOUND" },
+      });
+      await expect(
+        service.storeProfile(suspendedStore.id),
+      ).rejects.toMatchObject({ response: { errorCode: "STORE_NOT_FOUND" } });
+
+      const pins = await service.map({
+        west: SEARCH_LNG - 0.02,
+        south: SEARCH_LAT - 0.02,
+        east: SEARCH_LNG + 0.02,
+        north: SEARCH_LAT + 0.02,
+      } as any);
+      const pinStoreIds = pins.map((p) => p.storeId);
+      expect(pinStoreIds).not.toContain(draftStore.id);
+      expect(pinStoreIds).not.toContain(suspendedStore.id);
+    } finally {
+      await safeCleanup("dailyOffer (draft/suspended fixture)", () =>
+        prisma.dailyOffer.deleteMany({
+          where: { storeId: { in: [draftStore.id, suspendedStore.id] } },
+        }),
+      );
+      await safeCleanup("bagTemplate (draft/suspended fixture)", () =>
+        prisma.bagTemplate.deleteMany({
+          where: { storeId: { in: [draftStore.id, suspendedStore.id] } },
+        }),
+      );
+      await safeCleanup("store (draft/suspended fixture)", () =>
+        prisma.store.deleteMany({
+          where: { id: { in: [draftStore.id, suspendedStore.id] } },
+        }),
+      );
+      await safeCleanup("merchant (draft/suspended fixture)", () =>
+        prisma.merchant.deleteMany({
+          where: { id: { in: [draftMerchant.id, suspendedMerchant.id] } },
+        }),
+      );
+    }
+  }, 15_000);
+
+  it("an offer on a deactivated BagTemplate never surfaces, even if the DailyOffer row itself is PUBLISHED", async () => {
+    const { service } = buildHarness(prisma);
+    const { bagTemplate, offer } = await seedOffer(prisma, store500Id, {});
+    await prisma.bagTemplate.update({
+      where: { id: bagTemplate.id },
+      data: { active: false },
+    });
+
+    const result = await service.searchOffers(offersQuery());
+    expect(result.items.map((i) => i.offerId)).not.toContain(offer.id);
   }, 15_000);
 });

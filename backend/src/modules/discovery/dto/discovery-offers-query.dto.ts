@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
 import {
+  IsDateString,
   IsEnum,
   IsInt,
   IsLatitude,
@@ -40,12 +41,18 @@ export class DiscoveryOffersQueryDto {
   @MaxLength(200)
   diet?: string;
 
+  // @IsDateString (not @IsString) — discovery.service.ts feeds this
+  // straight into `new Date(query.pickupAfter)`. A plain @IsString let
+  // any one-character garbage value ("x") reach that constructor and
+  // produce an Invalid Date, which then threw a RangeError trying to bind
+  // it as a $queryRaw parameter — an unauthenticated 500 from a one-char
+  // query param, since this endpoint is @Public.
   @IsOptional()
-  @IsString()
+  @IsDateString()
   pickupAfter?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   pickupBefore?: string;
 
   @IsOptional()

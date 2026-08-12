@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import { Public } from "../auth/decorators/public.decorator";
 import { Actors } from "../auth/decorators/actors.decorator";
+import { AllowUnapprovedMerchant } from "../auth/decorators/allow-unapproved-merchant.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { MerchantSignupDto } from "./dto/merchant-signup.dto";
 import { MerchantSubmitDto } from "./dto/merchant-submit.dto";
@@ -22,7 +23,13 @@ export class MerchantsController {
     return this.merchants.signup(dto);
   }
 
+  // Must keep working for exactly the statuses MerchantApprovalGuard would
+  // otherwise block (DRAFT before the first submit; SUBMITTED/UNDER_REVIEW
+  // while waiting; REJECTED/SUSPENDED so the merchant can see why) — a
+  // merchant account's whole verification journey happens through this
+  // endpoint before it can ever reach APPROVED.
   @Actors("MERCHANT")
+  @AllowUnapprovedMerchant()
   @Post("me/submit")
   submit(
     @CurrentUser("merchantId") merchantId: string,
@@ -31,7 +38,11 @@ export class MerchantsController {
     return this.merchants.submit(merchantId, dto);
   }
 
+  // Always allowed regardless of status — a merchant must be able to see
+  // their own verificationStatus (including SUSPENDED/REJECTED) to know
+  // what's happening to their account.
   @Actors("MERCHANT")
+  @AllowUnapprovedMerchant()
   @Get("me")
   getMe(@CurrentUser("merchantId") merchantId: string) {
     return this.merchants.getMe(merchantId);
