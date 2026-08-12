@@ -18,8 +18,6 @@ export const OTP_LOCKOUT_DURATION_MS = 24 * 60 * 60_000; // 24h
 
 export interface OtpRequestResult {
   expiresAt: Date;
-  /** Only populated when SmsService is running the mock provider (dev). */
-  devCode?: string;
 }
 
 /**
@@ -41,12 +39,26 @@ export class OtpVerificationFailedException extends UnauthorizedException {
  * ported from kds's backend/src/modules/customers/phone-verification.service.ts
  * (hashed code, TTL, resend cooldown, attempt cap, failure lockout, atomic
  * attempt increment), adapted to kurtar's PhoneOtp schema (no tenant/session
- * scoping — kurtar has no tenants — and a single `lockedUntil` column per
- * row instead of kds's per-tenant daily-cap counters) and to the brief's
- * explicit "verify() failures must be uniform, no oracle" requirement,
- * which kds's own verifyOTP does NOT satisfy (it returns an
- * attempts-remaining count and a distinct "no active verification" vs
- * "invalid code" message — both are oracles this port deliberately closes).
+ * scoping — kurtar has no tenants) and to the brief's explicit "verify()
+ * failures must be uniform, no oracle" requirement, which kds's own
+ * verifyOTP does NOT satisfy (it returns an attempts-remaining count and a
+ * distinct "no active verification" vs "invalid code" message — both are
+ * oracles this port deliberately closes).
+ *
+ * SECURITY NOTE — the OTP code is NEVER returned by any public method here
+ * or by any HTTP response derived from them. The only place the raw code
+ * is ever visible outside the DB (as a SHA-256 hash) is a `Logger.debug`
+ * line, gated on the mock SMS provider being active — and SmsService
+ * itself refuses to boot with the mock provider in production, so that
+ * log line can never fire there. A prior version of this file also echoed
+ * the code back in `requestOtp`'s HTTP response body whenever the mock
+ * provider was active; that was a public, unauthenticated
+ * account-takeover primitive (an operator whose NODE_ENV was merely unset
+ * or misspelled — previously silently treated as "development" — would
+ * have shipped an API that handed out any phone's OTP to anyone who asked
+ * for it) and has been removed. Local/dev testing reads the code from the
+ * server log line instead (`docker compose logs` / stdout), exactly like
+ * kds's own dev-mode echo.
  */
 @Injectable()
 export class OtpService {
@@ -66,16 +78,16 @@ export class OtpService {
     const now = new Date();
     const masked = maskPhone(phoneE164);
 
-    const latest = await this.prisma.phoneOtp.findFirst({
-      where: { phoneE164 },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (latest?.lockedUntil && latest.lockedUntil > now) {
+    if (await this.isLocked(phoneE164, now)) {
       throw new BadRequestException(
         "Too many failed verification attempts on this phone. Please try again later.",
       );
     }
+
+    const latest = await this.prisma.phoneOtp.findFirst({
+      where: { phoneE164 },
+      orderBy: { createdAt: "desc" },
+    });
 
     if (
       latest &&
@@ -107,12 +119,15 @@ export class OtpService {
       this.logger.warn(`OTP SMS delivery failed for ${masked}`);
     }
 
-    const devCode = this.smsService.isMockMode() ? code : undefined;
-    if (devCode) {
-      this.logger.debug(`OTP for ${masked}: ${devCode} (dev only)`);
+    // Dev-only echo, log line ONLY — never part of the HTTP response. See
+    // the class doc for why. Unreachable in production: SmsService refuses
+    // to boot with the mock provider there, so isMockMode() can never be
+    // true in a production process.
+    if (this.smsService.isMockMode()) {
+      this.logger.debug(`OTP for ${masked}: ${code} (dev only)`);
     }
 
-    return { expiresAt, ...(devCode ? { devCode } : {}) };
+    return { expiresAt };
   }
 
   /**
@@ -127,7 +142,9 @@ export class OtpService {
   ): Promise<{ verified: true }> {
     const now = new Date();
 
-    await this.assertNotLocked(phoneE164, now);
+    if (await this.isLocked(phoneE164, now)) {
+      throw new OtpVerificationFailedException();
+    }
 
     const active = await this.prisma.phoneOtp.findFirst({
       where: { phoneE164, consumedAt: null, expiresAt: { gt: now } },
@@ -168,34 +185,90 @@ export class OtpService {
     return { verified: true };
   }
 
-  private async assertNotLocked(phoneE164: string, now: Date): Promise<void> {
-    const latest = await this.prisma.phoneOtp.findFirst({
-      where: { phoneE164 },
-      orderBy: { createdAt: "desc" },
+  /**
+   * Is this phone currently locked out? Race-free by construction against
+   * the bug a review caught in the original implementation: that version
+   * checked ONLY the newest-by-createdAt row's `lockedUntil` — but a
+   * concurrent requestOtp() can insert a brand-new row (lockedUntil: null)
+   * that becomes the new "newest" row, silently erasing an active lock
+   * (a 15-guess/day budget could balloon to ~4,300/day). This version
+   * never depends on which row is newest:
+   *
+   *  1. Fast path — scan ALL of the phone's rows (not just the latest)
+   *     for any still-unexpired `lockedUntil`. A fresh unlocked row
+   *     inserted by a racing requestOtp() cannot make an older row's
+   *     still-future `lockedUntil` disappear.
+   *  2. Fallback — recompute the burned-code count fresh (kds's
+   *     assertNotInFailureLockout pattern: never trust only a persisted
+   *     flag) so a threshold-crossing burst is caught even if no single
+   *     call's write "stuck". Anchored via windowAnchor() — see there for
+   *     why a plain rolling 24h window would otherwise re-lock a user on
+   *     their very first retry after a previous lock's expiry.
+   */
+  private async isLocked(phoneE164: string, now: Date): Promise<boolean> {
+    const activeLock = await this.prisma.phoneOtp.findFirst({
+      where: { phoneE164, lockedUntil: { gt: now } },
+      select: { id: true },
     });
-    if (latest?.lockedUntil && latest.lockedUntil > now) {
-      throw new OtpVerificationFailedException();
-    }
+    if (activeLock) return true;
+
+    const windowStart = await this.windowAnchor(phoneE164, now);
+    const burnedCount = await this.prisma.phoneOtp.count({
+      where: {
+        phoneE164,
+        consumedAt: null,
+        attemptCount: { gte: OTP_MAX_ATTEMPTS },
+        createdAt: { gte: windowStart },
+      },
+    });
+    return burnedCount >= OTP_FAILED_CODE_LOCKOUT_THRESHOLD;
   }
 
   /**
-   * After a failed verify, count how many DISTINCT codes for this phone
-   * were fully burned (attemptCount reached the max without ever being
-   * consumed) inside the failure window. Once the count reaches the
-   * threshold, lock the phone for OTP_LOCKOUT_DURATION_MS by stamping
-   * `lockedUntil` on the most-recent-by-createdAt row for the phone —
-   * assertNotLocked() always reads that same row, and no new row can be
-   * created while locked (requestOtp checks the same lock first), so it
-   * stays the authoritative "current state" row for as long as the lock
-   * is active. This only ever runs on calls that got past
-   * assertNotLocked(), i.e. while NOT yet locked, so it cannot re-extend
-   * an already-active lock into a rolling one.
+   * Anchors the burned-code counting window. Normally a plain rolling
+   * OTP_FAILURE_WINDOW_MS (24h) lookback. But once a lock has been served
+   * and expired, the codes that TRIGGERED that lock are still sitting
+   * inside a naive rolling 24h window for up to another 24h — so a
+   * legitimate user's very first retry after their lock expires would
+   * immediately push the count back over the threshold and re-lock them,
+   * indefinitely, as long as they keep retrying roughly once a day. To
+   * avoid that, once the most recent lock has expired, the window starts
+   * at that lock's expiry instead of `now - 24h` — codes that already
+   * contributed to a served-out lockout never count toward triggering a
+   * new one.
+   */
+  private async windowAnchor(phoneE164: string, now: Date): Promise<Date> {
+    const rollingWindowStart = new Date(now.getTime() - OTP_FAILURE_WINDOW_MS);
+
+    const lastExpiredLock = await this.prisma.phoneOtp.findFirst({
+      where: { phoneE164, lockedUntil: { not: null, lte: now } },
+      orderBy: { lockedUntil: "desc" },
+      select: { lockedUntil: true },
+    });
+
+    if (
+      lastExpiredLock?.lockedUntil &&
+      lastExpiredLock.lockedUntil > rollingWindowStart
+    ) {
+      return lastExpiredLock.lockedUntil;
+    }
+    return rollingWindowStart;
+  }
+
+  /**
+   * After a failed verify, recompute the burned-code count (same query
+   * `isLocked` uses) and, once it reaches the threshold, persist
+   * `lockedUntil` on the phone's most-recent row — purely as an
+   * observability/audit record (support tooling, "why is this phone
+   * locked") and as the `isLocked()` fast path's data source. The GATING
+   * decision itself never depends solely on this write having happened or
+   * "stuck" — `isLocked()` always recomputes the count independently too.
    */
   private async maybeTriggerLockout(
     phoneE164: string,
     now: Date,
   ): Promise<void> {
-    const windowStart = new Date(now.getTime() - OTP_FAILURE_WINDOW_MS);
+    const windowStart = await this.windowAnchor(phoneE164, now);
     const burnedCount = await this.prisma.phoneOtp.count({
       where: {
         phoneE164,
@@ -220,9 +293,7 @@ export class OtpService {
     });
 
     this.logger.warn(
-      `OTP failure lockout triggered for ${maskPhone(phoneE164)} (${burnedCount} burned codes in ${
-        OTP_FAILURE_WINDOW_MS / 3_600_000
-      }h)`,
+      `OTP failure lockout triggered for ${maskPhone(phoneE164)} (${burnedCount} burned codes in window)`,
     );
   }
 }
