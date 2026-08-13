@@ -162,6 +162,43 @@ jobs:
       - name: Apply migrations (migrate deploy — real SQL, not db push)
         run: npx prisma migrate deploy
 
+      # [B6] The "every migration has a down.sql" check in the
+      # migrations-parity job below only proves the FILE exists — it never
+      # proves the SQL inside it actually runs cleanly against a real,
+      # fully-migrated database. This step does: revert every migration's
+      # down.sql in reverse chronological order (undoing the `migrate
+      # deploy` above, migration by migration), drop Prisma's own
+      # `_prisma_migrations` ledger (untouched by any down.sql, by design —
+      # see the init migration's down.sql note on why it never drops
+      # postgis either), then redeploy every up from scratch. Dropping the
+      # ledger is what makes the redeploy a genuine proof rather than a
+      # no-op: with the ledger intact, `migrate deploy` would see every
+      # migration already marked "applied" and skip re-running any of them,
+      # silently leaving the database empty. Runs against the SAME service
+      # container the full suite below then reuses, so a broken down.sql
+      # fails this step loudly with a normal psql error instead of the
+      # suite failing later with a much more confusing "table does not
+      # exist".
+      - name: Migration reversibility round-trip (revert every down.sql, then redeploy)
+        run: |
+          set -euo pipefail
+          echo "Reverting every migration's down.sql, reverse chronological order..."
+          mapfile -t dirs < <(printf '%s\n' prisma/migrations/*/ | sort -r)
+          for dir in "${dirs[@]}"; do
+            name=$(basename "$dir")
+            [ "$name" = "migration_lock.toml" ] && continue
+            down="${dir}down.sql"
+            if [ -f "$down" ]; then
+              echo "  - reverting ${name}"
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$down"
+            fi
+          done
+          echo "Dropping Prisma's migration ledger so 'migrate deploy' treats this as a fresh database..."
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c 'DROP TABLE IF EXISTS "_prisma_migrations";'
+          echo "Redeploying every up migration from scratch..."
+          npx prisma migrate deploy
+          echo "Round-trip OK — every migration's down.sql is genuinely reversible."
+
       - name: Full test suite against real Postgres/PostGIS (--runInBand)
         run: npx jest --runInBand
 
@@ -235,12 +272,19 @@ jobs:
             --shadow-database-url postgresql://shadow:shadow@localhost:5433/shadow \
             --script)
 
-          # Normalise (trim blank lines/trailing whitespace) before
-          # comparing against the one allowed statement.
-          normalised=$(printf '%s\n' "$diff_out" | sed '/^[[:space:]]*$/d')
+          # Normalise (strip leading whitespace per line, drop blank lines)
+          # before comparing against the one allowed statement — the SAME
+          # transform applied to BOTH sides, so incidental indentation in
+          # either the actual diff output or this script's own $allowed
+          # heredoc can never mask a real divergence (or fail a benign
+          # one) by comparing unlike-for-like.
+          normalise() {
+            printf '%s\n' "$1" | sed 's/^[[:space:]]*//; /^[[:space:]]*$/d'
+          }
+          normalised=$(normalise "$diff_out")
           allowed='-- DropIndex
           DROP INDEX "store_location_gist";'
-          allowed_normalised=$(printf '%s\n' "$allowed" | sed 's/^[[:space:]]*//; /^[[:space:]]*$/d')
+          allowed_normalised=$(normalise "$allowed")
 
           if [ -z "$normalised" ]; then
             echo "Migrations and schema.prisma are in sync — no diff."
