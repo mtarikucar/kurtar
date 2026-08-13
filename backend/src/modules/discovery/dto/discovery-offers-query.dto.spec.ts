@@ -73,6 +73,16 @@ describe("DiscoveryOffersQueryDto", () => {
     expect(errorProperties(errors)).toContain("pageSize");
   });
 
+  it("[B3] rejects a page number above the 500 cap (unbounded-OFFSET guard)", async () => {
+    const errors = await validateQuery({ ...validBase, page: "999999" });
+    expect(errorProperties(errors)).toContain("page");
+  });
+
+  it("[B3] accepts page at exactly the 500 cap", async () => {
+    const errors = await validateQuery({ ...validBase, page: "500" });
+    expect(errors).toHaveLength(0);
+  });
+
   it("rejects an invalid category enum value", async () => {
     const errors = await validateQuery({
       ...validBase,

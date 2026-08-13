@@ -78,6 +78,11 @@ async function seedMerchantStoreTemplate(
       tradeName: "Realdb Webhook Test Firin",
       taxId: `RDBW${Date.now()}`,
       iban: "TR000006701000000000000003",
+      // Explicit APPROVED — this suite drives reservations.create() (the
+      // atomic claim), which since [M1] requires the offer's owning
+      // merchant to be APPROVED. See reservations.realdb.spec.ts's
+      // identical fixture comment for the full rationale.
+      verificationStatus: "APPROVED",
     },
   });
   const store = await prisma.store.create({

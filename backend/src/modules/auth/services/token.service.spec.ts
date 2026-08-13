@@ -38,6 +38,54 @@ function makePrisma() {
   };
 }
 
+describe("TokenService — [B5] JWT_REFRESH_EXPIRES_IN boot validation", () => {
+  it("refuses to construct with a malformed JWT_REFRESH_EXPIRES_IN instead of only failing lazily at first login/refresh", () => {
+    expect(
+      () =>
+        new TokenService(
+          makePrisma() as any,
+          makeJwt() as any,
+          makeConfig({ JWT_REFRESH_EXPIRES_IN: "30days" }),
+        ),
+    ).toThrow(/Invalid duration "30days"/);
+  });
+
+  it("refuses to construct with an empty-unit malformed value", () => {
+    expect(
+      () =>
+        new TokenService(
+          makePrisma() as any,
+          makeJwt() as any,
+          makeConfig({ JWT_REFRESH_EXPIRES_IN: "notaduration" }),
+        ),
+    ).toThrow(/Invalid duration/);
+  });
+
+  it("constructs successfully with a valid JWT_REFRESH_EXPIRES_IN", () => {
+    expect(
+      () =>
+        new TokenService(
+          makePrisma() as any,
+          makeJwt() as any,
+          makeConfig({ JWT_REFRESH_EXPIRES_IN: "45d" }),
+        ),
+    ).not.toThrow();
+  });
+
+  it("constructs successfully when JWT_REFRESH_EXPIRES_IN is unset (falls back to the 30d default)", () => {
+    expect(
+      () =>
+        new TokenService(
+          makePrisma() as any,
+          makeJwt() as any,
+          makeConfig({
+            JWT_REFRESH_EXPIRES_IN: undefined as unknown as string,
+          }),
+        ),
+    ).not.toThrow();
+  });
+});
+
 describe("TokenService.hashToken", () => {
   it("produces the sha256 hex of the input", () => {
     const svc = new TokenService(

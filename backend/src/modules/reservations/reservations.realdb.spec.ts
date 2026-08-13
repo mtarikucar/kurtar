@@ -65,6 +65,13 @@ async function seedMerchantStoreTemplate(
       tradeName: "Realdb Test Firin",
       taxId: `RDB${Date.now()}`,
       iban: "TR000006701000000000000002",
+      // Explicit APPROVED — since [M1] the atomic claim
+      // (OfferStockService.claim) requires the offer's owning merchant to
+      // be APPROVED, so this suite's every service.create() call would
+      // otherwise fail OFFER_UNAVAILABLE against the schema's DRAFT
+      // default. Mirrors discovery-radius.realdb.spec.ts's identical
+      // fixture-hygiene fix for the same reason on the read side.
+      verificationStatus: "APPROVED",
     },
   });
   const store = await prisma.store.create({
@@ -404,6 +411,158 @@ d("ReservationsService — real DB concurrency", () => {
       expect(codeSpy).toHaveBeenCalledTimes(2);
     } finally {
       codeSpy.mockRestore();
+    }
+  }, 15_000);
+
+  it("[M1] a SUSPENDED merchant's and a DRAFT merchant's PUBLISHED offer cannot be reserved even with a valid offerId — the same uniform OFFER_UNAVAILABLE error as sold-out, no stock claimed; an APPROVED merchant's offer still can be", async () => {
+    const { service } = buildReservationsHarness(prisma);
+    const pickupStartAt = new Date(Date.now() + 6 * 60 * 60 * 1000);
+    const pickupEndAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
+
+    // Self-contained fixtures (own merchants/stores/offers, own cleanup at
+    // the end of this test) — the whole point is a merchant whose
+    // verificationStatus is NOT APPROVED, unlike the describe-level
+    // fixture used by every other test in this file.
+    const suspendedMerchant = await prisma.merchant.create({
+      data: {
+        legalName: "Suspended Merchant Reservations Realdb Test",
+        tradeName: "Suspended Merchant Reservations Realdb Test",
+        taxId: `RESVS${Date.now()}`.slice(0, 10),
+        iban: "TR330006100519786457841326",
+        verificationStatus: "SUSPENDED",
+      },
+    });
+    const draftMerchant = await prisma.merchant.create({
+      data: {
+        legalName: "Draft Merchant Reservations Realdb Test",
+        tradeName: "Draft Merchant Reservations Realdb Test",
+        taxId: `RESVD${Date.now()}`.slice(0, 10),
+        iban: "TR330006100519786457841326",
+        // verificationStatus defaults to DRAFT — never approved.
+      },
+    });
+
+    const suspendedStore = await prisma.store.create({
+      data: {
+        merchantId: suspendedMerchant.id,
+        name: "Suspended Merchant Store",
+        address: "Test Sk. No:5",
+        district: "Kadikoy",
+        city: "Istanbul",
+        latitude: 40.96,
+        longitude: 29.0,
+      },
+    });
+    const draftStore = await prisma.store.create({
+      data: {
+        merchantId: draftMerchant.id,
+        name: "Draft Merchant Store",
+        address: "Test Sk. No:6",
+        district: "Kadikoy",
+        city: "Istanbul",
+        latitude: 40.95,
+        longitude: 29.0,
+      },
+    });
+
+    const suspendedBagTemplate = await createBagTemplate(
+      prisma,
+      suspendedStore.id,
+      5000,
+    );
+    const draftBagTemplate = await createBagTemplate(
+      prisma,
+      draftStore.id,
+      5000,
+    );
+
+    const suspendedOffer = await seedOffer(
+      prisma,
+      suspendedBagTemplate.id,
+      suspendedStore.id,
+      5,
+      pickupStartAt,
+      pickupEndAt,
+    );
+    const draftOffer = await seedOffer(
+      prisma,
+      draftBagTemplate.id,
+      draftStore.id,
+      5,
+      pickupStartAt,
+      pickupEndAt,
+    );
+    // A fresh APPROVED-merchant offer as the positive control, proving
+    // this isn't a blanket regression — only non-APPROVED merchants are
+    // blocked.
+    const approvedBagTemplate = await createBagTemplate(prisma, storeId, 5000);
+    const approvedOffer = await seedOffer(
+      prisma,
+      approvedBagTemplate.id,
+      storeId,
+      5,
+      pickupStartAt,
+      pickupEndAt,
+    );
+
+    const [userSuspended, userDraft, userApproved] = await seedUsers(prisma, 3);
+
+    try {
+      await expect(
+        service.create(userSuspended.id, suspendedOffer.id, 1),
+      ).rejects.toMatchObject({
+        response: { errorCode: "OFFER_UNAVAILABLE" },
+      });
+      await expect(
+        service.create(userDraft.id, draftOffer.id, 1),
+      ).rejects.toMatchObject({
+        response: { errorCode: "OFFER_UNAVAILABLE" },
+      });
+
+      // No stock was claimed for either blocked offer — the claim's WHERE
+      // clause matched 0 rows, it never even touched qtyReserved.
+      const finalSuspendedOffer = await prisma.dailyOffer.findUniqueOrThrow({
+        where: { id: suspendedOffer.id },
+      });
+      expect(finalSuspendedOffer.qtyReserved).toBe(0);
+      const finalDraftOffer = await prisma.dailyOffer.findUniqueOrThrow({
+        where: { id: draftOffer.id },
+      });
+      expect(finalDraftOffer.qtyReserved).toBe(0);
+
+      // Positive control: an APPROVED merchant's otherwise-identical offer
+      // reserves normally.
+      const approvedResult = await service.create(
+        userApproved.id,
+        approvedOffer.id,
+        1,
+      );
+      expect(approvedResult.reservationId).toBeDefined();
+      const finalApprovedOffer = await prisma.dailyOffer.findUniqueOrThrow({
+        where: { id: approvedOffer.id },
+      });
+      expect(finalApprovedOffer.qtyReserved).toBe(1);
+    } finally {
+      await safeCleanup("dailyOffer (M1 fixture)", () =>
+        prisma.dailyOffer.deleteMany({
+          where: { storeId: { in: [suspendedStore.id, draftStore.id] } },
+        }),
+      );
+      await safeCleanup("bagTemplate (M1 fixture)", () =>
+        prisma.bagTemplate.deleteMany({
+          where: { storeId: { in: [suspendedStore.id, draftStore.id] } },
+        }),
+      );
+      await safeCleanup("store (M1 fixture)", () =>
+        prisma.store.deleteMany({
+          where: { id: { in: [suspendedStore.id, draftStore.id] } },
+        }),
+      );
+      await safeCleanup("merchant (M1 fixture)", () =>
+        prisma.merchant.deleteMany({
+          where: { id: { in: [suspendedMerchant.id, draftMerchant.id] } },
+        }),
+      );
     }
   }, 15_000);
 });

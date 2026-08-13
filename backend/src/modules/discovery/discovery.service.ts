@@ -18,6 +18,19 @@ import { DiscoveryOffersQueryDto } from "./dto/discovery-offers-query.dto";
 const OFFERS_CACHE_TTL_SECONDS = 45;
 // "reject boxes larger than ~1 degree²" per the brief.
 const MAX_BBOX_AREA_DEG2 = 1;
+// Per-side span cap, IN ADDITION TO the area cap above — area alone lets a
+// degenerate strip through (e.g. 0.001° east-west × 180° north-south is
+// under 1 deg² by area but spans nearly every latitude on Earth). Bounding
+// each side independently closes that regardless of the other side's
+// extent. ~1.5° is comfortably wider than any single legitimate map
+// viewport (roughly 165km at the equator) while still rejecting a
+// pole-to-pole or round-the-globe sliver.
+const MAX_BBOX_SPAN_DEG = 1.5;
+// Hard cap on rows the map() query can ever return, independent of bbox
+// size — a legitimately-sized-but-dense box (a packed city center) could
+// still return an unbounded number of store pins otherwise, on a @Public,
+// uncached endpoint.
+const MAP_PINS_LIMIT = 500;
 
 export interface DiscoveryOfferItem {
   offerId: string;
@@ -278,7 +291,20 @@ export class DiscoveryService {
         message: "west must be < east and south must be < north.",
       });
     }
-    const area = (query.east - query.west) * (query.north - query.south);
+    const width = query.east - query.west;
+    const height = query.north - query.south;
+    // Per-side span check FIRST, and independent of the area check below —
+    // a degenerate strip (very narrow one way, very tall/wide the other)
+    // can have a small AREA while still spanning an enormous range on one
+    // axis. See MAX_BBOX_SPAN_DEG's doc comment.
+    if (width > MAX_BBOX_SPAN_DEG || height > MAX_BBOX_SPAN_DEG) {
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: "DISCOVERY_BBOX_TOO_LARGE",
+        message: `Bounding box span (width ${width.toFixed(2)}°, height ${height.toFixed(2)}°) exceeds the ${MAX_BBOX_SPAN_DEG}° per-side limit — zoom in and try again.`,
+      });
+    }
+    const area = width * height;
     if (area > MAX_BBOX_AREA_DEG2) {
       throw new BadRequestException({
         statusCode: 400,
@@ -326,6 +352,8 @@ export class DiscoveryService {
       JOIN "merchants" m ON m."id" = s."merchantId"
       WHERE ${whereClause}
       GROUP BY s."id", s."latitude", s."longitude"
+      ORDER BY s."id"
+      LIMIT ${MAP_PINS_LIMIT}
     `);
 
     return rows.map((r) => ({

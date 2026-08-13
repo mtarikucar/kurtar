@@ -62,11 +62,28 @@ type StoredRefreshRow = {
  */
 @Injectable()
 export class TokenService {
+  // [B5] Parsed and validated ONCE, here in the constructor, rather than
+  // lazily inside refreshTtlMs() on every issueTokens()/refresh() call.
+  // parseDurationMs's regex only accepts e.g. "15m"/"30d" — before this
+  // fix, a malformed JWT_REFRESH_EXPIRES_IN (e.g. "30days") booted the app
+  // successfully and only threw the very first time a user logged in or
+  // refreshed, turning a config typo into a 500 discovered by a real user
+  // instead of a boot-time failure. Nest instantiates every provider
+  // during bootstrap, so throwing here — like JwtStrategy's own
+  // constructor check on JWT_SECRET — refuses to boot with a clear
+  // message instead.
+  private readonly refreshTtlMsCached: number;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-  ) {}
+  ) {
+    const raw =
+      this.configService.get<string>("JWT_REFRESH_EXPIRES_IN") ||
+      DEFAULT_REFRESH_TTL;
+    this.refreshTtlMsCached = parseDurationMs(raw);
+  }
 
   hashToken(token: string): string {
     return createHash("sha256").update(token).digest("hex");
@@ -89,10 +106,7 @@ export class TokenService {
   }
 
   private refreshTtlMs(): number {
-    const raw =
-      this.configService.get<string>("JWT_REFRESH_EXPIRES_IN") ||
-      DEFAULT_REFRESH_TTL;
-    return parseDurationMs(raw);
+    return this.refreshTtlMsCached;
   }
 
   private principalFkColumns(principal: AuthPrincipal) {

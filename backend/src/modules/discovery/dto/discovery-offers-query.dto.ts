@@ -60,10 +60,16 @@ export class DiscoveryOffersQueryDto {
   @MaxLength(200)
   q?: string;
 
+  // @Max(500) — without an upper bound, page feeds an unbounded OFFSET
+  // straight into queryOffers's raw SQL (offset = (page - 1) * pageSize);
+  // an arbitrarily large page number costs Postgres real work scanning and
+  // discarding rows before it can even determine there's nothing left to
+  // return, on a @Public, unauthenticated endpoint.
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(500)
   page: number = 1;
 
   @IsOptional()

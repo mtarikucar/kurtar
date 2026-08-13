@@ -27,7 +27,7 @@ describe("env.validation — NODE_ENV enumeration (fail-fast)", () => {
     },
   );
 
-  it("accepts NODE_ENV=production when DATABASE_URL/REDIS_URL/WEBHOOK_SECRET are set and a non-mock PAYMENT_PROVIDER is configured", () => {
+  it("accepts NODE_ENV=production when DATABASE_URL/REDIS_URL/WEBHOOK_SECRET/JWT_SECRET are set and a non-mock PAYMENT_PROVIDER is configured", () => {
     // Task 4 additionally requires a real (non-mock) PAYMENT_PROVIDER and
     // WEBHOOK_SECRET in production — see the dedicated describe blocks
     // below. "iyzico" is not implemented yet (PaymentProviderRegistry.get()
@@ -40,20 +40,21 @@ describe("env.validation — NODE_ENV enumeration (fail-fast)", () => {
         DATABASE_URL: "postgresql://x",
         REDIS_URL: "redis://x",
         WEBHOOK_SECRET: "prod-webhook-secret",
+        JWT_SECRET: "prod-jwt-secret",
         PAYMENT_PROVIDER: "iyzico",
       }),
     ).not.toThrow();
   });
 });
 
-describe("env.validation — DATABASE_URL/REDIS_URL/WEBHOOK_SECRET production requirement", () => {
+describe("env.validation — DATABASE_URL/REDIS_URL/WEBHOOK_SECRET/JWT_SECRET production requirement", () => {
   const warnSpy = jest.spyOn(console, "warn").mockImplementation();
   afterEach(() => warnSpy.mockClear());
   afterAll(() => warnSpy.mockRestore());
 
-  it("refuses to boot in production without DATABASE_URL/REDIS_URL/WEBHOOK_SECRET", () => {
+  it("refuses to boot in production without DATABASE_URL/REDIS_URL/WEBHOOK_SECRET/JWT_SECRET", () => {
     expect(() => validate({ NODE_ENV: "production" })).toThrow(
-      /missing required environment variable\(s\) in production: DATABASE_URL, REDIS_URL, WEBHOOK_SECRET/,
+      /missing required environment variable\(s\) in production: DATABASE_URL, REDIS_URL, WEBHOOK_SECRET, JWT_SECRET/,
     );
   });
 
@@ -63,13 +64,27 @@ describe("env.validation — DATABASE_URL/REDIS_URL/WEBHOOK_SECRET production re
         NODE_ENV: "production",
         DATABASE_URL: "postgresql://x",
         REDIS_URL: "redis://x",
+        JWT_SECRET: "prod-jwt-secret",
       }),
     ).toThrow(
       /missing required environment variable\(s\) in production: WEBHOOK_SECRET/,
     );
   });
 
-  it("warns but does not throw in development without DATABASE_URL/REDIS_URL/WEBHOOK_SECRET", () => {
+  it("[B4] refuses to boot in production with every other required var set but JWT_SECRET missing — the same belt-and-suspenders enforcement WEBHOOK_SECRET gets, not left solely to JwtStrategy's own constructor check", () => {
+    expect(() =>
+      validate({
+        NODE_ENV: "production",
+        DATABASE_URL: "postgresql://x",
+        REDIS_URL: "redis://x",
+        WEBHOOK_SECRET: "prod-webhook-secret",
+      }),
+    ).toThrow(
+      /missing required environment variable\(s\) in production: JWT_SECRET/,
+    );
+  });
+
+  it("warns but does not throw in development without DATABASE_URL/REDIS_URL/WEBHOOK_SECRET/JWT_SECRET", () => {
     expect(() => validate({ NODE_ENV: "development" })).not.toThrow();
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("DATABASE_URL"),
@@ -77,6 +92,7 @@ describe("env.validation — DATABASE_URL/REDIS_URL/WEBHOOK_SECRET production re
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("WEBHOOK_SECRET"),
     );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("JWT_SECRET"));
   });
 });
 
@@ -105,6 +121,7 @@ describe("env.validation — PAYMENT_PROVIDER enumeration + prod-mock refusal (T
       DATABASE_URL: "postgresql://x",
       REDIS_URL: "redis://x",
       WEBHOOK_SECRET: "prod-webhook-secret",
+      JWT_SECRET: "prod-jwt-secret",
     };
     expect(() => validate({ ...base })).toThrow(
       /PAYMENT_PROVIDER=mock \(or unset\) is not allowed in production/,

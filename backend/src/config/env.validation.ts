@@ -49,6 +49,17 @@
  *    JWT_SECRET) — this is the primary, intentional enforcement point;
  *    that one is defense in depth for dev/test, where this loop doesn't
  *    apply.
+ *  - JWT_SECRET is likewise added to REQUIRED_IN_PRODUCTION, for the exact
+ *    same belt-and-suspenders reason WEBHOOK_SECRET was: JwtStrategy's own
+ *    constructor (modules/auth/strategies/jwt.strategy.ts) already throws
+ *    unconditionally, in every environment, when it's missing — that check
+ *    stays exactly as it is, it's the right unconditional guard for a
+ *    secret with no legitimate "acceptable to run without it" mode. This
+ *    loop's copy gives a SECOND, environment-aware boot-failure surface
+ *    with a message that's explicit about production being the reason,
+ *    consistent with every other secret this function enforces, rather
+ *    than JWT_SECRET being the one exception enforced only by a different
+ *    module's constructor.
  */
 
 export const VALID_NODE_ENVS = [
@@ -63,6 +74,7 @@ const REQUIRED_IN_PRODUCTION = [
   "DATABASE_URL",
   "REDIS_URL",
   "WEBHOOK_SECRET",
+  "JWT_SECRET",
 ] as const;
 
 export const VALID_PAYMENT_PROVIDERS = ["mock", "iyzico", "paytr"] as const;

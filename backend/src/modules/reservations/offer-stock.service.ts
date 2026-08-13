@@ -25,12 +25,30 @@ type TxClient = Prisma.TransactionClient;
 export class OfferStockService {
   /**
    * Claims `qty` units. Only matches a PUBLISHED offer with enough
-   * remaining room; flips the offer to SOLD_OUT in the same statement
-   * when this claim exactly fills it. Returns true iff the claim
-   * succeeded (a genuine business "sold out" — insufficient room, offer
-   * not published, or a nonexistent id — all collapse to `false`; the
-   * caller is responsible for turning that into the uniform
-   * OFFER_UNAVAILABLE error).
+   * remaining room ON A STORE OWNED BY A CURRENTLY-APPROVED MERCHANT;
+   * flips the offer to SOLD_OUT in the same statement when this claim
+   * exactly fills it. Returns true iff the claim succeeded (a genuine
+   * business "sold out" — insufficient room, offer not published, a
+   * nonexistent id, or a non-APPROVED merchant — all collapse to `false`;
+   * the caller is responsible for turning that into the uniform
+   * OFFER_UNAVAILABLE error, so a probing caller can never distinguish
+   * "sold out" from "this merchant is suspended").
+   *
+   * The merchant-approval EXISTS subquery closes the same hole
+   * discovery.service.ts's `m."verificationStatus" = 'APPROVED'` filter
+   * closes for reads (see that file's doc comment): the suspend
+   * kill-switch (modules/merchants -> ReservationsService.cancelAllForOffer)
+   * is a one-shot best-effort sweep over that merchant's ACTIVE offers at
+   * the moment of suspension — if any single offer's cancel faults, or the
+   * process crashes mid-sweep, that one offer is left PUBLISHED with no
+   * further attempt to fix it. Without a standing gate HERE, at the actual
+   * money-taking statement, that leftover PUBLISHED row would stay
+   * directly bookable by anyone who already holds its offerId, indefinitely
+   * — discovery no longer surfaces it, but nothing stops a direct
+   * POST /reservations against a known id. The subquery re-reads the
+   * merchant's LIVE verificationStatus at UPDATE time (same EvalPlanQual
+   * reasoning as the rest of this WHERE clause), so it can never claim
+   * against a stale "was approved when the offer was published" snapshot.
    */
   async claim(tx: TxClient, offerId: string, qty: number): Promise<boolean> {
     const affected = await tx.$executeRaw`
@@ -44,6 +62,13 @@ export class OfferStockService {
       WHERE "id" = ${offerId}
         AND "status" = 'PUBLISHED'
         AND "qtyReserved" + ${qty} <= "qtyTotal"
+        AND EXISTS (
+          SELECT 1
+          FROM "stores" s
+          JOIN "merchants" m ON m."id" = s."merchantId"
+          WHERE s."id" = "daily_offers"."storeId"
+            AND m."verificationStatus" = 'APPROVED'
+        )
     `;
     return affected === 1;
   }

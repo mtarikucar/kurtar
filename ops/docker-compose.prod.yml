@@ -60,9 +60,15 @@ services:
     networks:
       - kurtar_net_prod
 
-  # Distributed rate-limit backing store for ThrottlerModule (see
-  # backend/src/common/config/throttler.config.ts) — no persistence
-  # needed, these are short-TTL counters only.
+  # Backs the discovery offers-list cache (discovery-cache.service.ts) and
+  # future Redis-backed features. NOT currently wired to ThrottlerModule
+  # (app.module.ts's `ThrottlerModule.forRoot(THROTTLER_PROFILES)` uses no
+  # `storage` option, so rate-limit counters are in-memory, per-process —
+  # correct for Wave 1's single-api-container topology, but note for
+  # whoever scales the api service past one replica: each replica would
+  # then enforce its own independent limit rather than sharing one, and a
+  # Redis-backed ThrottlerModule storage adapter would need to be wired in
+  # at that point).
   redis:
     image: redis:7-alpine
     container_name: kurtar_redis_prod
