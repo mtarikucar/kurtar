@@ -204,6 +204,17 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // [Task 7] Last known device location, written by POST /api/me/location —
+  // powers the offer.published.v1 nearby-fan-out radius query
+  // (ST_DWithin against stores.location). All three are nullable and only
+  // ever set together (application layer always writes them as a triple);
+  // a user who has never granted location permission simply never
+  // qualifies for nearby-radius notifications regardless of their
+  // nearbyEnabled preference.
+  lastLat        Float?
+  lastLng        Float?
+  lastLocationAt DateTime?
+
   refreshTokens    RefreshToken[]
   pushTokens       PushToken[]
   notificationPref NotificationPreference?
@@ -575,6 +586,12 @@ model Reservation {
   // Soft reference to the merchant staff account that redeemed the pickup —
   // intentionally not a foreign key, matching the brief.
   redeemedByMerchantUserId String?
+  // [Task 7] Set the moment the pickup-reminder cron actually pushes this
+  // reservation's consumer — guards against double-sending on the next
+  // 5-minute tick, the same "write a sentinel column in the same guarded
+  // update that decides to act" pattern publishedAt/redeemedAt use
+  // elsewhere in this file.
+  pickupReminderSentAt    DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -857,10 +874,27 @@ model OutboxEvent {
   // Full event body; consumers parse this against the event contract.
   payload Json
 
-  // Idempotency key emitted by the producer; consumers dedupe on this.
-  idempotencyKey String
+  // [Task 7] Producer-side dedup key, nullable + UNIQUE — a producer that
+  // supplies one (e.g. "offer-published:<offerId>") gets a REAL guarantee
+  // that a retried write can never double-insert the same event; a
+  // producer with no natural dedup key (none yet) simply omits it, and
+  // Postgres treats each NULL as distinct so any number of keyless rows
+  // may coexist. Was a bare non-null String with NO constraint before this
+  // task — every producer happened to set it, but nothing enforced
+  // uniqueness, so a retried transaction could have inserted the exact
+  // same event twice. See modules/outbox/outbox.service.ts for the
+  // create-and-swallow-P2002 dedup this constraint makes possible.
+  idempotencyKey String? @unique
 
-  // Drain state machine: queued -> dispatching -> dispatched | failed.
+  // [Task 7] Delayed dispatch: NULL means "eligible as soon as status/
+  // nextAttemptAt allow it" (every event before this task); a future
+  // instant defers OutboxWorkerService's claim query until it has passed —
+  // e.g. the reservation.redeemed.v1 rating invite, queued at redeem time
+  // but not meant to fire until 2 hours later.
+  scheduledFor DateTime?
+
+  // Drain state machine: queued -> processing -> done | dead (retried
+  // rows return to queued with a future nextAttemptAt in between).
   status    String  @default("queued")
   attempts  Int     @default(0)
   lastError String?
@@ -870,7 +904,8 @@ model OutboxEvent {
 
   createdAt DateTime @default(now())
 
-  // Worker scans `status='queued' AND nextAttemptAt <= now()` in id order.
+  // Worker scans `status='queued' AND nextAttemptAt <= now() AND
+  // (scheduledFor IS NULL OR scheduledFor <= now())` in id order.
   @@index([status, nextAttemptAt])
   @@index([type, createdAt])
   @@map("outbox_events")
