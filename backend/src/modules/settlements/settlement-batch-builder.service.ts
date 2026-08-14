@@ -385,29 +385,43 @@ export class SettlementBatchBuilderService {
       // [Fix round, C2] Cross-batch shortfall inheritance happens EXACTLY
       // ONCE per batch, on its first-ever recompute pass — every later
       // pass (an admin retry on a HELD batch, or an "extend" adding new
-      // lines to one) consumes the batch's OWN currently-stored
-      // `carriedExternalDemandCents` instead of re-querying a sibling.
+      // lines to one) consumes the batch's OWN currently-stored inherited
+      // amount instead of re-querying a sibling.
       //
-      // `carriedExternalDemandCents` is DELIBERATELY a separate column
-      // from `carriedShortfallCents` (the batch's TOTAL unmet demand,
-      // which also bakes in this batch's own fixed-fees-exceed-gross
-      // deficit — computeSettlement re-derives THAT fresh from `lines`
-      // every single pass, no help needed). Feeding the FULL
-      // carriedShortfallCents back in as `priorClawbackCents` on a later
-      // pass would double-count the own-fee-deficit component — verified
-      // empirically while deriving this fix's own test numbers: it made a
-      // batch's reported shortfall GROW on every retry (2000 -> 4000 ->
-      // 6000 -> ...) with zero new information, instead of converging.
-      // `carriedExternalDemandCents` sidesteps this entirely by never
-      // mixing the two: it starts from `resolveCarriedShortfall`'s
-      // cross-batch lookup on the first pass, and on every pass after
-      // that is updated to "how much of it survived THIS pass's
-      // absorption" (see the clawback-allocation block below) —
-      // completely decoupled from whatever `lines` does.
+      // [Fix round #3, C2-residual — CRITICAL] `carriedFromPrior` (this
+      // pass's input into `priorClawbackCents`) now reads
+      // `inheritedExternalDemandCents` — the IMMUTABLE original amount
+      // inherited on the first pass — NOT `carriedExternalDemandCents`,
+      // the mutable residual. Reading the residual here was C2's exact
+      // shape one column over: a first pass that FULLY absorbs the
+      // inherited demand X correctly writes the residual down to 0
+      // (nothing left outstanding for a FUTURE batch to inherit) — but
+      // the very next routine recompute (adminApprove's pre-lock pass,
+      // or an admin retry) then read that same now-zero residual as ITS
+      // OWN starting point, rederiving refundClawbackCents down to
+      // whatever fresh line-clawback exists (often 0) and paying X back
+      // out — money already recovered, forgiven on the operator's next
+      // ordinary action, and genuinely unrecoverable afterward (a later
+      // batch's resolveCarriedShortfall only inherits from a HELD
+      // predecessor; this batch is APPROVED/SENT by then). Exactly the
+      // same fix as the settlement_line half of C2: add back this
+      // batch's own already-absorbed contribution before re-deriving.
+      // Since nothing besides this batch's own passes ever touches its
+      // private inherited amount, "add back what I absorbed" collapses
+      // to "always re-read the full original" — see schema.prisma's doc
+      // comment on `inheritedExternalDemandCents` for the algebra.
+      //
+      // `carriedExternalDemandCents` remains the mutable, every-pass-
+      // rederived RESIDUAL (`inheritedExternalDemandCents -
+      // externalAbsorbedThisPass` below) — what a FUTURE, DIFFERENT
+      // batch's resolveCarriedShortfall reads if this one stays HELD.
+      // That write is unchanged; only the READ that feeds THIS batch's
+      // own `priorClawbackCents` moved to the immutable column.
       const isFirstPass = batch.shortfallResolvedAt === null;
       const carriedFromPrior = isFirstPass
         ? await this.resolveCarriedShortfall(tx, batch.merchantId, batchId)
-        : batch.carriedExternalDemandCents;
+        : batch.inheritedExternalDemandCents;
+      const inheritedExternalDemandCents = carriedFromPrior;
 
       const priorClawbackCents = clawback.totalCents + carriedFromPrior;
 
@@ -456,6 +470,12 @@ export class SettlementBatchBuilderService {
           netPayoutCents: result.netPayoutCents,
           carriedShortfallCents: result.carriedShortfallCents,
           carriedExternalDemandCents: newCarriedExternalDemandCents,
+          // [Fix round #3] Idempotent regardless of pass: on the first
+          // pass this WRITES the newly-resolved inherited amount; on
+          // every later pass it re-writes the SAME value it just READ
+          // above as `carriedFromPrior` — a no-op, keeping the immutable
+          // column genuinely immutable after its first write.
+          inheritedExternalDemandCents,
           shortfallResolvedAt: batch.shortfallResolvedAt ?? now,
           status: result.held ? "HELD" : "CALCULATED",
           holdReason: result.held
@@ -485,6 +505,30 @@ export class SettlementBatchBuilderService {
       // stamped once a line's cumulative recovery reaches its full
       // theoretical demand — a partially-absorbed line stays eligible for
       // the NEXT sweep instead of being incorrectly marked fully resolved.
+      //
+      // [Fix round #3] clawbackAppliedAt is now written UNCONDITIONALLY —
+      // `fullyResolved ? now : null`, never a conditional spread that
+      // writes it only when true. The C2-residual fix above (lines
+      // 12.1-worthy — clawbackBatchId===batchId now stays in the
+      // candidate set even once clawbackAppliedAt was previously set)
+      // made a DOWNWARD re-derivation reachable for the first time: a
+      // line THIS batch fully resolved on an earlier pass is correctly
+      // re-included with a baseline of 0 (full original demand) on a
+      // later pass, but if this batch's OWN available amount SHRANK since
+      // then (a bagFeeCentsOverride edit, a membership offset that grew
+      // after a retroactive change, a pricing row now effective as-of
+      // this period), `newCumulative` can land BELOW `fullDemandCents`
+      // even though clawbackAppliedAt was already sitting at a stale
+      // non-null timestamp from the earlier, larger-absorption pass. The
+      // old conditional spread left that stale timestamp in place — the
+      // line then looked resolved (appliedAt set) while genuinely being
+      // under-recovered (cents < demand), and matched NEITHER
+      // findMerchantsWithPendingClawback's NOR any other batch's
+      // lockPendingClawback's `clawbackAppliedAt IS NULL` filter —
+      // silently unrecoverable the moment this batch itself reaches SENT
+      // and stops recomputing. Explicitly clearing it back to null
+      // re-opens the line for the next sweep, symmetric with how it gets
+      // set.
       let remainingToAllocate =
         result.refundClawbackCents - externalAbsorbedThisPass;
       for (const candidate of clawback.candidates) {
@@ -502,7 +546,7 @@ export class SettlementBatchBuilderService {
           data: {
             clawbackCents: newCumulative,
             clawbackBatchId: batchId,
-            ...(fullyResolved ? { clawbackAppliedAt: now } : {}),
+            clawbackAppliedAt: fullyResolved ? now : null,
           },
         });
       }

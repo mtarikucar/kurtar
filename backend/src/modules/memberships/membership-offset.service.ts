@@ -163,12 +163,32 @@ export class MembershipOffsetService {
    * normal `dueCentsBase - appliedOffsetCents` formula is not a valid
    * basis for a subscription-side write while exempt (it would only ever
    * see this batch's own slice, never whatever else the subscription may
-   * separately still owe). Returns `dueVatCentsBase` UNCHANGED (not a
-   * hardcoded 0 — that was the double-loss bug the re-review caught) so
-   * the caller's `batch.membershipOffsetVatCents` write also reproduces
-   * the batch's own already-committed VAT contribution instead of being
-   * zeroed alongside the net amount. This guard lives here (not just in
-   * the caller) so every call path is protected, not only the ones that
+   * separately still owe).
+   *
+   * [Fix round #3, I6-residual] The VAT returned while exempt is now
+   * `splitMembershipOffsetVat(dueCentsBase, dueVatCentsBase,
+   * appliedOffsetCents)` — the SAME proportional-split helper the
+   * non-exempt path already uses — not a hardcoded `dueVatCentsBase`.
+   * The prior version assumed `appliedOffsetCents` always equals
+   * `dueCentsBase` while exempt (a full clear, restoring exactly what was
+   * already committed), which is the common case but not the only
+   * reachable one: if this batch's OWN available amount SHRANK since its
+   * last pass (a bagFeeCentsOverride edit, a shrinking gross), the
+   * restored `membershipDueCents` gets CLAMPED by computeSettlement to
+   * whatever's actually available — `appliedOffsetCents < dueCentsBase`.
+   * Returning the FULL `dueVatCentsBase` regardless would hand back a VAT
+   * portion larger than its true proportional share of the CLAMPED
+   * amount, and potentially larger than the clamped net amount itself,
+   * corrupting `batch.membershipOffsetVatCents` and the membership
+   * invoice line it feeds — with the shortfall neither restored to
+   * `outstandingCents` (exempt means no subscription-side write at all)
+   * nor carried anywhere else. `splitMembershipOffsetVat` already handles
+   * both cases correctly (full clear returns `dueVatCentsBase` in full —
+   * identical to the old behavior in the common case; a partial applies
+   * the same proportional net:VAT split the non-exempt path relies on),
+   * so this is a strict correctness improvement with no change to the
+   * unclamped/common-case output. This guard lives here (not just in the
+   * caller) so every call path is protected, not only the ones that
    * remember to check `due.exempt` themselves first. */
   async persistOffset(
     tx: Prisma.TransactionClient,
@@ -178,7 +198,13 @@ export class MembershipOffsetService {
     appliedOffsetCents: number,
   ): Promise<{ appliedOffsetVatCents: number }> {
     if (due.exempt) {
-      return { appliedOffsetVatCents: dueVatCentsBase };
+      return {
+        appliedOffsetVatCents: splitMembershipOffsetVat(
+          dueCentsBase,
+          dueVatCentsBase,
+          appliedOffsetCents,
+        ),
+      };
     }
     const appliedOffsetVatCents = splitMembershipOffsetVat(
       dueCentsBase,

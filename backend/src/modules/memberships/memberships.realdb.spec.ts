@@ -628,5 +628,107 @@ d(
       expect(subAfterExemption.outstandingVatCents).toBe(167);
       expect(subAfterExemption.status).toBe("ACTIVE");
     }, 30000);
+
+    it("[Fix round #3, LOW] the exempt branch's restored offset is CLAMPED by a later shrinking recompute ⇒ the returned VAT is proportional to what was actually applied, not the full original share", async () => {
+      const { batchBuilder } = buildHarness(prisma);
+      const merchant = await seedMerchant(prisma, { bagFeeCentsOverride: 0 });
+      merchantIds.push(merchant.id);
+      const store = await seedStore(prisma, merchant.id);
+      const bagTemplate = await seedBagTemplate(prisma, store.id, 5051);
+      const offer = await seedOffer(prisma, bagTemplate.id, store.id, 10);
+
+      const sub = await prisma.membershipSubscription.create({
+        data: {
+          merchantId: merchant.id,
+          anchorDate: new Date("2026-01-01T00:00:00.000Z"),
+          currentPeriodStart: new Date("2026-01-01T00:00:00.000Z"),
+          currentPeriodEnd: new Date("2027-01-01T00:00:00.000Z"),
+          priceCents: 5000,
+          vatCents: 1000,
+          status: "TRIAL",
+          outstandingCents: 6000,
+          outstandingVatCents: 1000,
+        },
+      });
+
+      await seedRedeemedPaidReservation(prisma, {
+        storeId: store.id,
+        offerId: offer.id,
+        qty: 1,
+        unitPriceCents: 5051,
+        redeemedAt: new Date("2026-08-01T11:00:00.000Z"),
+      });
+      const now1 = new Date("2026-08-02T02:00:00.000Z");
+      await batchBuilder.runNightlyCycle(now1);
+
+      const batch = await prisma.settlementBatch.findFirstOrThrow({
+        where: { merchantId: merchant.id },
+      });
+      // gross 5051, bagFee 0, vat 0, withholding round(5051*1%)=51 ->
+      // available 5000. Due 6000 (5000+1000) -> PARTIAL clear of 5000 ->
+      // proportional VAT round(5000*1000/6000)=833.
+      expect(batch.membershipOffsetCents).toBe(5000);
+      expect(batch.membershipOffsetVatCents).toBe(833);
+
+      // GTM action: founding status granted retroactively, covering this
+      // batch's period.
+      await prisma.merchant.update({
+        where: { id: merchant.id },
+        data: { membershipExemptUntil: new Date("2026-09-01T00:00:00.000Z") },
+      });
+
+      // First exempt recompute — availability UNCHANGED (5000, same as
+      // before) -> the restored offset (5000/833) is NOT clamped, a full
+      // clear -> matches the round-2 test's already-covered case exactly
+      // (VAT returned in full). Sanity-checked here before shrinking.
+      const now2 = new Date("2026-08-03T02:00:00.000Z");
+      const exemptUnclamped = await batchBuilder.recomputeBatch(batch.id, now2);
+      expect(exemptUnclamped.membershipOffsetCents).toBe(5000);
+      expect(exemptUnclamped.membershipOffsetVatCents).toBe(833);
+
+      // [Fix round #3, LOW] NOW shrink this batch's own availability while
+      // STILL exempt (a bagFeeCentsOverride edit — same lever test [j] in
+      // settlements.realdb.spec.ts uses): bagFee 4000, vat 800, withholding
+      // round(max(0,5051-4000-800)*1%)=round(2.51)=3 -> available
+      // 5051-4000-800-3=248. The exempt branch restores dueCents=5000
+      // (this batch's own prior contribution, unchanged) but
+      // computeSettlement now CLAMPS membershipOffsetCents to what's
+      // actually available: min(5000, 248) = 248 — far below the
+      // restored due, and far below its own VAT component (833). Before
+      // this fix, membershipOffsetVatCents would have been hard-returned
+      // as the FULL 833 regardless — a VAT portion LARGER than the
+      // clamped offset itself (833 > 248), corrupting the membership
+      // invoice line, with the gap neither restored to outstandingCents
+      // (exempt -> no subscription write at all) nor carried anywhere.
+      await prisma.merchant.update({
+        where: { id: merchant.id },
+        data: { bagFeeCentsOverride: 4000 },
+      });
+      const now3 = new Date("2026-08-04T02:00:00.000Z");
+      const exemptClamped = await batchBuilder.recomputeBatch(batch.id, now3);
+
+      expect(exemptClamped.bagFeeCents).toBe(4000);
+      expect(exemptClamped.bagFeeVatCents).toBe(800);
+      expect(exemptClamped.withholdingCents).toBe(3);
+      expect(exemptClamped.membershipOffsetCents).toBe(248); // clamped down from 5000
+      // The critical assertion: VAT proportional to what was ACTUALLY
+      // applied (round(248*833/5000)=41), not the full original 833 —
+      // and, as a direct consequence, no longer larger than the offset
+      // itself.
+      expect(exemptClamped.membershipOffsetVatCents).toBe(41);
+      expect(exemptClamped.membershipOffsetVatCents).toBeLessThan(
+        exemptClamped.membershipOffsetCents,
+      );
+      expect(exemptClamped.netPayoutCents).toBe(0); // 248 available, all 248 offset
+
+      // Still a true no-op for the subscription side — exempt never
+      // writes it, clamped or not.
+      const subAfterClamp =
+        await prisma.membershipSubscription.findUniqueOrThrow({
+          where: { id: sub.id },
+        });
+      expect(subAfterClamp.outstandingCents).toBe(1000);
+      expect(subAfterClamp.outstandingVatCents).toBe(167);
+    }, 30000);
   },
 );

@@ -30,6 +30,26 @@ import { AppModule } from "../../app.module";
  * discipline as every other real-DB spec in this codebase. Nothing is
  * written to the database — this only inspects `SchedulerRegistry` after
  * `app.init()` — but the connection itself must be genuine.
+ *
+ * [Fix round #3, MEDIUM] Booting the real AppModule starts EVERY
+ * platform-wide cron for real — not just the four this spec cares about:
+ * the outbox-drain worker (every 15s, dispatches settlement-sent-email +
+ * commission-invoice handlers against whatever outbox rows currently
+ * exist), the offers-publish scheduler (1m), the payments-sweeper and
+ * pickup-reminder sweeps (5m). Under the documented local runner
+ * (`npm test` = `--maxWorkers=2`), this app instance is alive
+ * CONCURRENTLY with every other realdb spec file's own harness against
+ * the SAME shared test database — exactly the class of cross-file
+ * mutation this fix round's memberships-fixture-date fix (§12.4) closed
+ * for the renewal-cron sweep specifically, at a much larger blast radius
+ * here (four platform-wide sweeps, not one). This test's own purpose —
+ * proving registration — does not need any of them to ever actually
+ * FIRE, so every registered job is stopped immediately after `app.init()`
+ * and before any assertion (or any await that could yield to a timer).
+ * `SchedulerRegistry.getCronJobs()` still returns every job by name after
+ * `.stop()` (stopping removes it from the underlying timer wheel, it does
+ * NOT unregister it from the registry map) — so the gate's actual purpose
+ * (proving the real app registers all four names) is fully intact.
  */
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const d = TEST_DATABASE_URL ? describe : describe.skip;
@@ -44,6 +64,17 @@ d("Settlement/membership cron registration — real AppModule boot", () => {
     await app.init();
     try {
       const registry = app.get(SchedulerRegistry);
+
+      // [Fix round #3, MEDIUM] Stop every registered cron job (not just
+      // the four under test — this app boots the WHOLE module graph, so
+      // outbox-drain/offers-publish-scheduler/payments-sweeper/pickup-
+      // reminder all registered too) BEFORE reading anything or awaiting
+      // again, so none of them can ever fire against the shared test DB
+      // for the remainder of this test's lifetime.
+      for (const job of registry.getCronJobs().values()) {
+        job.stop();
+      }
+
       const names = new Set(registry.getCronJobs().keys());
 
       expect(names.has("settlement-nightly-batch")).toBe(true);
