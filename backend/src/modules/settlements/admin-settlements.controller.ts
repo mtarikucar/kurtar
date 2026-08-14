@@ -19,6 +19,14 @@ export class AdminSettlementsController {
     );
   }
 
+  // [Fix round, C1] MUST be registered before the `:id` routes below —
+  // NestJS matches routes in declaration order, so "run-nightly" would
+  // otherwise be swallowed as an `:id` param by GET/POST .../:id.
+  @Post("run-nightly")
+  runNightly() {
+    return this.settlements.adminRunNightlyCycle();
+  }
+
   @Get(":id")
   get(@Param("id") id: string) {
     return this.settlements.adminGet(id);

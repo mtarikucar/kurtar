@@ -25,11 +25,24 @@
  *    KDV %20 is computed ON that fixed fee, which DOES need rounding for a
  *    non-default (per-merchant override) fee that isn't a multiple of 5.
  *
- * 3. WITHHOLDING (%1 stopaj) is computed on the line's GROSS (what the
- *    consumer paid for that reservation), not on gross-net-of-bag-fee —
- *    "on the merchant's gross payout share" per the brief. Independent of
- *    the bag fee; both are separately subtracted from gross, matching the
- *    brief's literal deduction order.
+ * 3. WITHHOLDING (%1 stopaj) base — [Fix round, P3, POLICY DECISION,
+ *    REQUIRES MALİ MÜŞAVİR SIGN-OFF]: computed on the merchant's actual
+ *    EARNING for the line — gross MINUS the platform's own fee (bag fee +
+ *    its KDV) — never on the raw sale gross. Rationale (controller's P3
+ *    decision): GVK md. 94 as amended by Law 7524 taxes "aracı hizmet
+ *    sağlayıcıların hizmet sağlayıcılarına yaptıkları ÖDEMELER üzerinden"
+ *    — the withholding base is the PAYMENT actually made to the seller
+ *    (i.e. what the platform hands the merchant before its own commission
+ *    is even in the picture is irrelevant; what matters is what's left
+ *    AFTER the platform's cut), not the customer's total sale price.
+ *    `WITHHOLDING_BASE` below is the one named, documented place this
+ *    policy lives — flip it here, not by hunting through the deduction
+ *    chain, if a mali müşavir determines the base should change.
+ *    Deliberately NOT reduced by the membership offset: membership offset
+ *    is debt collection against the merchant (recovering money already
+ *    earned), not a reduction of what the platform paid the seller for
+ *    THIS sale — so it plays no part in the withholding base, exactly
+ *    like it plays no part in bag-fee/VAT.
  *
  * 4. DEDUCTION ORDER (also literal from the brief's invariant paragraph):
  *    gross -> bag fee (+ VAT) -> withholding -> membership offset ->
@@ -118,8 +131,20 @@ export interface ComputeSettlementResult {
   perLine: SettlementLineResult[];
 }
 
-const VAT_RATE = 0.2; // KDV %20 on the bag fee.
-const WITHHOLDING_RATE = 0.01; // %1 stopaj on line gross.
+// [Minor fix, review round] Rates expressed as exact integer ratios
+// (numerator/denominator), never a decimal literal — 0.2 and 0.01 cannot
+// be represented exactly in IEEE-754 binary floating point (0.2 is
+// actually ...00000000000000011102230246251565404236316680908203125 under
+// the hood), so `value * 0.2` bakes that imprecision into the multiplier
+// itself. `(value * 20) / 100` keeps every intermediate step exact for
+// integer `value` (kuruş are always integers) — the ONLY float-adjacent
+// operation is the final division, immediately absorbed by roundKurus.
+// This is the most literal reading of "no float math" achievable in a
+// language whose only numeric type is a double.
+const VAT_RATE_NUMERATOR = 20; // KDV %20 on the bag fee.
+const VAT_RATE_DENOMINATOR = 100;
+const WITHHOLDING_RATE_NUMERATOR = 1; // %1 stopaj.
+const WITHHOLDING_RATE_DENOMINATOR = 100;
 
 /**
  * The ONE rounding rule for every fractional-kuruş money computation in
@@ -127,12 +152,26 @@ const WITHHOLDING_RATE = 0.01; // %1 stopaj on line gross.
  * away from zero — every input here is >= 0, so that is always "up"):
  * standard "nearest kuruş, ties up" commercial rounding, matching how KDV
  * amounts are conventionally rounded in Turkish invoicing. Exported so
- * every OTHER money computation this task adds (none currently need
- * fractional rounding beyond VAT/withholding) has exactly one place to
- * import it from rather than a second inline `Math.round`.
+ * every OTHER money computation this task adds (membership VAT included)
+ * has exactly one place to import it from rather than a second inline
+ * `Math.round`.
  */
 export function roundKurus(value: number): number {
   return Math.round(value);
+}
+
+/** `roundKurus((baseCents * numerator) / denominator)` — the shared
+ * "apply an exact-ratio percentage, then round once" helper both VAT and
+ * withholding (and, outside this file, memberships/membership-offset.
+ * service.ts's mirrored VAT split) go through, so there is exactly one
+ * formula shape for "a rate applied to a kuruş amount" in the whole
+ * settlement path. */
+export function applyRateCents(
+  baseCents: number,
+  numerator: number,
+  denominator: number,
+): number {
+  return roundKurus((baseCents * numerator) / denominator);
 }
 
 function computeLine(
@@ -150,12 +189,30 @@ function computeLine(
     );
   }
   const lineBagFeeCents = bagFeeCents * line.qty;
+  const lineBagFeeVatCents = applyRateCents(
+    lineBagFeeCents,
+    VAT_RATE_NUMERATOR,
+    VAT_RATE_DENOMINATOR,
+  );
+  // [Fix round, P3] Withholding base = the merchant's actual earning on
+  // this line (gross minus the platform's own bag fee AND its KDV), never
+  // the raw sale gross — see the module doc comment's GVK md. 94 / Law
+  // 7524 citation. Floored at 0: a line whose fixed bag fee alone exceeds
+  // its gross has no positive "earning" to withhold tax against.
+  const withholdingBaseCents = Math.max(
+    0,
+    line.grossCents - lineBagFeeCents - lineBagFeeVatCents,
+  );
   return {
     reservationId: line.reservationId,
     grossCents: line.grossCents,
     bagFeeCents: lineBagFeeCents,
-    bagFeeVatCents: roundKurus(lineBagFeeCents * VAT_RATE),
-    withholdingCents: roundKurus(line.grossCents * WITHHOLDING_RATE),
+    bagFeeVatCents: lineBagFeeVatCents,
+    withholdingCents: applyRateCents(
+      withholdingBaseCents,
+      WITHHOLDING_RATE_NUMERATOR,
+      WITHHOLDING_RATE_DENOMINATOR,
+    ),
   };
 }
 

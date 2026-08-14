@@ -1,17 +1,28 @@
+import { BadRequestException } from "@nestjs/common";
 import { PricingService } from "./pricing.service";
 
 describe("PricingService.scheduleFuturePricing", () => {
-  it("rejects an effectiveFrom that is not strictly in the future", async () => {
+  it("rejects an effectiveFrom that is not strictly in the future with a proper {statusCode, errorCode, message} exception", async () => {
     const prisma = { platformPricing: { create: jest.fn() } };
     const service = new PricingService(prisma as never);
 
-    await expect(
-      service.scheduleFuturePricing({
+    expect.assertions(5);
+    try {
+      await service.scheduleFuturePricing({
         bagFeeCents: 3000,
         membershipAnnualCents: 250000,
         effectiveFrom: new Date(Date.now() - 1000),
-      }),
-    ).rejects.toThrow(/future/i);
+      });
+    } catch (err) {
+      expect(err).toBeInstanceOf(BadRequestException);
+      const response = (err as BadRequestException).getResponse() as Record<
+        string,
+        unknown
+      >;
+      expect(response.statusCode).toBe(400);
+      expect(response.errorCode).toBe("PRICING_EFFECTIVE_FROM_NOT_FUTURE");
+      expect(response.message as string).toMatch(/future/i);
+    }
     expect(prisma.platformPricing.create).not.toHaveBeenCalled();
   });
 

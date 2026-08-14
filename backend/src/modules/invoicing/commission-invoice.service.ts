@@ -21,12 +21,15 @@ import { EDocumentInvoiceLine } from "./e-document-provider.interface";
  * batch.withholdingCents anywhere below, and tested explicitly in
  * commission-invoice.service.spec.ts.
  *
- * MEMBERSHIP INVOICE HAS NO SEPARATE VAT LINE — a judgment call, not an
- * oversight: the brief's KDV %20 instruction is explicit and ONLY stated
- * for the bag fee ("fixed ₺ amount + KDV %20"); nothing in the brief
- * says membership dues carry KDV on top. Flagged in task-8-report.md as
- * a call for product/finance to confirm explicitly before this ever goes
- * live against a real e-document provider.
+ * [Fix round, P2, POLICY DECISION] The MEMBERSHIP invoice NOW carries a
+ * real VAT line — a platform's membership/commission invoice to a
+ * merchant IS a taxable service in Turkey (the controller's explicit
+ * ruling; the original ship's "no KDV on membership" call was wrong).
+ * `batch.membershipOffsetVatCents` (the VAT portion of THIS batch's
+ * membershipOffsetCents, allocated by membership-offset.service.ts's
+ * `splitMembershipOffsetVat` — proportional for a partial offset, all
+ * remaining VAT for a fully-clearing one) is read straight off the batch,
+ * never re-derived here.
  *
  * Provider I/O (facade.issue) runs OUTSIDE any DB transaction, same as
  * every other provider call in this codebase — the DRAFT row is created
@@ -102,6 +105,12 @@ export class CommissionInvoiceService {
     }
 
     if (batch.membershipOffsetCents > 0) {
+      // [Fix round, P2] Net = the offset total minus its VAT portion —
+      // membershipOffsetVatCents is already the authoritative split
+      // (membership-offset.service.ts's splitMembershipOffsetVat, applied
+      // at recompute time), never re-derived here.
+      const membershipNetCents =
+        batch.membershipOffsetCents - batch.membershipOffsetVatCents;
       await this.createAndIssue({
         merchantId: batch.merchant.id,
         merchantTaxId: batch.merchant.taxId,
@@ -109,13 +118,13 @@ export class CommissionInvoiceService {
         batchId: batch.id,
         type: "MEMBERSHIP",
         docType,
-        netAmountCents: batch.membershipOffsetCents,
-        vatCents: 0,
+        netAmountCents: membershipNetCents,
+        vatCents: batch.membershipOffsetVatCents,
         lines: [
           {
             description: "Yıllık üyelik ücreti (dönemsel mahsup)",
-            amountCents: batch.membershipOffsetCents,
-            vatCents: 0,
+            amountCents: membershipNetCents,
+            vatCents: batch.membershipOffsetVatCents,
           },
         ],
       });

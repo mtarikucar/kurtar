@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { PrismaClient } from "@prisma/client";
 import { PaymentProviderRegistry } from "../payments-core/payment-provider.registry";
@@ -248,7 +249,6 @@ async function cleanupMerchant(prisma: PrismaClient, merchantId: string) {
 d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
   let prisma: PrismaClient;
   const merchantIds: string[] = [];
-  const platformPricingIds: string[] = [];
 
   beforeAll(() => {
     const url = new URL(TEST_DATABASE_URL!);
@@ -264,13 +264,9 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
         cleanupMerchant(prisma, merchantId),
       );
     }
-    if (platformPricingIds.length > 0) {
-      await safeCleanup("platformPricing", () =>
-        prisma.platformPricing.deleteMany({
-          where: { id: { in: platformPricingIds } },
-        }),
-      );
-    }
+    // [Fix round, I10] platform_pricing has no per-test tracking array
+    // anymore — the one test that seeds a row (test [e]) deletes it
+    // itself, inline, in a `finally`, immediately after use.
     await prisma.$disconnect();
   });
 
@@ -313,22 +309,30 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     expect(lines).toHaveLength(10);
     expect(new Set(lines.map((l) => l.reservationId)).size).toBe(10);
 
-    // Exactly one CALCULATED batch for this merchant+day — the partial
-    // unique index proving no split-batch outcome from the race.
+    // Exactly one CALCULATED batch for this merchant+day — the advisory
+    // lock proving no split-batch outcome from the race (settlement-batch-
+    // builder.service.ts's createOrExtendBatch — a Postgres transaction-
+    // scoped pg_advisory_xact_lock, not a partial unique index; Prisma
+    // cannot express the latter without a second permanent divergence
+    // from schema.prisma on top of the one already accepted for
+    // stores.location's GIST index).
     const batches = await prisma.settlementBatch.findMany({
       where: { merchantId: merchant.id },
     });
     expect(batches).toHaveLength(1);
     const batch = batches[0];
 
-    // Hand-computed arithmetic: 10 x (gross 15000, bagFee 2500, vat 500,
-    // withholding 150) = gross 150000, bagFee 25000, vat 5000,
-    // withholding 1500, net 118500.
+    // Hand-computed arithmetic (per-line): gross 15000, bagFee 2500, vat
+    // 500, withholding base = 15000-2500-500 = 12000 -> withholding =
+    // round(12000/100) = 120 (P3: withholding is on the merchant's
+    // EARNING — gross minus the platform's own fee+VAT — not raw gross).
+    // x10 lines: gross 150000, bagFee 25000, vat 5000, withholding 1200,
+    // net 150000-25000-5000-1200 = 118800.
     expect(batch.grossCents).toBe(150000);
     expect(batch.bagFeeCents).toBe(25000);
     expect(batch.bagFeeVatCents).toBe(5000);
-    expect(batch.withholdingCents).toBe(1500);
-    expect(batch.netPayoutCents).toBe(118500);
+    expect(batch.withholdingCents).toBe(1200);
+    expect(batch.netPayoutCents).toBe(118800);
     expect(batch.status).toBe("CALCULATED");
 
     // "No double payout": approve then execute payout TWICE concurrently
@@ -347,7 +351,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
       .getPayoutLog()
       .filter((p) => p.ref === batch.id);
     expect(payoutsForBatch).toHaveLength(1);
-    expect(payoutsForBatch[0].amountCents).toBe(118500);
+    expect(payoutsForBatch[0].amountCents).toBe(118800);
 
     const sentBatch = await prisma.settlementBatch.findUniqueOrThrow({
       where: { id: batch.id },
@@ -378,14 +382,15 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     const line = await prisma.settlementLine.findUniqueOrThrow({
       where: { reservationId: reservation.id },
     });
-    // Hand check: gross 20000, bagFee 2500, vat 500, withholding 200
-    // (round(20000*0.01)) -> line "would-be net" = 20000-2500-500-200 = 16800.
+    // Hand check (P3 withholding base = gross - bagFee - bagFeeVat =
+    // 20000-2500-500 = 17000 -> withholding = round(17000/100) = 170) ->
+    // line "would-be net" = 20000-2500-500-170 = 16830.
     expect(line.grossCents).toBe(20000);
     expect(line.bagFeeCents).toBe(2500);
     expect(line.bagFeeVatCents).toBe(500);
-    expect(line.withholdingCents).toBe(200);
-    const expectedClawback = 20000 - 2500 - 500 - 200;
-    expect(expectedClawback).toBe(16800);
+    expect(line.withholdingCents).toBe(170);
+    const expectedClawback = 20000 - 2500 - 500 - 170;
+    expect(expectedClawback).toBe(16830);
 
     const batch1 = await prisma.settlementBatch.findFirstOrThrow({
       where: { merchantId: merchant.id },
@@ -396,7 +401,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
       where: { id: batch1.id },
     });
     expect(sentBatch1.status).toBe("SENT");
-    expect(sentBatch1.netPayoutCents).toBe(16800);
+    expect(sentBatch1.netPayoutCents).toBe(16830);
 
     // The refund happens AFTER the batch was already sent.
     await prisma.refund.create({
@@ -416,8 +421,9 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // degenerate all-shortfall case (that no-gross-available branch is
     // already covered at the pure-math level by settlement-math.spec.ts's
     // "fixed fees exceed gross AND there is a live clawback demand" case).
-    // gross 30000, bagFee 2500, vat 500, withholding 300 -> available
-    // 26700, comfortably more than the 16800 clawback demand.
+    // gross 30000, bagFee 2500, vat 500, withholding base 27000 ->
+    // withholding 270 -> available 26730, comfortably more than the
+    // 16830 clawback demand.
     const day2 = new Date("2026-08-03T11:00:00.000Z");
     await seedRedeemedPaidReservation(prisma, {
       storeId: store.id,
@@ -443,18 +449,24 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     expect(batch2.grossCents).toBe(30000);
     expect(batch2.bagFeeCents).toBe(2500);
     expect(batch2.bagFeeVatCents).toBe(500);
-    expect(batch2.withholdingCents).toBe(300);
+    expect(batch2.withholdingCents).toBe(270);
     expect(batch2.refundClawbackCents).toBe(expectedClawback);
     expect(batch2.netPayoutCents).toBe(
-      30000 - 2500 - 500 - 300 - expectedClawback,
+      30000 - 2500 - 500 - 270 - expectedClawback,
     );
     expect(batch2.netPayoutCents).toBe(9900);
     expect(batch2.status).toBe("CALCULATED"); // fully absorbed — NOT held
     expect(batch2.carriedShortfallCents).toBe(0);
 
+    // [I4] The clawed-back line's clawbackCents is the ACTUAL amount
+    // absorbed (its full would-be-net demand, fully recovered in one shot
+    // here since batch2 had enough gross), not just a write-once marker
+    // with no amount behind it.
+    expect(clawedLine.clawbackCents).toBe(expectedClawback);
+
     // batch1 itself is FROZEN — a later recompute attempt must be a no-op.
     const recomputedBatch1 = await batchBuilder.recomputeBatch(batch1.id, now2);
-    expect(recomputedBatch1.netPayoutCents).toBe(16800);
+    expect(recomputedBatch1.netPayoutCents).toBe(16830);
     expect(recomputedBatch1.status).toBe("SENT");
   }, 30000);
 
@@ -593,11 +605,19 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
       redeemedAt: new Date("2026-08-01T11:00:00.000Z"),
     });
 
-    // Insert the price change directly (bypassing scheduleFuturePricing's
-    // real-wall-clock future-only guard — see pricing.service.spec.ts for
-    // that validation's own unit coverage; NO wall-clock sleep here, per
-    // the brief's realdb discipline) with an effectiveFrom strictly
-    // between the two reservations' redemption days.
+    // [Fix round, I10] Insert the price change directly (bypassing
+    // scheduleFuturePricing's real-wall-clock future-only guard — see
+    // pricing.service.spec.ts for that validation's own unit coverage; NO
+    // wall-clock sleep here, per the brief's realdb discipline) with an
+    // effectiveFrom strictly between the two reservations' redemption
+    // days. `platform_pricing` has NO merchant scoping (it's a genuinely
+    // global table by design — every other realdb spec file's price
+    // resolution depends on the SAME seed-migration default), so this row
+    // is deleted in a `finally` IMMEDIATELY after this one test uses it —
+    // never deferred to this file's shared `afterAll` — to keep its
+    // window of existence as narrow as possible against any OTHER spec
+    // file that might run concurrently and seed a redemption dated on or
+    // after 2026-08-03 without a per-merchant override.
     const newPricing = await prisma.platformPricing.create({
       data: {
         bagFeeCents: 3000,
@@ -605,33 +625,445 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
         effectiveFrom: new Date("2026-08-03T00:00:00.000Z"),
       },
     });
-    platformPricingIds.push(newPricing.id);
+    try {
+      // Day AFTER the price change.
+      await seedRedeemedPaidReservation(prisma, {
+        storeId: store.id,
+        offerId: offer.id,
+        qty: 1,
+        unitPriceCents: 10000,
+        redeemedAt: new Date("2026-08-05T11:00:00.000Z"),
+      });
 
-    // Day AFTER the price change.
+      const now = new Date("2026-08-06T02:00:00.000Z");
+      await batchBuilder.runNightlyCycle(now);
+
+      const batches = await prisma.settlementBatch.findMany({
+        where: { merchantId: merchant.id },
+        orderBy: { periodStart: "asc" },
+      });
+      expect(batches).toHaveLength(2);
+      const [oldBatch, newBatch] = batches;
+      expect(oldBatch.bagFeeCents).toBe(2500); // old default price
+      expect(newBatch.bagFeeCents).toBe(3000); // new price
+
+      // Recompute the OLD batch again, AFTER the price change — must stay
+      // identical (price is resolved as-of ITS OWN period date, not "now").
+      const recomputedOld = await batchBuilder.recomputeBatch(oldBatch.id, now);
+      expect(recomputedOld.bagFeeCents).toBe(2500);
+      expect(recomputedOld.bagFeeVatCents).toBe(500);
+    } finally {
+      await prisma.platformPricing.delete({ where: { id: newPricing.id } });
+    }
+  }, 30000);
+
+  it("[f] [C2/I5] a HELD batch's shortfall survives a no-op admin retry unchanged, then resolves once new gross arrives — two-batch chain, own-fee-deficit inheritance", async () => {
+    const { batchBuilder, settlements } = buildHarness(prisma);
+    const merchant = await seedMerchant(prisma);
+    merchantIds.push(merchant.id);
+    const store = await seedStore(prisma, merchant.id);
+    const bagTemplate = await seedBagTemplate(prisma, store.id, 1000);
+    const offer = await seedOffer(prisma, bagTemplate.id, store.id, 10);
+
+    // batch1 (day1): one tiny reservation whose fixed fees alone exceed its
+    // gross — gross 1000, bagFee 2500, vat 500 -> avail1 = 1000-2500-500 =
+    // -2000, all of it an OWN fee deficit (no clawback involved at all).
+    // HELD with carriedShortfallCents = 2000.
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: store.id,
+      offerId: offer.id,
+      qty: 1,
+      unitPriceCents: 1000,
+      redeemedAt: new Date("2026-08-01T11:00:00.000Z"),
+    });
+    const now1 = new Date("2026-08-02T02:00:00.000Z");
+    await batchBuilder.runNightlyCycle(now1);
+    const batch1 = await prisma.settlementBatch.findFirstOrThrow({
+      where: { merchantId: merchant.id },
+    });
+    expect(batch1.status).toBe("HELD");
+    expect(batch1.carriedShortfallCents).toBe(2000);
+    expect(batch1.carriedExternalDemandCents).toBe(0); // originating link — nothing inherited
+
+    // batch2 (day2): ANOTHER tiny reservation, same fee-deficit shape, on
+    // its OWN day -> its own recompute inherits batch1's OWN fee deficit
+    // (2000, batch1.carriedExternalDemandCents=0 contributes nothing) as
+    // `carriedFromPrior`, on top of its OWN identical 2000 deficit.
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: store.id,
+      offerId: offer.id,
+      qty: 1,
+      unitPriceCents: 1000,
+      redeemedAt: new Date("2026-08-02T11:00:00.000Z"),
+    });
+    const now2 = new Date("2026-08-03T02:00:00.000Z");
+    await batchBuilder.runNightlyCycle(now2);
+    const batch2 = await prisma.settlementBatch.findFirstOrThrow({
+      where: { merchantId: merchant.id, id: { not: batch1.id } },
+    });
+    expect(batch2.status).toBe("HELD");
+    expect(batch2.grossCents).toBe(1000);
+    expect(batch2.netPayoutCents).toBe(0);
+    expect(batch2.carriedShortfallCents).toBe(4000); // own 2000 + inherited 2000
+    expect(batch2.carriedExternalDemandCents).toBe(2000); // the inherited portion, tracked separately
+
+    // [C2] Admin retries the HELD batch2 with NO new lines — the documented
+    // purpose of the retry endpoint. Before this fix round, resolveCarried-
+    // Shortfall excluded the batch being recomputed from its own-predecessor
+    // lookup, so this call would find NOTHING to inherit and silently
+    // resolve batch2's shortfall to 0 (money forgiven). It must instead
+    // reproduce EXACTLY pass 1's numbers — stable, not growing and not
+    // vanishing.
+    await settlements.adminRetry(batch2.id, now2);
+    const batch2Retried = await prisma.settlementBatch.findUniqueOrThrow({
+      where: { id: batch2.id },
+    });
+    expect(batch2Retried.status).toBe("HELD");
+    expect(batch2Retried.carriedShortfallCents).toBe(4000);
+    expect(batch2Retried.carriedExternalDemandCents).toBe(2000);
+    expect(batch2Retried.netPayoutCents).toBe(0);
+
+    // A second no-op retry must ALSO reproduce the same numbers — proving
+    // convergence, not just a one-time coincidence (the original bug this
+    // fix replaced would have grown 2000 -> 4000 -> 6000 -> ... on every
+    // successive retry).
+    await settlements.adminRetry(batch2.id, now2);
+    const batch2RetriedTwice = await prisma.settlementBatch.findUniqueOrThrow({
+      where: { id: batch2.id },
+    });
+    expect(batch2RetriedTwice.carriedShortfallCents).toBe(4000);
+
+    // Extend batch2 (same day) with a big reservation whose gross comfortably
+    // covers both the batch's own fees AND the carried 2000 -> resolves.
+    // gross 10000, bagFee 2500, vat 500, withholding base 7000 -> withholding
+    // 70; combined with the tiny line (gross 1000, bagFee 2500, vat 500,
+    // withholding 0): total gross 11000, bagFee 5000, vat 1000, withholding
+    // 70, avail 4930; carried 2000 fully absorbed -> net 4930-2000 = 2930.
     await seedRedeemedPaidReservation(prisma, {
       storeId: store.id,
       offerId: offer.id,
       qty: 1,
       unitPriceCents: 10000,
-      redeemedAt: new Date("2026-08-05T11:00:00.000Z"),
+      redeemedAt: new Date("2026-08-02T13:00:00.000Z"),
+    });
+    const now3 = new Date("2026-08-04T02:00:00.000Z");
+    await batchBuilder.runNightlyCycle(now3);
+    const batch2Resolved = await prisma.settlementBatch.findUniqueOrThrow({
+      where: { id: batch2.id },
+    });
+    expect(batch2Resolved.grossCents).toBe(11000);
+    expect(batch2Resolved.bagFeeCents).toBe(5000);
+    expect(batch2Resolved.bagFeeVatCents).toBe(1000);
+    expect(batch2Resolved.withholdingCents).toBe(70);
+    expect(batch2Resolved.refundClawbackCents).toBe(2000);
+    expect(batch2Resolved.netPayoutCents).toBe(2930);
+    expect(batch2Resolved.carriedShortfallCents).toBe(0);
+    expect(batch2Resolved.carriedExternalDemandCents).toBe(0);
+    expect(batch2Resolved.status).toBe("CALCULATED"); // resolved — no longer HELD
+  }, 30000);
+
+  it("[g] [I4] a HELD batch partially absorbs TWO refunded lines (one fully, one partially) — FIFO order, cumulative clawbackCents, and the remainder is picked up by a THIRD batch without double-counting the second batch's own resolved shortfall", async () => {
+    const { batchBuilder, payout, settlements } = buildHarness(prisma);
+    const merchant = await seedMerchant(prisma);
+    merchantIds.push(merchant.id);
+    const store = await seedStore(prisma, merchant.id);
+    const bagTemplate = await seedBagTemplate(prisma, store.id, 15000);
+    const offer = await seedOffer(prisma, bagTemplate.id, store.id, 10);
+
+    const day1 = new Date("2026-08-01T11:00:00.000Z");
+    const first = await seedRedeemedPaidReservation(prisma, {
+      storeId: store.id,
+      offerId: offer.id,
+      qty: 1,
+      unitPriceCents: 15000,
+      redeemedAt: new Date(day1.getTime()), // earlier -> FIFO priority
+    });
+    const second = await seedRedeemedPaidReservation(prisma, {
+      storeId: store.id,
+      offerId: offer.id,
+      qty: 1,
+      unitPriceCents: 15000,
+      redeemedAt: new Date(day1.getTime() + 60 * 60 * 1000),
     });
 
-    const now = new Date("2026-08-06T02:00:00.000Z");
-    await batchBuilder.runNightlyCycle(now);
-
-    const batches = await prisma.settlementBatch.findMany({
+    const now1 = new Date("2026-08-02T02:00:00.000Z");
+    await batchBuilder.runNightlyCycle(now1);
+    const batch1 = await prisma.settlementBatch.findFirstOrThrow({
       where: { merchantId: merchant.id },
-      orderBy: { periodStart: "asc" },
     });
-    expect(batches).toHaveLength(2);
-    const [oldBatch, newBatch] = batches;
-    expect(oldBatch.bagFeeCents).toBe(2500); // old default price
-    expect(newBatch.bagFeeCents).toBe(3000); // new price
+    // Each line: gross 15000, bagFee 2500, vat 500, withholding base 12000
+    // -> withholding 120, would-be-net demand = 15000-2500-500-120 = 11880.
+    const perLineDemand = 11880;
+    expect(batch1.grossCents).toBe(30000);
+    expect(batch1.netPayoutCents).toBe(perLineDemand * 2);
+    expect(batch1.status).toBe("CALCULATED");
+    await settlements.adminApprove(batch1.id, now1);
+    await payout.executeOne(batch1.id);
 
-    // Recompute the OLD batch again, AFTER the price change — must stay
-    // identical (price is resolved as-of ITS OWN period date, not "now").
-    const recomputedOld = await batchBuilder.recomputeBatch(oldBatch.id, now);
-    expect(recomputedOld.bagFeeCents).toBe(2500);
-    expect(recomputedOld.bagFeeVatCents).toBe(500);
+    // Both reservations refunded AFTER the batch was sent.
+    for (const seeded of [first, second]) {
+      await prisma.refund.create({
+        data: {
+          paymentId: seeded.payment.id,
+          amountCents: seeded.totalCents,
+          reason: "ADMIN",
+          status: "DONE",
+          requestedByType: "ADMIN",
+          pspRefundId: `${SETTLEMENTS_TEST_TAG}-refund-${Date.now()}-${Math.random()}`,
+        },
+      });
+    }
+
+    // batch2: fresh gross 20000, only enough to PARTIALLY cover the combined
+    // 23760 demand. bagFee 2500, vat 500, withholding base 17000 ->
+    // withholding 170, available 16830 -> refundClawback = min(23760,16830)
+    // = 16830 (partial), net = 0, shortfall = 23760-16830 = 6930 -> HELD.
+    const day2 = new Date("2026-08-03T11:00:00.000Z");
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: store.id,
+      offerId: offer.id,
+      qty: 1,
+      unitPriceCents: 20000,
+      redeemedAt: day2,
+    });
+    const now2 = new Date("2026-08-04T02:00:00.000Z");
+    await batchBuilder.runNightlyCycle(now2);
+
+    const batch2 = await prisma.settlementBatch.findFirstOrThrow({
+      where: { merchantId: merchant.id, id: { not: batch1.id } },
+    });
+    expect(batch2.grossCents).toBe(20000);
+    expect(batch2.bagFeeCents).toBe(2500);
+    expect(batch2.bagFeeVatCents).toBe(500);
+    expect(batch2.withholdingCents).toBe(170);
+    expect(batch2.refundClawbackCents).toBe(16830);
+    expect(batch2.netPayoutCents).toBe(0);
+    expect(batch2.status).toBe("HELD");
+    expect(batch2.carriedShortfallCents).toBe(6930);
+    // batch2's OWN fee deficit is 0 (its gross covered its own fees fine —
+    // the shortfall here is 100% unmet CLAWBACK demand, not a fee deficit),
+    // so nothing beyond this batch's own clawback tracking should ever be
+    // inherited cross-batch for it.
+    expect(batch2.carriedExternalDemandCents).toBe(0);
+
+    // [I4] line1 (earlier redeemedAt, FIFO priority) is FULLY resolved;
+    // line2 is only PARTIALLY resolved and stays eligible for the next
+    // sweep — neither is marked fully applied when only partially absorbed.
+    const line1 = await prisma.settlementLine.findUniqueOrThrow({
+      where: { reservationId: first.reservation.id },
+    });
+    const line2 = await prisma.settlementLine.findUniqueOrThrow({
+      where: { reservationId: second.reservation.id },
+    });
+    expect(line1.clawbackCents).toBe(perLineDemand);
+    expect(line1.clawbackAppliedAt).not.toBeNull();
+    expect(line1.clawbackBatchId).toBe(batch2.id);
+    expect(line2.clawbackCents).toBe(16830 - perLineDemand);
+    expect(line2.clawbackAppliedAt).toBeNull();
+    expect(line2.clawbackBatchId).toBe(batch2.id);
+
+    // batch3: another fresh gross 20000 on a NEW day -> re-discovers line2's
+    // REMAINING demand (perLineDemand - 4950 = 6930) directly via
+    // lockPendingClawback (it belongs to batch1, which is SENT) — this must
+    // NOT ALSO be fed in via resolveCarriedShortfall inheriting batch2's
+    // carriedShortfallCents (6930), which would double it to 13860. Same
+    // arithmetic as batch2: bagFee 2500, vat 500, withholding 170, available
+    // 16830 -> comfortably resolves the remaining 6930 in full.
+    const day3 = new Date("2026-08-05T11:00:00.000Z");
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: store.id,
+      offerId: offer.id,
+      qty: 1,
+      unitPriceCents: 20000,
+      redeemedAt: day3,
+    });
+    const now3 = new Date("2026-08-06T02:00:00.000Z");
+    await batchBuilder.runNightlyCycle(now3);
+
+    const batch3 = await prisma.settlementBatch.findFirstOrThrow({
+      where: {
+        merchantId: merchant.id,
+        id: { notIn: [batch1.id, batch2.id] },
+      },
+    });
+    const line2RemainingAfterBatch2 = perLineDemand - (16830 - perLineDemand); // 6930
+    expect(batch3.refundClawbackCents).toBe(line2RemainingAfterBatch2); // 6930, NOT 13860
+    expect(batch3.netPayoutCents).toBe(16830 - line2RemainingAfterBatch2); // 9900
+    expect(batch3.status).toBe("CALCULATED");
+    expect(batch3.carriedShortfallCents).toBe(0);
+
+    const line2Resolved = await prisma.settlementLine.findUniqueOrThrow({
+      where: { reservationId: second.reservation.id },
+    });
+    expect(line2Resolved.clawbackCents).toBe(perLineDemand); // now fully caught up
+    expect(line2Resolved.clawbackAppliedAt).not.toBeNull();
+    expect(line2Resolved.clawbackBatchId).toBe(batch3.id);
+
+    // batch2 itself is untouched by batch3's resolution — its own
+    // carriedShortfallCents is a historical record of what IT could not
+    // cover, not a live balance that batch3 pays down directly.
+    const batch2After = await prisma.settlementBatch.findUniqueOrThrow({
+      where: { id: batch2.id },
+    });
+    expect(batch2After.carriedShortfallCents).toBe(6930);
+  }, 30000);
+
+  it("[h] [I12] a reservation refunded WHILE its batch is still CALCULATED (not yet approved) is still paid out in full at send time — recomputeBatch re-derives from settlement_lines, not payment/refund status — and clawed back on a later batch", async () => {
+    const { batchBuilder, payout, settlements } = buildHarness(prisma);
+    const merchant = await seedMerchant(prisma);
+    merchantIds.push(merchant.id);
+    const store = await seedStore(prisma, merchant.id);
+    const bagTemplate = await seedBagTemplate(prisma, store.id, 15000);
+    const offer = await seedOffer(prisma, bagTemplate.id, store.id, 10);
+
+    const { reservation, payment, totalCents } =
+      await seedRedeemedPaidReservation(prisma, {
+        storeId: store.id,
+        offerId: offer.id,
+        qty: 1,
+        unitPriceCents: 15000,
+        redeemedAt: new Date("2026-08-01T11:00:00.000Z"),
+      });
+
+    const now1 = new Date("2026-08-02T02:00:00.000Z");
+    await batchBuilder.runNightlyCycle(now1);
+    const batch1 = await prisma.settlementBatch.findFirstOrThrow({
+      where: { merchantId: merchant.id },
+    });
+    expect(batch1.status).toBe("CALCULATED");
+    expect(batch1.netPayoutCents).toBe(11880);
+
+    // The refund lands WHILE batch1 is still CALCULATED — before any
+    // approve/send. The report accompanying the original ship claimed this
+    // couldn't happen because the eligibility query only selects payment.
+    // status = PAID reservations; that reasoning was wrong (settlementLine
+    // eligibility is decided ONCE, at line-creation time — a refund after
+    // that never un-creates the line, and recomputeBatch re-derives strictly
+    // from settlement_lines, never re-checking payment/refund status).
+    await prisma.refund.create({
+      data: {
+        paymentId: payment.id,
+        amountCents: totalCents,
+        reason: "ADMIN",
+        status: "DONE",
+        requestedByType: "ADMIN",
+        pspRefundId: `${SETTLEMENTS_TEST_TAG}-refund-${Date.now()}`,
+      },
+    });
+
+    // adminApprove recomputes ONCE MORE before locking in — and the result
+    // is UNCHANGED: the refund has no effect on a batch that already has
+    // the line, because recomputeBatch never looks at refunds directly, only
+    // at unresolved-clawback lines belonging to OTHER, already-SENT batches.
+    const approved = await settlements.adminApprove(batch1.id, now1);
+    expect(approved.netPayoutCents).toBe(11880);
+    expect(approved.status).toBe("APPROVED");
+
+    await payout.executeOne(batch1.id);
+    const sentBatch1 = await prisma.settlementBatch.findUniqueOrThrow({
+      where: { id: batch1.id },
+    });
+    expect(sentBatch1.status).toBe("SENT");
+    expect(sentBatch1.netPayoutCents).toBe(11880); // paid in FULL despite the pre-send refund
+
+    // Only once batch1 reaches SENT does lockPendingClawback see the line at
+    // all — a later batch is what actually recovers it.
+    const day2 = new Date("2026-08-03T11:00:00.000Z");
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: store.id,
+      offerId: offer.id,
+      qty: 1,
+      unitPriceCents: 30000,
+      redeemedAt: day2,
+    });
+    const now2 = new Date("2026-08-04T02:00:00.000Z");
+    await batchBuilder.runNightlyCycle(now2);
+
+    const clawedLine = await prisma.settlementLine.findUniqueOrThrow({
+      where: { reservationId: reservation.id },
+    });
+    expect(clawedLine.clawbackAppliedAt).not.toBeNull();
+    expect(clawedLine.clawbackCents).toBe(11880);
+
+    const batch2 = await prisma.settlementBatch.findUniqueOrThrow({
+      where: { id: clawedLine.clawbackBatchId! },
+    });
+    // gross 30000, bagFee 2500, vat 500, withholding base 27000 ->
+    // withholding 270, available 26730, clawback 11880 -> net 14850.
+    expect(batch2.refundClawbackCents).toBe(11880);
+    expect(batch2.netPayoutCents).toBe(14850);
+  }, 30000);
+
+  it("[i] [C3] once a payout has been attempted, adminHold is refused with a specific error code — the batch's amount is frozen, not silently re-openable — and a later successful retry still completes normally", async () => {
+    const { batchBuilder, payout, settlements, mockProvider } =
+      buildHarness(prisma);
+    const merchant = await seedMerchant(prisma);
+    merchantIds.push(merchant.id);
+    const store = await seedStore(prisma, merchant.id);
+    const bagTemplate = await seedBagTemplate(prisma, store.id, 12000);
+    const offer = await seedOffer(prisma, bagTemplate.id, store.id, 10);
+
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: store.id,
+      offerId: offer.id,
+      qty: 1,
+      unitPriceCents: 12000,
+      redeemedAt: new Date("2026-08-01T11:00:00.000Z"),
+    });
+
+    const now = new Date("2026-08-02T02:00:00.000Z");
+    await batchBuilder.runNightlyCycle(now);
+    const batch = await prisma.settlementBatch.findFirstOrThrow({
+      where: { merchantId: merchant.id },
+    });
+    await settlements.adminApprove(batch.id, now);
+
+    // Force the FIRST payout attempt to fail at the provider — executeOne
+    // stamps payoutAttemptedAt BEFORE calling the provider, so the batch
+    // stays APPROVED but is now sentinel-marked, even though no transfer
+    // ever actually completed.
+    mockProvider.forcePayoutFailure(batch.id);
+    await payout.executeOne(batch.id);
+
+    const afterFailedAttempt = await prisma.settlementBatch.findUniqueOrThrow({
+      where: { id: batch.id },
+    });
+    expect(afterFailedAttempt.status).toBe("APPROVED");
+    expect(afterFailedAttempt.payoutAttemptedAt).not.toBeNull();
+
+    // [C3] adminHold must now refuse — a naive status-only guard would let
+    // this through (the batch is still APPROVED), silently re-opening a
+    // batch whose amount may already be in flight at the provider.
+    // expect.assertions guards against the catch block silently not
+    // running at all (adminHold resolving instead of throwing).
+    expect.assertions(9);
+    try {
+      await settlements.adminHold(batch.id, "should be refused");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConflictException);
+      const response = (err as ConflictException).getResponse() as Record<
+        string,
+        unknown
+      >;
+      expect(response.statusCode).toBe(409);
+      expect(response.errorCode).toBe("SETTLEMENT_PAYOUT_ALREADY_ATTEMPTED");
+    }
+
+    const stillApproved = await prisma.settlementBatch.findUniqueOrThrow({
+      where: { id: batch.id },
+    });
+    expect(stillApproved.status).toBe("APPROVED"); // hold did NOT go through
+
+    // A later retry (no forced failure this time) must still complete
+    // normally — the sentinel protects against hold/recompute, not against
+    // ever finishing the payout.
+    await payout.executeOne(batch.id);
+    const sent = await prisma.settlementBatch.findUniqueOrThrow({
+      where: { id: batch.id },
+    });
+    expect(sent.status).toBe("SENT");
+    expect(sent.netPayoutCents).toBe(afterFailedAttempt.netPayoutCents); // amount never moved
+    const log = mockProvider.getPayoutLog().filter((p) => p.ref === batch.id);
+    expect(log).toHaveLength(1); // exactly one successful transfer recorded, ever
   }, 30000);
 });

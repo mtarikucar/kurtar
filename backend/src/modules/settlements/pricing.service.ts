@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 
@@ -75,9 +75,17 @@ export class PricingService {
     effectiveFrom: Date;
   }): Promise<ResolvedPlatformPricing & { id: string }> {
     if (params.effectiveFrom.getTime() <= Date.now()) {
-      throw new Error(
-        "effectiveFrom must be in the future — a price change never rewrites already-priced history.",
-      );
+      // [Fix round, I9] A proper HTTP exception, not a bare Error — this
+      // is reachable directly from AdminPricingController, and a bare
+      // Error was surfacing as a bodyless 500 instead of this project's
+      // {statusCode, errorCode, message} taxonomy every other admin
+      // endpoint uses.
+      throw new BadRequestException({
+        statusCode: 400,
+        errorCode: "PRICING_EFFECTIVE_FROM_NOT_FUTURE",
+        message:
+          "effectiveFrom must be in the future — a price change never rewrites already-priced history.",
+      });
     }
     return this.prisma.platformPricing.create({ data: params });
   }

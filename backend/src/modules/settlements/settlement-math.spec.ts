@@ -1,4 +1,8 @@
-import { computeSettlement, roundKurus } from "./settlement-math";
+import {
+  applyRateCents,
+  computeSettlement,
+  roundKurus,
+} from "./settlement-math";
 
 describe("roundKurus", () => {
   it("rounds .5 up (away from zero for the only sign this ever sees: non-negative)", () => {
@@ -7,6 +11,15 @@ describe("roundKurus", () => {
     expect(roundKurus(0.4)).toBe(0);
     expect(roundKurus(0.5)).toBe(1);
     expect(roundKurus(100)).toBe(100);
+  });
+});
+
+describe("applyRateCents", () => {
+  it("computes an exact-ratio percentage without a decimal-literal rate", () => {
+    expect(applyRateCents(2500, 20, 100)).toBe(500); // KDV %20 of 2500
+    expect(applyRateCents(333, 20, 100)).toBe(67); // 66.6 -> 67
+    expect(applyRateCents(12050, 1, 100)).toBe(121); // 120.5 -> 121, exact tie
+    expect(applyRateCents(0, 20, 100)).toBe(0);
   });
 });
 
@@ -41,13 +54,16 @@ describe("computeSettlement", () => {
     expect(result).toMatchObject({
       grossCents: 15000,
       bagFeeCents: 2500,
-      bagFeeVatCents: 500, // round(2500 * 0.20)
-      withholdingCents: 150, // round(15000 * 0.01)
+      bagFeeVatCents: 500, // round(2500 * 20/100)
+      // [P3] withholding base = gross - bagFee - bagFeeVat = 15000-2500-500
+      // = 12000 (the merchant's EARNING, not the raw sale gross) ->
+      // round(12000 * 1/100) = 120.
+      withholdingCents: 120,
       membershipOffsetCents: 0,
       refundClawbackCents: 0,
       carriedShortfallCents: 0,
       held: false,
-      netPayoutCents: 11850, // 15000 - 2500 - 500 - 150
+      netPayoutCents: 11880, // 15000 - 2500 - 500 - 120
     });
     expect(result.perLine).toEqual([
       {
@@ -55,7 +71,7 @@ describe("computeSettlement", () => {
         grossCents: 15000,
         bagFeeCents: 2500,
         bagFeeVatCents: 500,
-        withholdingCents: 150,
+        withholdingCents: 120,
       },
     ]);
     expectFullyAccountedFor(result, 0);
@@ -69,8 +85,9 @@ describe("computeSettlement", () => {
       priorClawbackCents: 0,
     });
     expect(result.bagFeeCents).toBe(5000); // 2500 * 2
-    expect(result.bagFeeVatCents).toBe(1000); // round(5000 * 0.20)
-    expect(result.withholdingCents).toBe(300); // round(30000 * 0.01)
+    expect(result.bagFeeVatCents).toBe(1000); // round(5000 * 20/100)
+    // withholding base = 30000-5000-1000 = 24000 -> round(240) = 240
+    expect(result.withholdingCents).toBe(240);
     expectFullyAccountedFor(result, 0);
   });
 
@@ -82,15 +99,19 @@ describe("computeSettlement", () => {
       priorClawbackCents: 0,
     });
     expect(result.bagFeeCents).toBe(333);
-    expect(result.bagFeeVatCents).toBe(67); // round(333 * 0.20 = 66.6) -> 67, not truncated to 66
+    expect(result.bagFeeVatCents).toBe(67); // round(333 * 20/100 = 66.6) -> 67, not truncated to 66
+    // withholding base = 10000-333-67 = 9600 -> round(96) = 96
+    expect(result.withholdingCents).toBe(96);
     expectFullyAccountedFor(result, 0);
   });
 
   it("per-line rounding is summed, not re-derived from a rounded aggregate — proven with a withholding exact-.5 tie", () => {
     const result = computeSettlement({
       lines: [
-        { reservationId: "r1", grossCents: 12550, qty: 1 }, // 125.5 -> 126 (tie, rounds up)
-        { reservationId: "r2", grossCents: 7777, qty: 3 }, // withholding 77.77 -> 78
+        // withholding base = 15050-2500-500 = 12050 -> 120.5 -> 121 (tie, rounds up)
+        { reservationId: "r1", grossCents: 15050, qty: 1 },
+        // bagFee=5000,vat=1000; base = 8080-5000-1000 = 2080 -> 20.8 -> 21
+        { reservationId: "r2", grossCents: 8080, qty: 2 },
       ],
       bagFeeCents: 2500,
       membershipDueCents: 0,
@@ -100,28 +121,27 @@ describe("computeSettlement", () => {
     expect(result.perLine).toEqual([
       {
         reservationId: "r1",
-        grossCents: 12550,
+        grossCents: 15050,
         bagFeeCents: 2500,
         bagFeeVatCents: 500,
-        withholdingCents: 126,
+        withholdingCents: 121,
       },
       {
         reservationId: "r2",
-        grossCents: 7777,
-        bagFeeCents: 7500, // 2500 * 3
-        bagFeeVatCents: 1500,
-        withholdingCents: 78,
+        grossCents: 8080,
+        bagFeeCents: 5000, // 2500 * 2
+        bagFeeVatCents: 1000,
+        withholdingCents: 21,
       },
     ]);
-    // Aggregate = sum of the ALREADY-rounded per-line values (126 + 78 =
-    // 204), never round(sum-of-unrounded) — which would also happen to be
-    // 204 here, so this test additionally proves it via grossCents/
+    // Aggregate = sum of the ALREADY-rounded per-line values (121 + 21 =
+    // 142), never round(sum-of-unrounded) — proven via grossCents/
     // bagFeeCents/bagFeeVatCents, which are exact sums by construction.
-    expect(result.grossCents).toBe(20327);
-    expect(result.bagFeeCents).toBe(10000);
-    expect(result.bagFeeVatCents).toBe(2000);
-    expect(result.withholdingCents).toBe(204);
-    expect(result.netPayoutCents).toBe(8123); // 20327 - 10000 - 2000 - 204
+    expect(result.grossCents).toBe(23130);
+    expect(result.bagFeeCents).toBe(7500);
+    expect(result.bagFeeVatCents).toBe(1500);
+    expect(result.withholdingCents).toBe(142);
+    expect(result.netPayoutCents).toBe(13988); // 23130 - 7500 - 1500 - 142
     expect(result.held).toBe(false);
     expectFullyAccountedFor(result, 0);
   });
@@ -133,9 +153,11 @@ describe("computeSettlement", () => {
       membershipDueCents: 50000,
       priorClawbackCents: 0,
     });
-    // available before membership = 100000 - 2500 - 500 - 1000 = 96000
-    expect(result.membershipOffsetCents).toBe(50000); // capped by due, not the larger 96000
-    expect(result.netPayoutCents).toBe(46000); // 96000 - 50000
+    // withholding base = 100000-2500-500 = 97000 -> round(970) = 970
+    // available before membership = 100000 - 2500 - 500 - 970 = 96030
+    expect(result.withholdingCents).toBe(970);
+    expect(result.membershipOffsetCents).toBe(50000); // capped by due, not the larger 96030
+    expect(result.netPayoutCents).toBe(46030); // 96030 - 50000
     expect(result.held).toBe(false);
     expectFullyAccountedFor(result, 0);
   });
@@ -147,8 +169,10 @@ describe("computeSettlement", () => {
       membershipDueCents: 199000, // full annual fee still owed, far more than available
       priorClawbackCents: 0,
     });
-    // available before membership = 10000 - 2500 - 500 - 100 = 6900
-    expect(result.membershipOffsetCents).toBe(6900); // capped by availability
+    // withholding base = 10000-2500-500 = 7000 -> round(70) = 70
+    // available before membership = 10000 - 2500 - 500 - 70 = 6930
+    expect(result.withholdingCents).toBe(70);
+    expect(result.membershipOffsetCents).toBe(6930); // capped by availability
     expect(result.netPayoutCents).toBe(0);
     expect(result.carriedShortfallCents).toBe(0); // fully absorbed, nothing owed to the PLATFORM
     expect(result.held).toBe(false); // net=0 by full absorption is NOT the same as held
@@ -162,9 +186,11 @@ describe("computeSettlement", () => {
       membershipDueCents: 0,
       priorClawbackCents: 10000,
     });
-    // available = 50000 - 2500 - 500 - 500 (round(50000*0.01)) = 46500
+    // withholding base = 50000-2500-500 = 47000 -> round(470) = 470
+    // available = 50000 - 2500 - 500 - 470 = 46530
+    expect(result.withholdingCents).toBe(470);
     expect(result.refundClawbackCents).toBe(10000);
-    expect(result.netPayoutCents).toBe(36500);
+    expect(result.netPayoutCents).toBe(36530);
     expect(result.carriedShortfallCents).toBe(0);
     expect(result.held).toBe(false);
     expectFullyAccountedFor(result, 10000);
@@ -175,11 +201,11 @@ describe("computeSettlement", () => {
       lines: [{ reservationId: "r1", grossCents: 50000, qty: 1 }],
       bagFeeCents: 2500,
       membershipDueCents: 0,
-      priorClawbackCents: 60000, // bigger than the 46500 available
+      priorClawbackCents: 60000, // bigger than the 46530 available
     });
-    expect(result.refundClawbackCents).toBe(46500); // everything that WAS available
+    expect(result.refundClawbackCents).toBe(46530); // everything that WAS available
     expect(result.netPayoutCents).toBe(0);
-    expect(result.carriedShortfallCents).toBe(13500); // 60000 - 46500, the unmet remainder
+    expect(result.carriedShortfallCents).toBe(13470); // 60000 - 46530, the unmet remainder
     expect(result.held).toBe(true);
     expectFullyAccountedFor(result, 60000);
   });
@@ -191,11 +217,13 @@ describe("computeSettlement", () => {
       membershipDueCents: 100000, // must stay untouched — nothing was available to offset with
       priorClawbackCents: 0,
     });
-    // available before membership = 1000 - 2500 - 500 - 10 = -2010
+    // withholding base = max(0, 1000-2500-500) = 0 -> withholding = 0
+    // available before membership = 1000 - 2500 - 500 - 0 = -2000
+    expect(result.withholdingCents).toBe(0);
     expect(result.membershipOffsetCents).toBe(0);
     expect(result.refundClawbackCents).toBe(0);
     expect(result.netPayoutCents).toBe(0);
-    expect(result.carriedShortfallCents).toBe(2010);
+    expect(result.carriedShortfallCents).toBe(2000);
     expect(result.held).toBe(true);
     expectFullyAccountedFor(result, 0);
   });
@@ -207,14 +235,14 @@ describe("computeSettlement", () => {
       membershipDueCents: 0,
       priorClawbackCents: 5000,
     });
-    // available before membership = 1000 - 2500 - 500 - 10 = -2010
+    // available before membership = 1000 - 2500 - 500 - 0 = -2000
     expect(result.refundClawbackCents).toBe(0); // nothing could be applied
     expect(result.netPayoutCents).toBe(0);
-    // 2010 (fee deficit) + 5000 (entirely-unmet clawback demand) — NOT
-    // just 2010: using refundClawbackCents (0) instead of the input
+    // 2000 (fee deficit) + 5000 (entirely-unmet clawback demand) — NOT
+    // just 2000: using refundClawbackCents (0) instead of the input
     // priorClawbackCents (5000) here would silently under-count this by
     // exactly 5000, a real money leak the module doc comment calls out.
-    expect(result.carriedShortfallCents).toBe(7010);
+    expect(result.carriedShortfallCents).toBe(7000);
     expect(result.held).toBe(true);
     expectFullyAccountedFor(result, 5000);
   });

@@ -7,6 +7,15 @@ import { SettlementStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { SettlementBatchBuilderService } from "./settlement-batch-builder.service";
 import { SettlementPayoutService } from "./settlement-payout.service";
+import { allowedFromStatusesFor } from "./settlement-transitions";
+
+// [Fix round, I13] Derived from the transitions map, not hand-typed —
+// approve()/hold() previously each wrote their own `{in: [...]}` guard,
+// and those guards silently disagreed with each other and with
+// settlement-payout.service.ts's markSent (that disagreement is how C2/C3
+// were reachable at all).
+const APPROVED_FROM_STATUSES = allowedFromStatusesFor("APPROVED");
+const HELD_FROM_STATUSES = allowedFromStatusesFor("HELD");
 
 function batchNotFoundError() {
   return new NotFoundException({
@@ -77,7 +86,7 @@ export class SettlementsService {
       select: { status: true },
     });
     if (!existing) throw batchNotFoundError();
-    if (existing.status !== "CALCULATED") {
+    if (!APPROVED_FROM_STATUSES.includes(existing.status)) {
       throw new ConflictException({
         statusCode: 409,
         errorCode: "SETTLEMENT_NOT_APPROVABLE",
@@ -95,7 +104,7 @@ export class SettlementsService {
     }
 
     const guarded = await this.prisma.settlementBatch.updateMany({
-      where: { id, status: "CALCULATED" },
+      where: { id, status: { in: APPROVED_FROM_STATUSES } },
       data: { status: "APPROVED" },
     });
     if (guarded.count === 0) {
@@ -108,9 +117,20 @@ export class SettlementsService {
     return this.adminGet(id);
   }
 
+  /** [Fix round, C3] Refuses a batch with `payoutAttemptedAt` set — once a
+   * payout has been attempted, netPayoutCents must never move again; see
+   * settlement-payout.service.ts's class doc comment for the exact money
+   * bug this closes. An APPROVED batch that already has a payout in
+   * flight/attempted cannot be held through this endpoint at all — it
+   * needs a manual reconciliation path (out of this task's scope) once a
+   * real bank/PSP feed exists, not a silent re-open. */
   async adminHold(id: string, note: string | undefined) {
     const guarded = await this.prisma.settlementBatch.updateMany({
-      where: { id, status: { in: ["CALCULATED", "APPROVED"] } },
+      where: {
+        id,
+        status: { in: HELD_FROM_STATUSES },
+        payoutAttemptedAt: null,
+      },
       data: {
         status: "HELD",
         holdReason: note?.trim() || "Admin tarafından beklemeye alındı",
@@ -119,9 +139,17 @@ export class SettlementsService {
     if (guarded.count === 0) {
       const existing = await this.prisma.settlementBatch.findUnique({
         where: { id },
-        select: { status: true },
+        select: { status: true, payoutAttemptedAt: true },
       });
       if (!existing) throw batchNotFoundError();
+      if (existing.payoutAttemptedAt !== null) {
+        throw new ConflictException({
+          statusCode: 409,
+          errorCode: "SETTLEMENT_PAYOUT_ALREADY_ATTEMPTED",
+          message:
+            "A payout has already been attempted for this batch — its amount is frozen and it can no longer be held. Needs manual reconciliation, not a hold/retry.",
+        });
+      }
       throw new ConflictException({
         statusCode: 409,
         errorCode: "SETTLEMENT_NOT_HOLDABLE",
@@ -154,6 +182,16 @@ export class SettlementsService {
       errorCode: "SETTLEMENT_NOT_RETRYABLE",
       message: `Batch is ${batch.status}; nothing to retry.`,
     });
+  }
+
+  /** [Fix round, C1] On-demand trigger for the nightly batch cycle
+   * (POST /api/admin/settlements/run-nightly) — the cron itself
+   * (settlement-batch-builder.service.ts's runNightlyCycleCron) covers the
+   * normal 02:00 Europe/Istanbul schedule; this is for ops to run it
+   * immediately (verifying a fix, catching up after an incident) without
+   * waiting for the next tick. */
+  async adminRunNightlyCycle(now: Date = new Date()) {
+    return this.batchBuilder.runNightlyCycle(now);
   }
 
   async listMine(merchantId: string, page: number, pageSize: number) {

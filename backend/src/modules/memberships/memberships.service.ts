@@ -3,6 +3,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { isUniqueConstraintViolation } from "../../common/utils/prisma-error.util";
 import { PricingService } from "../settlements/pricing.service";
 import { addAnniversaryYears } from "./anniversary";
+import { computeMembershipVatCents } from "./membership-pricing";
 
 export interface MembershipMineView {
   status: string;
@@ -10,7 +11,10 @@ export interface MembershipMineView {
   currentPeriodStart: Date;
   currentPeriodEnd: Date;
   priceCents: number;
+  vatCents: number;
   outstandingCents: number;
+  outstandingVatCents: number;
+  writtenOffCents: number;
   periodPaidAt: Date | null;
   nextAnniversary: Date;
 }
@@ -40,12 +44,13 @@ export class MembershipsService {
    * constraint: a second attempt's create() throws P2002, caught below and
    * treated as an already-created no-op rather than a hard failure.
    *
-   * priceCents (and therefore the fresh outstandingCents balance) is 0 for
-   * a founding member still inside their `membershipExemptUntil` window —
-   * "first year exempt" (brief §"commercial rules") — TRIAL status either
-   * way; see the module's onModuleInit... actually see
-   * membership-offset.service.ts's doc comment for how TRIAL -> ACTIVE is
-   * decided (first batch that actually touches this subscription).
+   * priceCents/vatCents (and therefore the fresh outstandingCents/
+   * outstandingVatCents balance) are 0 for a founding member still inside
+   * their `membershipExemptUntil` window — "first year exempt" (brief
+   * §"commercial rules"). Always created TRIAL regardless — see
+   * membership-offset.service.ts's doc comment for how TRIAL (and
+   * PAST_DUE, after a forgiven renewal) flips to ACTIVE on the first real
+   * batch that touches this subscription.
    */
   async createForApprovedMerchant(
     merchantId: string,
@@ -62,18 +67,29 @@ export class MembershipsService {
       return;
     }
 
+    // [Fix round, I6] This exemption check at CREATION time only decides
+    // the STARTING price for the first period — it does NOT need to
+    // account for a founding-status grant that happens AFTER this point;
+    // that case is handled by membership-offset.service.ts's
+    // lockAndResolveDue re-checking `membershipExemptUntil` as-of every
+    // batch's own period date, every time.
     const exempt =
       merchant.membershipExemptUntil != null &&
       approvedAt.getTime() < merchant.membershipExemptUntil.getTime();
 
     let priceCents = 0;
+    let vatCents = 0;
     if (!exempt) {
       const pricing = await this.pricing.resolvePlatformPricing(
         this.prisma,
         approvedAt,
       );
       priceCents = pricing.membershipAnnualCents;
+      // [Fix round, P2] KDV %20 on the membership fee, mirroring the bag
+      // fee's netCents/vatCents split.
+      vatCents = computeMembershipVatCents(priceCents);
     }
+    const totalDueCents = priceCents + vatCents;
 
     try {
       await this.prisma.membershipSubscription.create({
@@ -83,9 +99,11 @@ export class MembershipsService {
           currentPeriodStart: approvedAt,
           currentPeriodEnd: addAnniversaryYears(approvedAt, 1),
           priceCents,
+          vatCents,
           status: "TRIAL",
-          outstandingCents: priceCents,
-          periodPaidAt: priceCents === 0 ? approvedAt : null,
+          outstandingCents: totalDueCents,
+          outstandingVatCents: vatCents,
+          periodPaidAt: totalDueCents === 0 ? approvedAt : null,
         },
       });
     } catch (err) {
@@ -117,7 +135,10 @@ export class MembershipsService {
       currentPeriodStart: sub.currentPeriodStart,
       currentPeriodEnd: sub.currentPeriodEnd,
       priceCents: sub.priceCents,
+      vatCents: sub.vatCents,
       outstandingCents: sub.outstandingCents,
+      outstandingVatCents: sub.outstandingVatCents,
+      writtenOffCents: sub.writtenOffCents,
       periodPaidAt: sub.periodPaidAt,
       nextAnniversary: sub.currentPeriodEnd,
     };

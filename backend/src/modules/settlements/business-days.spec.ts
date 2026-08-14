@@ -98,6 +98,26 @@ describe("addBusinessDays", () => {
     expect(withHoliday.toISOString()).toBe(without.toISOString());
   });
 
+  it("[minor fix] skips a run of CONSECUTIVE holidays back-to-back with a weekend — Kurban Bayramı 2026 (4 days, Wed-Sat, immediately followed by Sunday)", () => {
+    // Mirrors the seed migration's actual 2026 Kurban Bayramı rows.
+    const holidays = new Set([
+      "2026-05-27", // Wed
+      "2026-05-28", // Thu
+      "2026-05-29", // Fri
+      "2026-05-30", // Sat (also a weekend day — no double-skip either way)
+    ]);
+    // Tuesday 2026-05-26 (the last business day before the run) + 1
+    // business day must skip Wed/Thu/Fri (holiday), Sat (holiday+weekend),
+    // AND Sun 05-31 (plain weekend, not itself a holiday) — 5 calendar
+    // days in a row — landing on Monday 2026-06-01.
+    const result = addBusinessDays(
+      new Date("2026-05-26T00:00:00.000Z"),
+      1,
+      holidays,
+    );
+    expect(result.toISOString()).toBe("2026-06-01T00:00:00.000Z");
+  });
+
   it("n=0 returns the start date's own calendar day unchanged", () => {
     const result = addBusinessDays(
       new Date("2026-08-15T14:00:00.000Z"), // Saturday, not itself a business day

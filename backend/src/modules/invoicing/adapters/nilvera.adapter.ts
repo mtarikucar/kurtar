@@ -8,16 +8,15 @@ import {
 } from "../e-document-provider.interface";
 
 /**
- * Nilvera özel entegratör adapter'ı — INERT until credentials, built
- * against the documented API shape (developer.nilvera.com) but never
- * exercised by any test in this task: `onModuleInit` only registers this
- * adapter when BOTH `NILVERA_API_KEY` and `NILVERA_API_URL` are set, and
- * no test in this suite sets either — EDOC_PROVIDER defaults to "mock"
- * everywhere tests run (see env.validation.ts), so
- * `EDocumentProviderRegistry.get("nilvera")` is simply never reachable in
- * CI/local test runs; if it somehow were, the registry throws a clean
- * "Unknown e-document provider" rather than this class attempting a real
- * network call with undefined credentials.
+ * Nilvera özel entegratör adapter'ı — INERT until credentials (`onModuleInit`
+ * only registers this adapter when BOTH `NILVERA_API_KEY` and
+ * `NILVERA_API_URL` are set; no test in this suite sets either), and
+ * [Fix round, I11] `issue()` itself is now HARD-DISABLED regardless of
+ * config — see that method's own doc comment for why "only registers with
+ * real credentials" was not a strong enough guarantee on its own. VKN
+ * lookup (`isRegisteredEFaturaUser`) and `healthCheck()` stay real —
+ * read-only GET requests against the documented API shape, no malformed-
+ * document risk — and are exercised once real credentials exist.
  *
  * Auth model (differs from a typical OAuth integrator): Nilvera uses a
  * "Persisted Access Token" — a static API key from the merchant panel,
@@ -25,24 +24,19 @@ import {
  * token endpoint.
  *
  * Endpoint shape ported from kds's sibling adapter
- * (backend/src/modules/accounting/adapters/nilvera.adapter.ts), trimmed
- * to what kurtar's simpler single-tenant-per-request commission invoice
- * actually needs — kurtar has no UBL-TR XML generator or e-document
- * signer pipeline (kds's `generateUblTrXml`/`EDocumentSigner`, a much
- * larger accounting-module concern out of this task's scope); `issue()`
- * below sends a MINIMAL representative XML body sufficient to prove the
- * request shape (multipart "file" field, matching Nilvera's documented
- * Send/Xml contract) — full spec-compliant UBL-TR generation is
- * deliberately left as future work for whenever this adapter actually
- * activates, called out again in that method's own comment.
+ * (backend/src/modules/accounting/adapters/nilvera.adapter.ts), trimmed to
+ * what this file still actually calls — kurtar has no UBL-TR XML generator
+ * or e-document signer pipeline (kds's `generateUblTrXml`/
+ * `EDocumentSigner`, a much larger accounting-module concern out of this
+ * task's scope), which is exactly why `issue()` (Nilvera's document-
+ * dispatch endpoints, `/earchive/Send/Xml` and `/einvoice/Send/Xml`) is
+ * disabled rather than sending a hand-rolled non-UBL-TR body.
  *
  * Doc references (as ported from kds, unverified against a live sandbox —
  * there is none configured for this task):
  *   - e-Arşiv API:  https://developer.nilvera.com/api/e-arsiv-api
  *   - VKN sorgu:    https://developer.nilvera.com/api/genel-api/mukellef-islemleri/vkn-ile-sorgular
  */
-const EARCHIVE_SEND_XML_PATH = "/earchive/Send/Xml";
-const EINVOICE_SEND_XML_PATH = "/einvoice/Send/Xml";
 const GENERAL_COMPANY_PATH = "/general/Company";
 const CHECK_TAXNUMBER_PATH = "/general/GlobalCompany/Check/TaxNumber";
 
@@ -81,65 +75,26 @@ export class NilveraAdapter implements EDocumentProvider, OnModuleInit {
   }
 
   /**
-   * `ublXml` below is a MINIMAL placeholder body (invoice id + amounts),
-   * NOT spec-compliant UBL-TR — see the class doc comment. Building a real
-   * UBL-TR document is real work (kds's `generateUblTrXml`) that this
-   * adapter deliberately does not port, since it can never run in this
-   * task (no credentials configured anywhere this code executes).
+   * [Fix round, I11] HARD-DISABLED, independent of config — this is the
+   * one behavior change review flagged as unsafe rather than just
+   * "inert": the old version's placeholder XML (invoice id + amount, NOT
+   * spec-compliant UBL-TR) would have been genuinely POSTed to a real
+   * Nilvera endpoint the moment an operator set NILVERA_API_KEY/
+   * NILVERA_API_URL — a plausible real ops action once Nilvera onboarding
+   * starts, well before anyone builds the actual UBL-TR generator this
+   * needs. Refusing unconditionally means configuring credentials alone
+   * can never cause a malformed document to reach a live tax/e-document
+   * provider; a future task must explicitly replace this method (with a
+   * real UBL-TR builder — kds's `generateUblTrXml` is the reference this
+   * was always meant to eventually port) before Nilvera can ever actually
+   * issue anything. `isRegisteredEFaturaUser` below is NOT affected — it
+   * is a read-only VKN lookup against the documented API with no
+   * malformed-document risk, so it stays real once credentials exist.
    */
-  async issue(invoice: EDocumentInvoiceInput): Promise<EDocumentIssueResult> {
-    if (!this.apiKey || !this.apiUrl) {
-      throw new Error(
-        "NilveraAdapter.issue() called without NILVERA_API_KEY/NILVERA_API_URL configured — this should be unreachable (onModuleInit never registers this adapter in that state).",
-      );
-    }
-
-    const placeholderXml = `<?xml version="1.0" encoding="UTF-8"?>
-<Invoice><ID>${invoice.invoiceId}</ID><PayableAmount>${
-      invoice.totalAmountCents / 100
-    }</PayableAmount></Invoice>`;
-
-    const path =
-      invoice.docType === "EFATURA"
-        ? EINVOICE_SEND_XML_PATH
-        : EARCHIVE_SEND_XML_PATH;
-
-    const form = new FormData();
-    form.append(
-      "file",
-      new Blob([placeholderXml], { type: "application/xml" }),
-      `${invoice.invoiceId}.xml`,
+  async issue(_invoice: EDocumentInvoiceInput): Promise<EDocumentIssueResult> {
+    throw new Error(
+      "NilveraAdapter.issue() is not implemented — only a placeholder, non-UBL-TR request shape exists. Build a real UBL-TR generator (kds's generateUblTrXml is the reference) before wiring this up to a live Nilvera account.",
     );
-
-    const response = await fetch(`${this.apiUrl}${path}`, {
-      method: "POST",
-      headers: this.authHeaders(),
-      body: form,
-      signal: AbortSignal.timeout(NILVERA_FETCH_TIMEOUT_MS),
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(
-        `Nilvera dispatch failed (HTTP ${response.status}): ${text.slice(0, 500)}`,
-      );
-    }
-
-    const data = (await response.json().catch(() => null)) as
-      | { UUID?: string; uuid?: string; InvoiceUUID?: string; id?: string }
-      | Array<Record<string, unknown>>
-      | null;
-    const first = Array.isArray(data) ? data[0] : data;
-    const docId =
-      (first?.UUID as string) ??
-      (first?.uuid as string) ??
-      (first?.InvoiceUUID as string) ??
-      (first?.id as string) ??
-      null;
-    if (!docId) {
-      throw new Error("Nilvera dispatch returned no invoice UUID");
-    }
-    return { docId, status: "issued" };
   }
 
   async healthCheck() {

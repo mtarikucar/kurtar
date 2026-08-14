@@ -5,8 +5,14 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { OutboxService } from "../outbox/outbox.service";
 import { OUTBOX_EVENT_TYPES } from "../outbox/event-types";
+import { allowedFromStatusesFor } from "./settlement-transitions";
 
 const RECONCILIATION_OVERDUE_MS = 3 * 24 * 60 * 60 * 1000;
+// [Fix round, I13] Derived from the transitions map, not hand-typed — see
+// settlement-transitions.ts's doc comment on why that matters (this is
+// exactly the kind of guard that silently drifted between call sites
+// before the map existed).
+const SENT_FROM_STATUSES = allowedFromStatusesFor("SENT");
 
 /**
  * APPROVED -> SENT payout execution (brief §3) + the SENT-not-SETTLED
@@ -27,6 +33,25 @@ const RECONCILIATION_OVERDUE_MS = 3 * 24 * 60 * 60 * 1000;
  * then lets exactly one of the two transactions actually flip the row and
  * publish the outbox event — the loser's updateMany matches 0 rows and
  * re-reads the winner's already-committed state instead of re-publishing.
+ *
+ * AMOUNT IMMUTABILITY [Fix round, C3]: idempotency-by-ref alone is not
+ * enough — it proves a REPEATED call is safe, but says nothing about
+ * whether `batch.netPayoutCents` was still the SAME value on both calls.
+ * Without a guard, this sequence loses money: payout(ref, 10000) succeeds
+ * at the provider -> an admin holds the batch in the gap before markSent
+ * commits (the guarded updateMany below matches 0 rows, nothing recorded)
+ * -> a later recompute lands a clawback, netPayoutCents becomes 8000 ->
+ * admin approves again -> payout(ref, 8000) is called, but the provider's
+ * OWN idempotency (MockPaymentProvider.payout) returns the ORIGINAL
+ * 10000-kuruş transfer's ref while THIS code goes on to record the batch
+ * as SENT/8000 — a 2000-kuruş gap with no book entry anywhere. `executeOne`
+ * now stamps `payoutAttemptedAt` in a guarded UPDATE BEFORE ever calling
+ * the provider; `hold()`/`recomputeBatch()` both refuse to touch a batch
+ * once that is set, freezing `netPayoutCents` from that instant on — so a
+ * retried `payout()` call is now provably calling with the SAME amount
+ * every time. MockPaymentProvider.payout() also independently asserts
+ * amount-consistency for a repeated ref, so a regression here fails loud
+ * in tests rather than silently losing money again.
  */
 @Injectable()
 export class SettlementPayoutService {
@@ -102,6 +127,20 @@ export class SettlementPayoutService {
       return this.markSent(batch.id, "no-transfer-zero-net");
     }
 
+    // [Fix round, C3] Freeze the amount BEFORE ever calling the provider.
+    // Guarded so this only actually flips the row the FIRST time (a retry
+    // — this same batch reaching executeOne again after a prior failed
+    // provider call — sees it already set and just proceeds straight to
+    // the provider call below with the confirmed-frozen
+    // `batch.netPayoutCents` read above, which cannot have changed since:
+    // hold()/recomputeBatch() both refuse a batch with this set).
+    if (batch.payoutAttemptedAt === null) {
+      await this.prisma.settlementBatch.updateMany({
+        where: { id: batchId, status: "APPROVED", payoutAttemptedAt: null },
+        data: { payoutAttemptedAt: new Date() },
+      });
+    }
+
     const merchantRef = batch.merchant.pspSubMerchantKey || batch.merchant.iban;
     let pspTransferRef: string;
     try {
@@ -127,7 +166,7 @@ export class SettlementPayoutService {
   ): Promise<SettlementBatch> {
     return this.prisma.$transaction(async (tx) => {
       const guarded = await tx.settlementBatch.updateMany({
-        where: { id: batchId, status: "APPROVED" },
+        where: { id: batchId, status: { in: SENT_FROM_STATUSES } },
         data: { status: "SENT", pspTransferRef, sentAt: new Date() },
       });
       const fresh = await tx.settlementBatch.findUniqueOrThrow({
