@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { ReservationsService } from "./reservations.service";
+import { OutboxService } from "../outbox/outbox.service";
 
 function buildFakeTx(overrides: Record<string, any> = {}) {
   return {
@@ -28,6 +29,10 @@ function buildFakeTx(overrides: Record<string, any> = {}) {
     refund: {
       create: jest.fn(),
       ...overrides.refund,
+    },
+    outboxEvent: {
+      create: jest.fn().mockResolvedValue({}),
+      ...overrides.outboxEvent,
     },
     $executeRaw: jest.fn(),
   };
@@ -55,7 +60,12 @@ function buildDeps() {
     createIntent: jest.fn(),
     refund: jest.fn(),
   };
-  return { tx, prisma, offerStock, facade };
+  // Real OutboxService (no constructor deps) — its own dedicated spec
+  // covers its behavior; here it just needs tx.outboxEvent.create to
+  // exist on the fake tx (above), which every redeem()-exercising test
+  // gets via buildFakeTx().
+  const outbox = new OutboxService();
+  return { tx, prisma, offerStock, facade, outbox };
 }
 
 /**
@@ -81,12 +91,13 @@ function uniqueCodeViolation() {
 
 describe("ReservationsService.create", () => {
   it("throws OFFER_NOT_FOUND when the offer does not exist", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue(null);
     const service = new ReservationsService(
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     await expect(service.create("user1", "offer1", 1)).rejects.toMatchObject({
@@ -96,7 +107,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("throws the uniform OFFER_UNAVAILABLE error when the atomic claim fails", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -108,6 +119,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const err = await service.create("user1", "offer1", 2).catch((e) => e);
@@ -116,7 +128,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("computes price/total/cancelDeadline server-side and never from client input", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -134,6 +146,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     const result = await service.create("user1", "offer1", 3);
 
@@ -149,7 +162,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("[I3] retries the WHOLE transaction (fresh stock claim included) on a reservation-code collision, not just the failed INSERT", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -166,6 +179,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     const result = await service.create("user1", "offer1", 1);
 
@@ -181,7 +195,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("[I3] gives up after MAX_CODE_ATTEMPTS consecutive collisions and propagates the error", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -195,13 +209,14 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.create("user1", "offer1", 1)).rejects.toThrow();
     expect(prisma.$transaction).toHaveBeenCalledTimes(5); // MAX_CODE_ATTEMPTS
   });
 
   it("compensates (Payment FAILED, Reservation EXPIRED, stock released) when createIntent fails, and returns 503", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -219,6 +234,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.create("user1", "offer1", 1)).rejects.toBeInstanceOf(
       ServiceUnavailableException,
@@ -239,7 +255,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("skips compensation writes when a concurrent path already moved the Payment out of INTENT", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -255,6 +271,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.create("user1", "offer1", 1)).rejects.toBeInstanceOf(
       ServiceUnavailableException,
@@ -265,7 +282,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("[C1] does NOT double-release stock in compensation when the Reservation already left PENDING_PAYMENT (e.g. the user cancelled it first)", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -282,6 +299,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.create("user1", "offer1", 1)).rejects.toBeInstanceOf(
       ServiceUnavailableException,
@@ -306,12 +324,13 @@ describe("ReservationsService.cancel", () => {
   }
 
   it("throws RESERVATION_NOT_FOUND for a nonexistent reservation", async () => {
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(null);
     const service = new ReservationsService(
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.cancel("user1", "nope")).rejects.toBeInstanceOf(
       NotFoundException,
@@ -319,7 +338,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("throws FORBIDDEN when the reservation belongs to a different user", async () => {
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ userId: "someone-else" }),
     );
@@ -327,6 +346,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.cancel("user1", "resv1")).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -334,7 +354,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("throws the uniform RESERVATION_NOT_CANCELLABLE error past the deadline (neither candidate status matches)", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ cancelDeadlineAt: new Date(Date.now() - 1000) }),
     );
@@ -343,6 +363,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const err = await service.cancel("user1", "resv1").catch((e) => e);
@@ -352,7 +373,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("[C1] terminates a still-live Payment intent in the SAME transaction as the cancel", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -363,6 +384,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await service.cancel("user1", "resv1");
 
@@ -373,7 +395,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("PENDING_PAYMENT cancel releases stock and does NOT call refund", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -383,6 +405,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const result = await service.cancel("user1", "resv1");
@@ -392,7 +415,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("CONFIRMED cancel calls facade.refund with the full amount and records a Refund row", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ status: "CONFIRMED" }),
     );
@@ -404,6 +427,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await service.cancel("user1", "resv1");
 
@@ -420,7 +444,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("[I2] derives the refund decision from the IN-TRANSACTION match, not the stale pre-transaction read — a webhook confirming concurrently must still trigger a refund", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     // The pre-transaction read (used only for not-found/not-owner checks)
     // is stale: it still shows PENDING_PAYMENT.
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
@@ -437,6 +461,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await service.cancel("user1", "resv1");
 
@@ -444,7 +469,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("a provider-side refund failure records a FAILED Refund row (no money moved, safe to retry)", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ status: "CONFIRMED" }),
     );
@@ -457,6 +482,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     const result = await service.cancel("user1", "resv1");
 
@@ -471,7 +497,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("[I1] a bookkeeping failure AFTER a successful provider refund is recorded as SENT with the real refundRef, never FAILED (prevents a double-refund on manual retry)", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ status: "CONFIRMED" }),
     );
@@ -495,6 +521,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     const result = await service.cancel("user1", "resv1");
 
@@ -533,7 +560,7 @@ describe("ReservationsService.redeem", () => {
   }
 
   it("throws FORBIDDEN when the reservation's store belongs to a different merchant", async () => {
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -541,6 +568,7 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(
       service.redeem("mu1", "other-merchant", "resv1"),
@@ -548,7 +576,7 @@ describe("ReservationsService.redeem", () => {
   });
 
   it("throws RESERVATION_NOT_REDEEMABLE outside the pickup window", async () => {
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({
         offer: {
@@ -561,6 +589,7 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     const err = await service
       .redeem("mu1", "merchant1", "resv1")
@@ -570,7 +599,7 @@ describe("ReservationsService.redeem", () => {
   });
 
   it("first redeem transitions to REDEEMED and increments qtyRedeemed", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -579,6 +608,7 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const result = await service.redeem("mu1", "merchant1", "resv1");
@@ -596,7 +626,7 @@ describe("ReservationsService.redeem", () => {
 
   it("a second call after already REDEEMED short-circuits — same success, no DB writes", async () => {
     const redeemedAt = new Date();
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ status: "REDEEMED", redeemedAt }),
     );
@@ -604,6 +634,7 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const result = await service.redeem("mu1", "merchant1", "resv1");
@@ -617,7 +648,7 @@ describe("ReservationsService.redeem", () => {
 
   it("losing the in-transaction race to a concurrent redeem is treated as idempotent success, not an error", async () => {
     const winnerRedeemedAt = new Date();
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -630,6 +661,7 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const result = await service.redeem("mu1", "merchant1", "resv1");
@@ -642,7 +674,7 @@ describe("ReservationsService.redeem", () => {
   });
 
   it("losing the race to a genuine conflict (e.g. cancelled concurrently) throws the uniform 409", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -655,6 +687,7 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const err = await service
@@ -667,13 +700,14 @@ describe("ReservationsService.redeem", () => {
 
 describe("ReservationsService.listMine", () => {
   it("passes page/limit through to the LIMIT/OFFSET raw query and returns total from count()", async () => {
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ id: "r1" }]);
     (prisma.reservation.count as jest.Mock).mockResolvedValue(1);
     const service = new ReservationsService(
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const result = await service.listMine("user1", 2, 10);

@@ -8,6 +8,7 @@ import { MockPaymentProvider } from "../payments-core/adapters/mock-payment-prov
 import { OffersService } from "../offers/offers.service";
 import { TokenService } from "../auth/services/token.service";
 import { MerchantsService } from "./merchants.service";
+import { OutboxService } from "../outbox/outbox.service";
 
 /**
  * Real-DB proof of the suspend kill-switch (§1 of the Task 5 brief): a
@@ -35,17 +36,24 @@ function buildHarness(prisma: PrismaClient) {
   mockProvider.onModuleInit();
   const facade = new PaymentsFacadeService(registry, config);
   const offerStock = new OfferStockService();
+  const outbox = new OutboxService();
   const reservations = new ReservationsService(
     prisma as any,
     offerStock,
     facade,
+    outbox,
   );
-  const offers = new OffersService(prisma as any, reservations);
+  const offers = new OffersService(prisma as any, reservations, outbox);
   // TokenService is a required MerchantsService constructor dependency but
   // this suite never signs up/logs in through MerchantsService — only
   // exercises adminSuspend, which never touches it.
   const tokenService = {} as unknown as TokenService;
-  const merchants = new MerchantsService(prisma as any, tokenService, offers);
+  const merchants = new MerchantsService(
+    prisma as any,
+    tokenService,
+    offers,
+    outbox,
+  );
   return { reservations, merchants };
 }
 

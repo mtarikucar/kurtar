@@ -22,6 +22,8 @@ import {
   offerDateToDbDate,
 } from "../../common/utils/istanbul-date.util";
 import { allowedFromStatusesFor } from "./offer-transitions";
+import { OutboxService } from "../outbox/outbox.service";
+import { OUTBOX_EVENT_TYPES } from "../outbox/event-types";
 
 export interface OfferCancelResult {
   offerId: string;
@@ -83,6 +85,7 @@ export class OffersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reservations: ReservationsService,
+    private readonly outbox: OutboxService,
   ) {}
 
   private async assertOwnedOffer(
@@ -194,20 +197,20 @@ export class OffersService {
       const offer = await tx.dailyOffer.findUniqueOrThrow({
         where: { id: offerId },
       });
-      // No jitter yet — jitter is a push-fan-out concern (spreading
-      // notification bursts), which lands with the notifications worker,
-      // not this task.
-      await tx.outboxEvent.create({
-        data: {
-          type: "offer.published.v1",
-          payload: {
-            offerId,
-            storeId: offer.storeId,
-            bagTemplateId: offer.bagTemplateId,
-            publishedAt: now.toISOString(),
-          },
-          idempotencyKey: `offer-published:${offerId}`,
+      // [Task 7] No jitter — jitter is a push-fan-out concern (spreading
+      // notification bursts), which would live in the outbox worker/
+      // handler, not here; OfferPublishedHandler dispatches on the
+      // worker's normal 15s cadence, which already spreads a publish
+      // burst across ticks.
+      await this.outbox.publish(tx, {
+        type: OUTBOX_EVENT_TYPES.OFFER_PUBLISHED_V1,
+        payload: {
+          offerId,
+          storeId: offer.storeId,
+          bagTemplateId: offer.bagTemplateId,
+          publishedAt: now.toISOString(),
         },
+        idempotencyKey: `offer-published:${offerId}`,
       });
 
       return { offerId, status: "PUBLISHED" as const, publishedAt: now };
@@ -435,18 +438,22 @@ export class OffersService {
 
         const fanOut = await this.reservations.cancelAllForOffer(tx, offerId);
 
-        await tx.outboxEvent.create({
-          data: {
-            type: "offer.cancelled.v1",
-            payload: {
-              offerId,
-              storeId: offer.storeId,
-              expiredCount: fanOut.expiredCount,
-              cancelledCount: fanOut.cancelledCount,
-              reason,
-            },
-            idempotencyKey: `offer-cancelled:${offerId}`,
+        // [Task 7] reservationIds is exactly the toRefund set — the
+        // CONFIRMED -> CANCELLED_BY_MERCHANT reservations THIS cancellation
+        // actually refunds — not the expiredCount PENDING_PAYMENT ones,
+        // which were never charged. OfferCancelledHandler pushes only
+        // these ids ("your money is being refunded").
+        await this.outbox.publish(tx, {
+          type: OUTBOX_EVENT_TYPES.OFFER_CANCELLED_V1,
+          payload: {
+            offerId,
+            storeId: offer.storeId,
+            expiredCount: fanOut.expiredCount,
+            cancelledCount: fanOut.cancelledCount,
+            reason,
+            reservationIds: fanOut.toRefund.map((r) => r.reservationId),
           },
+          idempotencyKey: `offer-cancelled:${offerId}`,
         });
 
         return fanOut;

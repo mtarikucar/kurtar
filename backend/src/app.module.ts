@@ -18,6 +18,9 @@ import { MerchantsModule } from "./modules/merchants/merchants.module";
 import { StoresModule } from "./modules/stores/stores.module";
 import { OffersModule } from "./modules/offers/offers.module";
 import { DiscoveryModule } from "./modules/discovery/discovery.module";
+import { OutboxCoreModule } from "./modules/outbox/outbox-core.module";
+import { OutboxModule } from "./modules/outbox/outbox.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 
 @Module({
   imports: [
@@ -48,6 +51,9 @@ import { DiscoveryModule } from "./modules/discovery/discovery.module";
     MerchantsModule,
     StoresModule,
     DiscoveryModule,
+    OutboxCoreModule,
+    OutboxModule,
+    NotificationsModule,
   ],
   providers: [
     // Applies the matching THROTTLER_PROFILES tier to every route; auth

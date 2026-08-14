@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { PaymentSettleService } from "./payment-settle.service";
+import { OutboxService } from "../outbox/outbox.service";
 
 function buildFakeTx(overrides: Record<string, any> = {}) {
   return {
@@ -13,6 +14,10 @@ function buildFakeTx(overrides: Record<string, any> = {}) {
       updateMany: jest.fn(),
       ...overrides.reservation,
     },
+    outboxEvent: {
+      create: jest.fn().mockResolvedValue({}),
+      ...overrides.outboxEvent,
+    },
   };
 }
 
@@ -24,7 +29,8 @@ function buildDeps() {
   };
   const offerStock = { release: jest.fn().mockResolvedValue(true) };
   const facade = { activeProviderId: jest.fn().mockReturnValue("mock") };
-  return { tx, prisma, offerStock, facade };
+  const outbox = new OutboxService();
+  return { tx, prisma, offerStock, facade, outbox };
 }
 
 function uniqueViolation() {
@@ -44,12 +50,13 @@ const baseEvent = {
 
 describe("PaymentSettleService.settle — idempotency gate", () => {
   it("returns 'duplicate' without touching Payment/Reservation when WebhookEventLog insert unique-violates", async () => {
-    const { prisma, tx, offerStock, facade } = buildDeps();
+    const { prisma, tx, offerStock, facade, outbox } = buildDeps();
     prisma.webhookEventLog.create.mockRejectedValue(uniqueViolation());
     const service = new PaymentSettleService(
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const outcome = await service.settle(baseEvent);
@@ -59,12 +66,13 @@ describe("PaymentSettleService.settle — idempotency gate", () => {
   });
 
   it("rethrows a non-unique-violation error from the WebhookEventLog insert", async () => {
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     prisma.webhookEventLog.create.mockRejectedValue(new Error("db is down"));
     const service = new PaymentSettleService(
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.settle(baseEvent)).rejects.toThrow("db is down");
   });
@@ -72,12 +80,13 @@ describe("PaymentSettleService.settle — idempotency gate", () => {
 
 describe("PaymentSettleService.settle — unknown merchantOid", () => {
   it("returns 'unknown_merchant_oid' and does not throw", async () => {
-    const { prisma, tx, offerStock, facade } = buildDeps();
+    const { prisma, tx, offerStock, facade, outbox } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(null);
     const service = new PaymentSettleService(
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.settle(baseEvent)).resolves.toBe(
       "unknown_merchant_oid",
@@ -93,13 +102,23 @@ describe("PaymentSettleService.settle — success path", () => {
       amountCents: 5000,
       status: "INTENT",
       reservationId: "resv1",
-      reservation: { offerId: "offer1", qty: 2 },
+      reservation: {
+        offerId: "offer1",
+        qty: 2,
+        userId: "user1",
+        storeId: "store1",
+        code: "ABC123",
+        offer: {
+          pickupStartAt: new Date("2026-01-01T10:00:00.000Z"),
+          pickupEndAt: new Date("2026-01-01T11:00:00.000Z"),
+        },
+      },
       ...overrides,
     };
   }
 
   it("confirms: Payment -> PAID, Reservation -> CONFIRMED", async () => {
-    const { prisma, tx, offerStock, facade } = buildDeps();
+    const { prisma, tx, offerStock, facade, outbox } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(paidPayment());
     tx.payment.updateMany.mockResolvedValue({ count: 1 });
     tx.reservation.updateMany.mockResolvedValue({ count: 1 });
@@ -107,6 +126,7 @@ describe("PaymentSettleService.settle — success path", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const outcome = await service.settle(baseEvent);
@@ -129,7 +149,7 @@ describe("PaymentSettleService.settle — success path", () => {
   });
 
   it("[C2] amount mismatch is quarantined: Payment -> FAILED, Reservation -> EXPIRED, stock released", async () => {
-    const { prisma, tx, offerStock, facade } = buildDeps();
+    const { prisma, tx, offerStock, facade, outbox } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(paidPayment({ amountCents: 5001 }));
     tx.payment.updateMany.mockResolvedValue({ count: 1 });
     tx.reservation.updateMany.mockResolvedValue({ count: 1 });
@@ -137,6 +157,7 @@ describe("PaymentSettleService.settle — success path", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const outcome = await service.settle(baseEvent); // totalCents: 5000, expected 5001
@@ -156,7 +177,7 @@ describe("PaymentSettleService.settle — success path", () => {
   });
 
   it("[C2] a benign already-PAID payment reports 'already_terminal' (duplicate delivery, different event id)", async () => {
-    const { prisma, tx, offerStock, facade } = buildDeps();
+    const { prisma, tx, offerStock, facade, outbox } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(paidPayment());
     tx.payment.updateMany.mockResolvedValue({ count: 0 });
     tx.payment.findUniqueOrThrow.mockResolvedValue(
@@ -166,6 +187,7 @@ describe("PaymentSettleService.settle — success path", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const outcome = await service.settle(baseEvent);
@@ -174,7 +196,7 @@ describe("PaymentSettleService.settle — success path", () => {
   });
 
   it("[C2] a success event arriving after Payment was already FAILED is elevated to 'charged_after_failed', not the benign no-op", async () => {
-    const { prisma, tx, offerStock, facade } = buildDeps();
+    const { prisma, tx, offerStock, facade, outbox } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(paidPayment());
     tx.payment.updateMany.mockResolvedValue({ count: 0 });
     tx.payment.findUniqueOrThrow.mockResolvedValue(
@@ -184,6 +206,7 @@ describe("PaymentSettleService.settle — success path", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const outcome = await service.settle(baseEvent);
@@ -191,7 +214,7 @@ describe("PaymentSettleService.settle — success path", () => {
   });
 
   it("[C2] Payment settles PAID but the reservation is no longer confirmable -> rolls back (returns 'orphaned_success')", async () => {
-    const { prisma, tx, offerStock, facade } = buildDeps();
+    const { prisma, tx, offerStock, facade, outbox } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(paidPayment());
     tx.payment.updateMany.mockResolvedValue({ count: 1 });
     tx.reservation.updateMany.mockResolvedValue({ count: 0 }); // reservation no longer PENDING_PAYMENT
@@ -199,6 +222,7 @@ describe("PaymentSettleService.settle — success path", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const outcome = await service.settle(baseEvent);
@@ -222,7 +246,7 @@ describe("PaymentSettleService.settle — failure path", () => {
   const failedEvent = { ...baseEvent, status: "failed" as const };
 
   it("expires: Payment -> FAILED, Reservation -> EXPIRED, stock released", async () => {
-    const { prisma, tx, offerStock, facade } = buildDeps();
+    const { prisma, tx, offerStock, facade, outbox } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(pendingPayment());
     tx.payment.updateMany.mockResolvedValue({ count: 1 });
     tx.reservation.updateMany.mockResolvedValue({ count: 1 });
@@ -230,6 +254,7 @@ describe("PaymentSettleService.settle — failure path", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const outcome = await service.settle(failedEvent);
@@ -249,7 +274,7 @@ describe("PaymentSettleService.settle — failure path", () => {
   });
 
   it("no amount check on the failure branch (totalCents is irrelevant)", async () => {
-    const { prisma, tx, offerStock, facade } = buildDeps();
+    const { prisma, tx, offerStock, facade, outbox } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(
       pendingPayment({ amountCents: 999999 }),
     );
@@ -259,6 +284,7 @@ describe("PaymentSettleService.settle — failure path", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const outcome = await service.settle(failedEvent);
@@ -266,13 +292,14 @@ describe("PaymentSettleService.settle — failure path", () => {
   });
 
   it("no-ops when the Payment already left INTENT/PROCESSING (e.g. already settled elsewhere)", async () => {
-    const { prisma, tx, offerStock, facade } = buildDeps();
+    const { prisma, tx, offerStock, facade, outbox } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(pendingPayment({ status: "PAID" }));
     tx.payment.updateMany.mockResolvedValue({ count: 0 });
     const service = new PaymentSettleService(
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const outcome = await service.settle(failedEvent);
@@ -282,7 +309,7 @@ describe("PaymentSettleService.settle — failure path", () => {
   });
 
   it("[C1] does NOT double-release stock when the Reservation already left PENDING_PAYMENT (e.g. a prior cancel() already released it)", async () => {
-    const { prisma, tx, offerStock, facade } = buildDeps();
+    const { prisma, tx, offerStock, facade, outbox } = buildDeps();
     tx.payment.findUnique.mockResolvedValue(pendingPayment());
     tx.payment.updateMany.mockResolvedValue({ count: 1 }); // Payment WAS still INTENT
     tx.reservation.updateMany.mockResolvedValue({ count: 0 }); // but Reservation already left PENDING_PAYMENT
@@ -290,6 +317,7 @@ describe("PaymentSettleService.settle — failure path", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const outcome = await service.settle(failedEvent);

@@ -5,6 +5,7 @@ import { PaymentsFacadeService } from "../payments-core/payments-facade.service"
 import { PaymentProviderRegistry } from "../payments-core/payment-provider.registry";
 import { istanbulDateKey } from "../../common/utils/istanbul-date.util";
 import { OffersService } from "./offers.service";
+import { OutboxService } from "../outbox/outbox.service";
 import type { CreateOfferDto } from "./dto/create-offer.dto";
 
 // Turkey has observed a single, permanent UTC+3 offset year-round since
@@ -106,12 +107,14 @@ d(
       const config = { get: () => "mock" } as any;
       const facade = new PaymentsFacadeService(registry, config);
       const offerStock = new OfferStockService();
+      const outbox = new OutboxService();
       const reservations = new ReservationsService(
         prisma as any,
         offerStock,
         facade,
+        outbox,
       );
-      const offers = new OffersService(prisma as any, reservations);
+      const offers = new OffersService(prisma as any, reservations, outbox);
 
       const bagTemplate = await prisma.bagTemplate.create({
         data: {

@@ -20,6 +20,10 @@ import { OfferStockService } from "./offer-stock.service";
 import { generateReservationCode } from "./reservation-code.util";
 import { generateMerchantOid } from "./merchant-oid.util";
 import { allowedFromStatusesFor } from "./reservation-transitions";
+import { OutboxService } from "../outbox/outbox.service";
+import { OUTBOX_EVENT_TYPES } from "../outbox/event-types";
+
+const RATING_INVITE_DELAY_MS = 2 * 60 * 60 * 1000; // 2h
 
 const MAX_CODE_ATTEMPTS = 5;
 const CANCEL_DEADLINE_BEFORE_PICKUP_MS = 2 * 60 * 60 * 1000; // 2h
@@ -156,6 +160,7 @@ export class ReservationsService {
     private readonly prisma: PrismaService,
     private readonly offerStock: OfferStockService,
     private readonly facade: PaymentsFacadeService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async create(
@@ -768,6 +773,24 @@ export class ReservationsService {
         where: { id: reservation.offerId },
         data: { qtyRedeemed: { increment: reservation.qty } },
       });
+
+      // [Task 7] Rating-invite, delayed +2h via scheduledFor — the worker
+      // skips this row entirely until then (outbox-worker.service.ts's
+      // claim query). Only reached on the WINNING branch above (count>0),
+      // never on the idempotent-replay branch, so a race between two
+      // redeem() calls for the same reservation still only ever queues
+      // this once.
+      await this.outbox.publish(tx, {
+        type: OUTBOX_EVENT_TYPES.RESERVATION_REDEEMED_V1,
+        payload: {
+          reservationId,
+          userId: reservation.userId,
+          storeId: reservation.storeId,
+        },
+        idempotencyKey: `reservation-redeemed:${reservationId}`,
+        scheduledFor: new Date(attemptedAt.getTime() + RATING_INVITE_DELAY_MS),
+      });
+
       return attemptedAt;
     });
 

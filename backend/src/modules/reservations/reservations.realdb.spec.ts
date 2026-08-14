@@ -6,6 +6,7 @@ import * as reservationCodeUtil from "./reservation-code.util";
 import { PaymentProviderRegistry } from "../payments-core/payment-provider.registry";
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { MockPaymentProvider } from "../payments-core/adapters/mock-payment-provider";
+import { OutboxService } from "../outbox/outbox.service";
 
 /**
  * Real-DB concurrency proof for the reservations state machine — Task 4's
@@ -51,7 +52,13 @@ function buildReservationsHarness(prisma: PrismaClient) {
   mockProvider.onModuleInit();
   const facade = new PaymentsFacadeService(registry, config);
   const offerStock = new OfferStockService();
-  const service = new ReservationsService(prisma as any, offerStock, facade);
+  const outbox = new OutboxService();
+  const service = new ReservationsService(
+    prisma as any,
+    offerStock,
+    facade,
+    outbox,
+  );
   return { service, mockProvider };
 }
 

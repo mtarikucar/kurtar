@@ -16,6 +16,16 @@ import { OffersService } from "../offers/offers.service";
 import { MerchantSignupDto } from "./dto/merchant-signup.dto";
 import { MerchantSubmitDto } from "./dto/merchant-submit.dto";
 import { allowedFromStatusesFor } from "./merchant-verification-transitions";
+import { OutboxService } from "../outbox/outbox.service";
+import { OUTBOX_EVENT_TYPES, OutboxEventType } from "../outbox/event-types";
+
+const MERCHANT_STATUS_EVENT_TYPE: Partial<
+  Record<MerchantVerificationStatus, OutboxEventType>
+> = {
+  APPROVED: OUTBOX_EVENT_TYPES.MERCHANT_APPROVED_V1,
+  REJECTED: OUTBOX_EVENT_TYPES.MERCHANT_REJECTED_V1,
+  SUSPENDED: OUTBOX_EVENT_TYPES.MERCHANT_SUSPENDED_V1,
+};
 
 const BCRYPT_COST = 12;
 
@@ -89,6 +99,7 @@ export class MerchantsService {
     private readonly prisma: PrismaService,
     private readonly tokenService: TokenService,
     private readonly offersService: OffersService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async signup(dto: MerchantSignupDto): Promise<MerchantSignupResult> {
@@ -338,7 +349,7 @@ export class MerchantsService {
         });
       }
 
-      await tx.merchantVerificationEvent.create({
+      const verificationEvent = await tx.merchantVerificationEvent.create({
         data: {
           merchantId,
           fromStatus: current.verificationStatus,
@@ -347,6 +358,26 @@ export class MerchantsService {
           note,
         },
       });
+
+      // [Task 7] Only APPROVED/REJECTED/SUSPENDED get a merchant email —
+      // transition()'s only 3 callers (adminApprove/adminReject/
+      // adminSuspend) never pass any other `to`, so this map covers every
+      // real call site; MERCHANT_STATUS_EVENT_TYPE simply has no entry for
+      // anything else. idempotencyKey is keyed off the
+      // MerchantVerificationEvent row just created (not off merchantId+to)
+      // — this status is reachable at most once per merchant today
+      // (merchant-verification-transitions.ts has no re-entry edge back
+      // into APPROVED/REJECTED/SUSPENDED), but keying off a fresh id per
+      // transition rather than a static string means this stays correct
+      // even if a future task adds a reinstate/resubmit flow.
+      const eventType = MERCHANT_STATUS_EVENT_TYPE[to];
+      if (eventType) {
+        await this.outbox.publish(tx, {
+          type: eventType,
+          payload: { merchantId, note },
+          idempotencyKey: `merchant-status:${verificationEvent.id}`,
+        });
+      }
     });
 
     return { merchantId, status: to };

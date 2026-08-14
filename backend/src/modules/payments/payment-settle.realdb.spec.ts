@@ -9,6 +9,7 @@ import { PaymentSettleService } from "./payment-settle.service";
 import { PaymentsSweeperService } from "./payments-sweeper.service";
 import { PaymentsWebhookController } from "./payments-webhook.controller";
 import { ParsedWebhookEvent } from "../payments-core/payment-provider.interface";
+import { OutboxService } from "../outbox/outbox.service";
 
 /**
  * Real-DB concurrency proof for the webhook settle path — the other three
@@ -46,12 +47,19 @@ function buildHarness(prisma: PrismaClient) {
   mockProvider.onModuleInit();
   const facade = new PaymentsFacadeService(registry, config);
   const offerStock = new OfferStockService();
+  const outbox = new OutboxService();
   const reservations = new ReservationsService(
     prisma as any,
     offerStock,
     facade,
+    outbox,
   );
-  const settle = new PaymentSettleService(prisma as any, offerStock, facade);
+  const settle = new PaymentSettleService(
+    prisma as any,
+    offerStock,
+    facade,
+    outbox,
+  );
   const sweeper = new PaymentsSweeperService(prisma as any, facade, settle);
   const webhookController = new PaymentsWebhookController(facade, settle);
   return { reservations, settle, sweeper, webhookController, mockProvider };
