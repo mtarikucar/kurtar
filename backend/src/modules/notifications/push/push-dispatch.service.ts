@@ -55,11 +55,11 @@ export class PushDispatchService {
     const uniqueIds = [...new Set(candidateUserIds)];
     if (uniqueIds.length === 0) return { candidates: 0, denied: 0, sent: 0 };
 
-    const allowedUserIds: string[] = [];
-    for (const userId of uniqueIds) {
-      const decision = await this.policy.mayNotify(userId, kind);
-      if (decision.allowed) allowedUserIds.push(userId);
-    }
+    // [Fix round, Important 5] ONE batched policy check (two queries
+    // total inside mayNotifyBatch), not a per-user round-trip loop — see
+    // NotificationPolicyService's doc comment.
+    const decisions = await this.policy.mayNotifyBatch(uniqueIds, kind);
+    const allowedUserIds = uniqueIds.filter((id) => decisions.get(id)?.allowed);
     const denied = uniqueIds.length - allowedUserIds.length;
     if (allowedUserIds.length === 0) {
       return { candidates: uniqueIds.length, denied, sent: 0 };

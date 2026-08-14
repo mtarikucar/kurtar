@@ -86,6 +86,21 @@ export class PickupReminderCronService {
       });
       if (claimed.count === 0) continue; // lost the race to a concurrent sweep
 
+      // [Fix round, cheap minor] Deliberately marked BEFORE pushing, not
+      // after — the anti-double-send guard has to win the race against a
+      // concurrent sweep claiming the SAME reservation, and that can only
+      // happen by claiming first. The accepted cost: notifyUsers() below
+      // is not itself wrapped in a retry, and it never throws for a
+      // provider-level send failure (PushDispatchService/PushFacadeService
+      // swallow per-message provider errors into a result object, not an
+      // exception) — so if the push genuinely fails to reach the device
+      // (provider outage, dead token, etc.), pickupReminderSentAt is
+      // already set and this reservation will NEVER be retried by a later
+      // sweep. This mirrors the same "claim-then-act, no undo" trade-off
+      // publishedAt/redeemedAt already make elsewhere in this codebase,
+      // and is a smaller loss surface than double-sending (a customer who
+      // doesn't get a reminder still has their pickup code from the
+      // original reservation.confirmed.v1 push); not fixed here.
       await this.pushDispatch.notifyUsers(
         [reservation.userId],
         "PICKUP_REMINDER",

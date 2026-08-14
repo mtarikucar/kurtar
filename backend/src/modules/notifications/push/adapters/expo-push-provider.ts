@@ -12,6 +12,7 @@ import {
   ExpoPushTicket,
   toExpoRequestBody,
 } from "./expo-push.util";
+import { redactPushTokens } from "../../../../common/helpers/pii-mask.helper";
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 
@@ -85,8 +86,11 @@ export class ExpoPushProvider implements PushProvider, OnModuleInit {
 
     if (!response.ok) {
       const text = await response.text().catch(() => "");
+      // [Fix round, cheap minor] Expo's error body echoes the request
+      // back, including every recipient's push token — never log it
+      // verbatim, same masking discipline as maskPhone/maskEmail.
       this.logger.error(
-        `Expo push send failed (HTTP ${response.status}): ${text}`,
+        `Expo push send failed (HTTP ${response.status}): ${redactPushTokens(text)}`,
       );
       return asError(`HTTP ${response.status}`);
     }

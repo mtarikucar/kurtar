@@ -225,26 +225,36 @@ d("PickupReminderCronService.sweepOnce — real DB concurrency", () => {
   it("two concurrent sweeps over the SAME due reservation send the reminder exactly once", async () => {
     const { service, mockProvider } = buildHarness(prisma);
 
-    const [resultA, resultB] = await Promise.all([
-      service.sweepOnce(now),
-      service.sweepOnce(now),
-    ]);
-
-    expect(resultA.reminded + resultB.reminded).toBe(1);
-    expect(mockProvider.getSentLog().map((m) => m.to)).toEqual([
-      "tok-pickup-reminder",
-    ]);
+    // [Fix round, Important 7] sweepOnce() is a genuinely table-wide
+    // query (every CONFIRMED reservation due in the next 30 minutes, not
+    // scoped to this suite's own rows) — so neither the sweep's own
+    // aggregate `reminded` count nor the WHOLE mock sent-log is a safe
+    // assertion target; a shared dev database can carry an unrelated due
+    // reservation (or unrelated debris) that the very same sweep also
+    // reminds, in the same run. Every assertion below is scoped to THIS
+    // suite's own reservation (re-read by id) and THIS suite's own token
+    // (filtered out of the log by exact value), matching
+    // outbox-worker.realdb.spec.ts's identical fix for the same class of
+    // bug.
+    await Promise.all([service.sweepOnce(now), service.sweepOnce(now)]);
 
     const reservation = await prisma.reservation.findUniqueOrThrow({
       where: { id: reservationId },
     });
     expect(reservation.pickupReminderSentAt).not.toBeNull();
 
-    // A THIRD sweep, later, must still be a no-op — "once and only once",
-    // not just "the two racers agreed".
-    const resultC = await service.sweepOnce(now);
-    expect(resultC.reminded).toBe(0);
-    expect(mockProvider.getSentLog()).toHaveLength(1);
+    const sentToOurToken = mockProvider
+      .getSentLog()
+      .filter((m) => m.to === "tok-pickup-reminder");
+    expect(sentToOurToken).toHaveLength(1);
+
+    // A THIRD sweep, later, must still be a no-op for OUR reservation —
+    // "once and only once", not just "the two racers agreed".
+    await service.sweepOnce(now);
+    const sentToOurTokenAfterThird = mockProvider
+      .getSentLog()
+      .filter((m) => m.to === "tok-pickup-reminder");
+    expect(sentToOurTokenAfterThird).toHaveLength(1); // unchanged
   }, 15_000);
 
   it("a reservation whose pickup window is 2h out is left untouched by the default 30-minute lookahead", async () => {

@@ -51,3 +51,19 @@ export function maskPhone(value: string | null | undefined): string {
   }
   return `***${trimmed.slice(-2)}`;
 }
+
+/**
+ * [Task 7 fix round] Redact Expo push tokens (`ExponentPushToken[...]` /
+ * `ExpoPushToken[...]`) out of arbitrary log text — used on Expo's raw
+ * HTTP error response body before logging it (expo-push-provider.ts),
+ * which otherwise echoes back every token from the failed request body
+ * verbatim. A push token is a durable per-device identifier, not
+ * something that belongs in a log line any more than a phone number does.
+ *
+ *   'to "ExponentPushToken[abc123]" is invalid' -> 'to "ExponentPushToken[***]" is invalid'
+ */
+export function redactPushTokens(text: string): string {
+  return text.replace(/Expo(?:nent)?PushToken\[[^\]]*\]/gi, (match) =>
+    match.replace(/\[[^\]]*\]/, "[***]"),
+  );
+}

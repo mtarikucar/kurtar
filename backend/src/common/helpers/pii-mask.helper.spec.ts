@@ -1,4 +1,4 @@
-import { maskEmail, maskPhone } from "./pii-mask.helper";
+import { maskEmail, maskPhone, redactPushTokens } from "./pii-mask.helper";
 
 describe("maskPhone", () => {
   it("masks a TR E.164 number, keeping +90 and the last 2 digits", () => {
@@ -57,5 +57,46 @@ describe("maskEmail", () => {
     const full = "sensitive.owner@merchant.example.com";
     expect(maskEmail(full)).not.toBe(full);
     expect(maskEmail(full).includes("sensitive.owner")).toBe(false);
+  });
+});
+
+describe("redactPushTokens", () => {
+  it("redacts an ExponentPushToken[...] embedded in arbitrary text", () => {
+    expect(
+      redactPushTokens(
+        '"ExponentPushToken[abc123XYZ]" is not a registered push notification recipient',
+      ),
+    ).toBe(
+      '"ExponentPushToken[***]" is not a registered push notification recipient',
+    );
+  });
+
+  it("redacts an ExpoPushToken[...] variant too", () => {
+    expect(redactPushTokens("token ExpoPushToken[def456] invalid")).toBe(
+      "token ExpoPushToken[***] invalid",
+    );
+  });
+
+  it("redacts multiple occurrences in the same text", () => {
+    const text =
+      "batch: ExponentPushToken[deviceAAA], ExponentPushToken[deviceBBB] both failed";
+    const redacted = redactPushTokens(text);
+    expect(redacted).toBe(
+      "batch: ExponentPushToken[***], ExponentPushToken[***] both failed",
+    );
+    expect(redacted).not.toContain("deviceAAA");
+    expect(redacted).not.toContain("deviceBBB");
+  });
+
+  it("leaves text with no token untouched", () => {
+    expect(redactPushTokens("HTTP 500 Internal Server Error")).toBe(
+      "HTTP 500 Internal Server Error",
+    );
+  });
+
+  it("never contains the raw token value in its output", () => {
+    const full = "ExponentPushToken[super-secret-device-id-123]";
+    const redacted = redactPushTokens(`error for ${full}`);
+    expect(redacted).not.toContain("super-secret-device-id-123");
   });
 });

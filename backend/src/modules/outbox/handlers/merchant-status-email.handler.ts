@@ -1,7 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { OutboxEvent } from "@prisma/client";
 import { PrismaService } from "../../../prisma/prisma.service";
 import { EmailService } from "../../notifications/email/email.service";
+import { maskEmail } from "../../../common/helpers/pii-mask.helper";
 import { OUTBOX_EVENT_TYPES, MerchantStatusV1Payload } from "../event-types";
 import { OutboxHandlerRegistry } from "../outbox-handler.registry";
 import { OutboxEventHandler } from "../outbox-handler.interface";
@@ -17,6 +19,8 @@ const SUBJECT_BY_TYPE: Record<string, string> = {
   [OUTBOX_EVENT_TYPES.MERCHANT_REJECTED_V1]: "İşletme başvurunuz hakkında",
   [OUTBOX_EVENT_TYPES.MERCHANT_SUSPENDED_V1]: "Hesabınız askıya alındı",
 };
+
+const DEFAULT_MERCHANT_DASHBOARD_URL = "https://merchant.kurtar.app";
 
 /**
  * merchant.approved.v1 / merchant.rejected.v1 / merchant.suspended.v1 ->
@@ -35,12 +39,18 @@ export class MerchantStatusEmailHandler
     OUTBOX_EVENT_TYPES.MERCHANT_SUSPENDED_V1,
   ];
   private readonly logger = new Logger(MerchantStatusEmailHandler.name);
+  private readonly dashboardUrl: string;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly email: EmailService,
     private readonly registry: OutboxHandlerRegistry,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.dashboardUrl =
+      this.configService.get<string>("MERCHANT_DASHBOARD_URL") ||
+      DEFAULT_MERCHANT_DASHBOARD_URL;
+  }
 
   onModuleInit(): void {
     this.registry.register(this);
@@ -71,7 +81,11 @@ export class MerchantStatusEmailHandler
       return;
     }
 
-    await this.email.sendEmail({
+    // [Fix round, Important 6] sendEmail returns `false` (never throws) on
+    // a genuine delivery failure — that MUST be checked and turned into a
+    // throw, or the worker marks this DONE and an SMTP outage during an
+    // approval sweep means merchants are simply never told, with no retry.
+    const sent = await this.email.sendEmail({
       to: owner.email,
       subject: SUBJECT_BY_TYPE[event.type],
       template: TEMPLATE_BY_TYPE[event.type],
@@ -79,7 +93,18 @@ export class MerchantStatusEmailHandler
         ownerName: owner.name,
         tradeName: merchant.tradeName,
         note: payload.note,
+        // [Fix round, cheap minor] merchant-approved.hbs renders
+        // {{dashboardUrl}} as its CTA button — previously never supplied,
+        // rendering a dead link. MERCHANT_DASHBOARD_URL is optional; falls
+        // back to a sane default rather than requiring boot-time config
+        // for a cosmetic link.
+        dashboardUrl: this.dashboardUrl,
       },
     });
+    if (!sent) {
+      throw new Error(
+        `${event.type}: failed to email merchant owner ${maskEmail(owner.email)} for merchant ${payload.merchantId}`,
+      );
+    }
   }
 }

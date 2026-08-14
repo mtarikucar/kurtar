@@ -40,6 +40,18 @@ export type NotificationPolicyDecision =
  * of the user+kind decision this makes; PushDispatchService filters
  * disabled tokens separately when it resolves allowed users to actual
  * send targets.
+ *
+ * [Fix round, Important 5] `mayNotifyBatch` is the primary implementation
+ * — exactly TWO queries (`user.findMany` + `notificationPreference.findMany`)
+ * regardless of how many userIds are checked, evaluating the (pure)
+ * policy table in memory per user. The original shape checked one user at
+ * a time (up to 2 sequential round-trips per user), which meant a 2000-
+ * favoriter fan-out serialized up to 4000 DB round-trips inside one 15s
+ * cron tick. `mayNotify` (single user) is now a thin wrapper over the
+ * batch method — kept because it's a clean call shape for the
+ * single-recipient handlers (confirm/redeem/reminder) and because
+ * rewriting every existing caller to always build a one-element array
+ * would be needless churn.
  */
 @Injectable()
 export class NotificationPolicyService {
@@ -50,21 +62,49 @@ export class NotificationPolicyService {
     kind: NotificationKind,
     now: Date = new Date(),
   ): Promise<NotificationPolicyDecision> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { status: true },
+    const decisions = await this.mayNotifyBatch([userId], kind, now);
+    return decisions.get(userId)!;
+  }
+
+  async mayNotifyBatch(
+    userIds: string[],
+    kind: NotificationKind,
+    now: Date = new Date(),
+  ): Promise<Map<string, NotificationPolicyDecision>> {
+    const decisions = new Map<string, NotificationPolicyDecision>();
+    const uniqueIds = [...new Set(userIds)];
+    if (uniqueIds.length === 0) return decisions;
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, status: true },
     });
-    if (!user) return { allowed: false, reason: "USER_NOT_FOUND" };
-    if (user.status !== "ACTIVE") {
-      return { allowed: false, reason: "USER_NOT_ACTIVE" };
+    const userById = new Map(users.map((u) => [u.id, u]));
+
+    for (const id of uniqueIds) {
+      if (!userById.has(id)) {
+        decisions.set(id, { allowed: false, reason: "USER_NOT_FOUND" });
+      }
     }
 
     const rule = NOTIFICATION_POLICY_TABLE[kind];
-    if (rule.transactional) return { allowed: true };
+    const nonTransactionalCandidates: string[] = [];
+    for (const user of users) {
+      if (user.status !== "ACTIVE") {
+        decisions.set(user.id, { allowed: false, reason: "USER_NOT_ACTIVE" });
+      } else if (rule.transactional) {
+        decisions.set(user.id, { allowed: true });
+      } else {
+        nonTransactionalCandidates.push(user.id);
+      }
+    }
 
-    const prefsRow = await this.prisma.notificationPreference.findUnique({
-      where: { userId },
+    if (nonTransactionalCandidates.length === 0) return decisions;
+
+    const prefsRows = await this.prisma.notificationPreference.findMany({
+      where: { userId: { in: nonTransactionalCandidates } },
       select: {
+        userId: true,
         favoritesEnabled: true,
         nearbyEnabled: true,
         marketingEnabled: true,
@@ -72,16 +112,25 @@ export class NotificationPolicyService {
         quietHoursEnd: true,
       },
     });
-    const prefs = prefsRow ?? DEFAULT_PREFERENCES;
+    const prefsByUser = new Map(prefsRows.map((p) => [p.userId, p]));
 
-    if (rule.preferenceField && !prefs[rule.preferenceField]) {
-      return { allowed: false, reason: "PREFERENCE_DISABLED" };
+    for (const userId of nonTransactionalCandidates) {
+      const prefs = prefsByUser.get(userId) ?? DEFAULT_PREFERENCES;
+
+      if (rule.preferenceField && !prefs[rule.preferenceField]) {
+        decisions.set(userId, {
+          allowed: false,
+          reason: "PREFERENCE_DISABLED",
+        });
+        continue;
+      }
+      if (isWithinQuietHours(prefs.quietHoursStart, prefs.quietHoursEnd, now)) {
+        decisions.set(userId, { allowed: false, reason: "QUIET_HOURS" });
+        continue;
+      }
+      decisions.set(userId, { allowed: true });
     }
 
-    if (isWithinQuietHours(prefs.quietHoursStart, prefs.quietHoursEnd, now)) {
-      return { allowed: false, reason: "QUIET_HOURS" };
-    }
-
-    return { allowed: true };
+    return decisions;
   }
 }

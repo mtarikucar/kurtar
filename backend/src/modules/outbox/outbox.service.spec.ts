@@ -24,13 +24,12 @@ describe("OutboxService.publish", () => {
     const tx = buildTx();
     const service = new OutboxService();
 
-    const result = await service.publish(tx, {
+    await service.publish(tx, {
       type: OUTBOX_EVENT_TYPES.OFFER_PUBLISHED_V1,
       payload: { offerId: "o1" },
       idempotencyKey: "offer-published:o1",
     });
 
-    expect(result).toEqual({ created: true });
     expect(tx.outboxEvent.create).toHaveBeenCalledWith({
       data: {
         type: "offer.published.v1",
@@ -59,24 +58,32 @@ describe("OutboxService.publish", () => {
     );
   });
 
-  it("swallows a duplicate idempotencyKey (P2002 on that column) and reports created:false", async () => {
+  // [Fix round, Important 3] A duplicate idempotencyKey is deliberately
+  // NEVER swallowed here — see outbox.service.ts's doc comment for the
+  // full "aborted Postgres transaction" reasoning. Catching it inside the
+  // same interactive $transaction (the previous behavior this test used
+  // to assert) is unsafe: it can silently roll back the caller's whole
+  // transaction while the API still reports success. The realdb spec
+  // (outbox-publish-transaction.realdb.spec.ts) proves this against a
+  // REAL Postgres transaction, which a mocked `tx` structurally cannot —
+  // this unit test only proves the propagation contract at the JS level.
+  it("propagates a duplicate idempotencyKey (P2002) rather than swallowing it — the caller's transaction is meant to abort", async () => {
+    const violation = uniqueIdempotencyKeyViolation();
     const tx = buildTx({
-      outboxEvent: {
-        create: jest.fn().mockRejectedValue(uniqueIdempotencyKeyViolation()),
-      },
+      outboxEvent: { create: jest.fn().mockRejectedValue(violation) },
     });
     const service = new OutboxService();
 
-    const result = await service.publish(tx, {
-      type: OUTBOX_EVENT_TYPES.OFFER_CANCELLED_V1,
-      payload: {},
-      idempotencyKey: "offer-cancelled:o1",
-    });
-
-    expect(result).toEqual({ created: false });
+    await expect(
+      service.publish(tx, {
+        type: OUTBOX_EVENT_TYPES.OFFER_CANCELLED_V1,
+        payload: {},
+        idempotencyKey: "offer-cancelled:o1",
+      }),
+    ).rejects.toBe(violation);
   });
 
-  it("rethrows a P2002 on an unrelated column (never swallows a code collision or similar)", async () => {
+  it("propagates a P2002 on an unrelated column identically (no special-casing by column)", async () => {
     const otherViolation = new Prisma.PrismaClientKnownRequestError(
       "Unique constraint failed",
       { code: "P2002", clientVersion: "6.19.0", meta: { target: ["id"] } },
@@ -95,7 +102,7 @@ describe("OutboxService.publish", () => {
     ).rejects.toBe(otherViolation);
   });
 
-  it("rethrows any error when no idempotencyKey was given (nothing to dedupe against)", async () => {
+  it("propagates any error when no idempotencyKey was given", async () => {
     const tx = buildTx({
       outboxEvent: {
         create: jest.fn().mockRejectedValue(new Error("db down")),

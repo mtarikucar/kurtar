@@ -8,7 +8,16 @@ function buildDeps() {
     },
   };
   const facade = { sendBatch: jest.fn().mockResolvedValue([]) };
-  const policy = { mayNotify: jest.fn().mockResolvedValue({ allowed: true }) };
+  // Default: every requested id is allowed — matches
+  // NotificationPolicyService.mayNotifyBatch's Map<userId, decision> shape
+  // (Important 5 fix — batched, not a per-user mayNotify() loop).
+  const policy = {
+    mayNotifyBatch: jest.fn().mockImplementation(async (userIds: string[]) => {
+      const map = new Map<string, { allowed: boolean }>();
+      for (const id of userIds) map.set(id, { allowed: true });
+      return map;
+    }),
+  };
   return { prisma, facade, policy };
 }
 
@@ -27,11 +36,11 @@ describe("PushDispatchService.notifyUsers", () => {
     }));
 
     expect(result).toEqual({ candidates: 0, denied: 0, sent: 0 });
-    expect(policy.mayNotify).not.toHaveBeenCalled();
+    expect(policy.mayNotifyBatch).not.toHaveBeenCalled();
     expect(prisma.pushToken.findMany).not.toHaveBeenCalled();
   });
 
-  it("dedupes duplicate user ids before checking policy", async () => {
+  it("dedupes duplicate user ids into ONE batched policy call", async () => {
     const { prisma, facade, policy } = buildDeps();
     const service = new PushDispatchService(
       prisma as any,
@@ -44,14 +53,21 @@ describe("PushDispatchService.notifyUsers", () => {
       body: "b",
     }));
 
-    expect(policy.mayNotify).toHaveBeenCalledTimes(1);
+    expect(policy.mayNotifyBatch).toHaveBeenCalledTimes(1);
+    expect(policy.mayNotifyBatch).toHaveBeenCalledWith(
+      ["u1"],
+      "OFFER_FAVORITE",
+    );
   });
 
   it("a user denied by policy is excluded from the token lookup and counted in `denied`", async () => {
     const { prisma, facade, policy } = buildDeps();
-    policy.mayNotify.mockImplementation(async (userId: string) => ({
-      allowed: userId !== "u-denied",
-    }));
+    policy.mayNotifyBatch.mockResolvedValue(
+      new Map([
+        ["u-ok", { allowed: true }],
+        ["u-denied", { allowed: false, reason: "PREFERENCE_DISABLED" }],
+      ]),
+    );
     const service = new PushDispatchService(
       prisma as any,
       facade as any,

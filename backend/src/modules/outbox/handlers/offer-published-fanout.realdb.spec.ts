@@ -123,8 +123,15 @@ d("OfferPublishedHandler.handle — real DB fan-out audience", () => {
         address: "Test Sk. No:9",
         district: "Kadikoy",
         city: "Istanbul",
-        latitude: 41.0,
-        longitude: 29.0,
+        // [Fix round, Important 7] Deliberately NOT discovery-radius.realdb.spec.ts's
+        // SEARCH_LAT/SEARCH_LNG (41.0/29.0) — the nearby-user query below
+        // is scoped by proximity to THESE coordinates, not by any test-
+        // owned id, so reusing that sibling file's exact search origin
+        // would be a real (not just theoretical) contamination risk for
+        // any stray nearby-enabled user its own fixtures might place
+        // there.
+        latitude: 40.85,
+        longitude: 28.95,
       },
     });
     storeId = store.id;
@@ -148,9 +155,10 @@ d("OfferPublishedHandler.handle — real DB fan-out audience", () => {
     bagTemplateId = bagTemplate.id;
 
     // A 1° latitude offset is ~111.32km — comfortably inside a 5000m
-    // "nearby" test and comfortably outside a 500m one.
-    const NEAR_LAT = 41.001; // ~111m from the store
-    const FAR_LAT = 41.05; // ~5.5km from the store
+    // "nearby" test and comfortably outside a 500m one. Relative to the
+    // store's own coordinates (40.85), not a fixed absolute value.
+    const NEAR_LAT = store.latitude + 0.001; // ~111m from the store
+    const FAR_LAT = store.latitude + 0.05; // ~5.5km from the store
 
     const nowHour = istanbulHourOfDay(new Date());
     // A [nowHour, nowHour+1) window ALWAYS contains "now" regardless of
@@ -300,11 +308,27 @@ d("OfferPublishedHandler.handle — real DB fan-out audience", () => {
 
     const sentTokens = mockProvider.getSentLog().map((m) => m.to);
 
-    expect(new Set(sentTokens)).toEqual(
-      new Set(["tok-fav-default", "tok-nearby-in", "tok-fav-and-nearby"]),
-    );
+    // [Fix round, Important 7] Scoped, per-token assertions — never an
+    // exact-Set/length assertion over the WHOLE sent log. The nearby
+    // audience comes from a genuinely globally-scoped ST_DWithin query
+    // (proximity to THIS store's coordinates, not filtered to this
+    // suite's own seeded users) — a stray "nearby-enabled" user left near
+    // these coordinates by another test run could inflate the raw log
+    // without indicating any bug in THIS test's logic. Every qualifying
+    // token present, exactly once each; every excluded token absent: that
+    // combination is what actually proves the fan-out logic, and it's
+    // robust to unrelated extra entries.
+    for (const expectedToken of [
+      "tok-fav-default",
+      "tok-nearby-in",
+      "tok-fav-and-nearby",
+    ]) {
+      expect(sentTokens.filter((t) => t === expectedToken)).toHaveLength(1);
+    }
     // Dedup proof: favAndNearby's token appears exactly ONCE, not twice
     // (once per audience) — a duplicate would silently double-notify.
+    // (Already covered by the loop above; kept as an explicit assertion
+    // for readability.)
     expect(sentTokens.filter((t) => t === "tok-fav-and-nearby")).toHaveLength(
       1,
     );

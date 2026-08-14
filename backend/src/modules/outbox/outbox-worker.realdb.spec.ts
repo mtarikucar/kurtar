@@ -27,6 +27,10 @@ function fakeType(type: string): OutboxEventType {
  *   (e) scheduledFor in the future is skipped, then dispatched once that
  *       instant has passed — proven via drainOnce's explicit `now`
  *       parameter, never a real sleep
+ *   plus a Critical-fix regression: a row stranded in PROCESSING past its
+ *       lease (the crash-mid-drain scenario) is reclaimed and dispatched
+ *       exactly once; a row still legitimately in-flight (fresh
+ *       claimedAt) is left alone.
  *
  * (b) offer.published fan-out and (d) the pickup-reminder cron are their
  * own files (handlers/offer-published-fanout.realdb.spec.ts,
@@ -255,5 +259,78 @@ d("OutboxWorkerService — real DB concurrency + retry + scheduling", () => {
       where: { id: seeded.id },
     });
     expect(final.status).toBe("done");
+  }, 15_000);
+
+  it("[Critical fix] a row stranded in PROCESSING past its lease (crash mid-drain) is reclaimed and dispatched exactly once; a row still legitimately in-flight (fresh claimedAt) is left alone", async () => {
+    // Simulates a worker that claimed this row (bumping attempts to 1,
+    // setting claimedAt) and then crashed before ever calling handle() or
+    // any mark*() — the exact "pod roll mid-drain" scenario. 10 minutes
+    // ago is well past OUTBOX_LEASE_MS (5 minutes).
+    const staleClaimedAt = new Date(Date.now() - 10 * 60 * 1000);
+    const stranded = await prisma.outboxEvent.create({
+      data: {
+        type: "test.strand.v1",
+        payload: {},
+        idempotencyKey: nextIdempotencyKey(),
+        status: "processing",
+        attempts: 1,
+        claimedAt: staleClaimedAt,
+      },
+    });
+    // A second row, ALSO in PROCESSING, but claimed just now — as if by a
+    // still-alive worker genuinely in the middle of handling it. Must NOT
+    // be reclaimed.
+    const inFlight = await prisma.outboxEvent.create({
+      data: {
+        type: "test.strand.v1",
+        payload: {},
+        idempotencyKey: nextIdempotencyKey(),
+        status: "processing",
+        attempts: 1,
+        claimedAt: new Date(),
+      },
+    });
+
+    const dispatchLog: string[] = [];
+    const handler: OutboxEventHandler = {
+      types: [fakeType("test.strand.v1")],
+      handle: async (_payload, event) => {
+        dispatchLog.push(event.id);
+      },
+    };
+    const worker = buildWorker(prisma, handler);
+
+    await worker.drainOnce(10);
+
+    expect(dispatchLog).toEqual([stranded.id]);
+    expect(dispatchLog).not.toContain(inFlight.id);
+
+    const strandedFinal = await prisma.outboxEvent.findUniqueOrThrow({
+      where: { id: stranded.id },
+    });
+    expect(strandedFinal.status).toBe("done");
+    // The reclaim counts as another attempt (2, not 1) — it's a genuine
+    // re-claim of the row, exactly like a normal retry would be.
+    expect(strandedFinal.attempts).toBe(2);
+
+    const inFlightFinal = await prisma.outboxEvent.findUniqueOrThrow({
+      where: { id: inFlight.id },
+    });
+    expect(inFlightFinal.status).toBe("processing"); // untouched
+    expect(inFlightFinal.attempts).toBe(1);
+
+    // A second drain must not reclaim the now-DONE stranded row again.
+    dispatchLog.length = 0;
+    await worker.drainOnce(10);
+    expect(dispatchLog).toEqual([]);
+
+    // Cleanup: inFlight is left PROCESSING forever otherwise (afterAll's
+    // idempotencyKey-prefix delete still catches it regardless of status,
+    // but flip it out of PROCESSING here too so a sibling suite's own
+    // permissive claim query never has a chance to pick it up first).
+    await prisma.outboxEvent.update({
+      where: { id: inFlight.id },
+      data: { status: "dead", lastError: "test fixture cleanup" },
+    });
   }, 15_000);
 });

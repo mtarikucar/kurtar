@@ -876,14 +876,19 @@ model OutboxEvent {
 
   // [Task 7] Producer-side dedup key, nullable + UNIQUE — a producer that
   // supplies one (e.g. "offer-published:<offerId>") gets a REAL guarantee
-  // that a retried write can never double-insert the same event; a
-  // producer with no natural dedup key (none yet) simply omits it, and
-  // Postgres treats each NULL as distinct so any number of keyless rows
-  // may coexist. Was a bare non-null String with NO constraint before this
-  // task — every producer happened to set it, but nothing enforced
-  // uniqueness, so a retried transaction could have inserted the exact
-  // same event twice. See modules/outbox/outbox.service.ts for the
-  // create-and-swallow-P2002 dedup this constraint makes possible.
+  // that a duplicate insert can never land twice; a producer with no
+  // natural dedup key simply omits it, and Postgres treats each NULL as
+  // distinct so any number of keyless rows may coexist. Was a bare
+  // non-null String with NO constraint before this task — every producer
+  // happened to set it, but nothing enforced uniqueness. A collision on
+  // this column is a genuine P2002 that propagates out of
+  // OutboxService.publish and aborts the caller's WHOLE transaction —
+  // deliberately NOT caught/swallowed inside the transaction (an aborted
+  // Postgres transaction answers every subsequent statement, including
+  // COMMIT, without raising — see reservations.service.ts's
+  // createReservationWithRetry doc comment for the identical footgun
+  // fixed once already in this codebase). See
+  // modules/outbox/outbox.service.ts.
   idempotencyKey String? @unique
 
   // [Task 7] Delayed dispatch: NULL means "eligible as soon as status/
@@ -901,12 +906,21 @@ model OutboxEvent {
 
   dispatchedAt  DateTime?
   nextAttemptAt DateTime?
+  // [Task 7 fix round] Set on every claim (fresh OR stale-lease reclaim —
+  // see outbox-worker.service.ts's claimBatch/OUTBOX_LEASE_MS). Doubles as
+  // an optimistic-concurrency token: mark*() only succeeds if claimedAt
+  // still matches what THIS claim set, so a worker that finishes late
+  // (past its own lease, after someone else already reclaimed the row)
+  // can never stomp on the reclaimer's work.
+  claimedAt DateTime?
 
   createdAt DateTime @default(now())
 
-  // Worker scans `status='queued' AND nextAttemptAt <= now() AND
+  // Worker scans `(status='queued' AND nextAttemptAt <= now()) OR
+  // (status='processing' AND claimedAt <= now() - lease), AND
   // (scheduledFor IS NULL OR scheduledFor <= now())` in id order.
   @@index([status, nextAttemptAt])
+  @@index([status, claimedAt])
   @@index([type, createdAt])
   @@map("outbox_events")
 }

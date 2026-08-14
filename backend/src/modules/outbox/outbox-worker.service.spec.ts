@@ -1,6 +1,8 @@
 import { OutboxWorkerService } from "./outbox-worker.service";
 import { MAX_OUTBOX_ATTEMPTS } from "./outbox-backoff";
 
+const FAKE_CLAIMED_AT = new Date("2026-01-01T00:00:00.000Z");
+
 function fakeEvent(overrides: Record<string, any> = {}) {
   return {
     id: "evt1",
@@ -13,6 +15,7 @@ function fakeEvent(overrides: Record<string, any> = {}) {
     lastError: null,
     dispatchedAt: null,
     nextAttemptAt: null,
+    claimedAt: FAKE_CLAIMED_AT,
     createdAt: new Date(),
     ...overrides,
   };
@@ -38,7 +41,7 @@ describe("OutboxWorkerService.drainOnce", () => {
     expect(registry.find).not.toHaveBeenCalled();
   });
 
-  it("a handler that resolves marks the event DONE", async () => {
+  it("a handler that resolves marks the event DONE, guarded by id+status+claimedAt", async () => {
     const event = fakeEvent();
     const { prisma, registry } = buildDeps([event]);
     const handle = jest.fn().mockResolvedValue(undefined);
@@ -50,9 +53,27 @@ describe("OutboxWorkerService.drainOnce", () => {
     expect(handle).toHaveBeenCalledWith(event.payload, event);
     expect(result).toEqual({ claimed: 1, done: 1, retried: 0, dead: 0 });
     expect(prisma.outboxEvent.updateMany).toHaveBeenCalledWith({
-      where: { id: "evt1", status: "processing" },
+      where: { id: "evt1", status: "processing", claimedAt: FAKE_CLAIMED_AT },
       data: expect.objectContaining({ status: "done" }),
     });
+  });
+
+  it("[Important 2 fix] a handler that succeeds but whose markDone bookkeeping write fails does NOT schedule a retry — it's still reported 'done' and left for the stale-lease reclaim, never re-dispatched via the normal backoff path", async () => {
+    const event = fakeEvent();
+    const { prisma, registry } = buildDeps([event]);
+    const handle = jest.fn().mockResolvedValue(undefined);
+    registry.find.mockReturnValue({ types: [event.type], handle });
+    prisma.outboxEvent.updateMany.mockRejectedValue(
+      new Error("connection reset"),
+    );
+
+    const worker = new OutboxWorkerService(prisma as any, registry as any);
+    const result = await worker.drainOnce();
+
+    expect(handle).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ claimed: 1, done: 1, retried: 0, dead: 0 });
+    // Exactly one markDone attempt — no fallback retry/dead write fired.
+    expect(prisma.outboxEvent.updateMany).toHaveBeenCalledTimes(1);
   });
 
   it("no handler registered for the event's type -> DEAD, handler never invoked", async () => {
@@ -65,7 +86,7 @@ describe("OutboxWorkerService.drainOnce", () => {
 
     expect(result).toEqual({ claimed: 1, done: 0, retried: 0, dead: 1 });
     expect(prisma.outboxEvent.updateMany).toHaveBeenCalledWith({
-      where: { id: "evt1", status: "processing" },
+      where: { id: "evt1", status: "processing", claimedAt: FAKE_CLAIMED_AT },
       data: expect.objectContaining({ status: "dead" }),
     });
   });
@@ -84,7 +105,11 @@ describe("OutboxWorkerService.drainOnce", () => {
 
     expect(result).toEqual({ claimed: 1, done: 0, retried: 1, dead: 0 });
     const call = prisma.outboxEvent.updateMany.mock.calls[0][0];
-    expect(call.where).toEqual({ id: "evt1", status: "processing" });
+    expect(call.where).toEqual({
+      id: "evt1",
+      status: "processing",
+      claimedAt: FAKE_CLAIMED_AT,
+    });
     expect(call.data.status).toBe("queued");
     expect(call.data.lastError).toBe("provider down");
     // attempts=2 -> 60s backoff (see outbox-backoff.spec.ts)
@@ -106,7 +131,7 @@ describe("OutboxWorkerService.drainOnce", () => {
 
     expect(result).toEqual({ claimed: 1, done: 0, retried: 0, dead: 1 });
     expect(prisma.outboxEvent.updateMany).toHaveBeenCalledWith({
-      where: { id: "evt1", status: "processing" },
+      where: { id: "evt1", status: "processing", claimedAt: FAKE_CLAIMED_AT },
       data: expect.objectContaining({
         status: "dead",
         lastError: "still broken",
@@ -146,18 +171,30 @@ describe("OutboxWorkerService.drainOnce", () => {
     expect(result).toEqual({ claimed: 3, done: 1, retried: 1, dead: 1 });
   });
 
-  it("claimBatch passes batchSize and now through to the raw claim query", async () => {
+  it("claimBatch passes batchSize/now/staleBefore through to the raw claim query", async () => {
     const { prisma, registry } = buildDeps([]);
     const worker = new OutboxWorkerService(prisma as any, registry as any);
     const now = new Date("2026-01-01T00:00:00.000Z");
+    const staleBefore = new Date(now.getTime() - 5 * 60_000);
 
     await worker.drainOnce(5, now);
 
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
-    // Prisma.sql template results carry the interpolated values in `.values`,
-    // in template order: SET status='processing', WHERE status='queued',
-    // nextAttemptAt<=now, scheduledFor<=now, LIMIT batchSize.
+    // Prisma.sql template results carry the interpolated values in
+    // `.values`, in template order: SET status='processing',
+    // SET claimedAt=now, WHERE status='queued', nextAttemptAt<=now,
+    // WHERE status='processing' (reclaim branch), claimedAt<=staleBefore,
+    // scheduledFor<=now, LIMIT batchSize.
     const sqlArg = prisma.$queryRaw.mock.calls[0][0];
-    expect(sqlArg.values).toEqual(["processing", "queued", now, now, 5]);
+    expect(sqlArg.values).toEqual([
+      "processing",
+      now,
+      "queued",
+      now,
+      "processing",
+      staleBefore,
+      now,
+      5,
+    ]);
   });
 });
