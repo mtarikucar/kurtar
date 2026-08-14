@@ -378,6 +378,19 @@ export class MerchantsService {
           idempotencyKey: `merchant-status:${verificationEvent.id}`,
         });
       }
+
+      // [Task 8] A second, independent event for the SAME APPROVED
+      // transition — see OUTBOX_EVENT_TYPES.MERCHANT_APPROVED_MEMBERSHIP_V1's
+      // doc comment for why this can't just reuse merchant.approved.v1
+      // above (one handler per type). Drives MembershipApprovedHandler
+      // creating the merchant's MembershipSubscription.
+      if (to === "APPROVED") {
+        await this.outbox.publish(tx, {
+          type: OUTBOX_EVENT_TYPES.MERCHANT_APPROVED_MEMBERSHIP_V1,
+          payload: { merchantId },
+          idempotencyKey: `merchant-approved-membership:${verificationEvent.id}`,
+        });
+      }
     });
 
     return { merchantId, status: to };

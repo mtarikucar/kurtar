@@ -21,6 +21,9 @@ import { DiscoveryModule } from "./modules/discovery/discovery.module";
 import { OutboxCoreModule } from "./modules/outbox/outbox-core.module";
 import { OutboxModule } from "./modules/outbox/outbox.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { MembershipsModule } from "./modules/memberships/memberships.module";
+import { InvoicingModule } from "./modules/invoicing/invoicing.module";
+import { SettlementsModule } from "./modules/settlements/settlements.module";
 
 @Module({
   imports: [
@@ -54,6 +57,9 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
     OutboxCoreModule,
     OutboxModule,
     NotificationsModule,
+    MembershipsModule,
+    InvoicingModule,
+    SettlementsModule,
   ],
   providers: [
     // Applies the matching THROTTLER_PROFILES tier to every route; auth

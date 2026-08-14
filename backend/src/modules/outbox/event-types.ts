@@ -30,6 +30,27 @@ export const OUTBOX_EVENT_TYPES = {
   MERCHANT_APPROVED_V1: "merchant.approved.v1",
   MERCHANT_REJECTED_V1: "merchant.rejected.v1",
   MERCHANT_SUSPENDED_V1: "merchant.suspended.v1",
+  // [Task 8] A SECOND, independent event for the exact same APPROVED
+  // transition merchant.approved.v1 already covers — NOT reused, because
+  // OutboxHandlerRegistry is one-handler-per-type (register() overwrites
+  // on a collision, "the later registration wins" — see its own doc
+  // comment); merchant.approved.v1 is already MerchantStatusEmailHandler's.
+  // This mirrors OFFER_CANCELLED_MERCHANT_EMAIL_V1's split above exactly:
+  // two events, each with its own handler and retry/backoff lifecycle,
+  // both published in the SAME transaction as the APPROVED status change
+  // (merchants.service.ts's transition()).
+  MERCHANT_APPROVED_MEMBERSHIP_V1: "merchant.approved.membership.v1",
+  // [Task 8] Emitted in the SAME transaction that flips a SettlementBatch
+  // APPROVED -> SENT (settlement-payout.service.ts) — the transactional-
+  // outbox guarantee this file's own doc comment describes, applied to a
+  // payout instead of a reservation/offer state change. Drives the
+  // merchant "payout-sent" email (Task 7 left the template unwired —
+  // outbox/handlers/settlement-sent-email.handler.ts).
+  SETTLEMENT_BATCH_SENT_V1: "settlement.batch.sent.v1",
+  // [Task 8] The commission-invoice-drafting sibling of the event above —
+  // same one-handler-per-type reasoning as MERCHANT_APPROVED_MEMBERSHIP_V1;
+  // both published together by the same markSent() transaction.
+  SETTLEMENT_BATCH_SENT_INVOICE_V1: "settlement.batch.sent.invoice.v1",
 } as const;
 
 export type OutboxEventType =
@@ -93,4 +114,25 @@ export interface ReservationRedeemedV1Payload {
 export interface MerchantStatusV1Payload {
   merchantId: string;
   note?: string;
+}
+
+/** [Task 8] merchant.approved.membership.v1's payload — deliberately just
+ * the id; the handler reads merchant.verifiedAt fresh (see
+ * MembershipApprovedHandler's own doc comment on why). */
+export interface MerchantApprovedMembershipV1Payload {
+  merchantId: string;
+}
+
+/** [Task 8] periodStart/End and netPayoutCents are copied at publish time
+ * (not re-read from the batch by handlers) so the email/invoice handlers
+ * never need a second query just to know what to SAY — the same
+ * "cheap-and-stable" rationale this file's top comment gives for every
+ * other payload here. */
+export interface SettlementBatchSentV1Payload {
+  batchId: string;
+  merchantId: string;
+  periodStart: string;
+  periodEnd: string;
+  netPayoutCents: number;
+  pspTransferRef: string;
 }
