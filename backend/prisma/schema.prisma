@@ -792,15 +792,51 @@ model SettlementBatch {
   // recomputeBatch already applies when allocating clawback across
   // lines), fully decoupled from whatever the batch's own lines do.
   carriedExternalDemandCents Int       @default(0)
+  // [Fix round #3, C2-residual] The IMMUTABLE original amount this batch
+  // inherited from a predecessor on its first-ever recompute pass — set
+  // ONCE (by resolveCarriedShortfall) and never changed again by any LATER
+  // pass of this SAME batch. `carriedExternalDemandCents` above is the
+  // RESIDUAL (how much of this is still outstanding as of the last pass,
+  // read by a FUTURE batch's resolveCarriedShortfall) — a mutable,
+  // fully-rederived-every-pass number. This column is the fixed baseline
+  // that residual is rederived FROM on every pass.
+  //
+  // Without this column, a later pass had nowhere to read "how much did I
+  // originally inherit" from — it could only read the (already-shrunk)
+  // residual, which on the very next recompute after a pass that fully
+  // absorbed the inherited demand reads back as 0. That is C2's exact
+  // shape one column over: pass 1 absorbs inherited demand X (refund=X,
+  // carriedExternalDemandCents correctly written to 0 since nothing is
+  // left outstanding) -> adminApprove's routine pre-lock recompute reads
+  // that same now-zero residual as THIS pass's starting point, rederives
+  // refundClawbackCents=0, and pays X back out to the merchant — money
+  // already recovered, forgiven on the very next ordinary action. And
+  // unlike the line-level version of this bug, X was then genuinely
+  // UNRECOVERABLE afterward: resolveCarriedShortfall only ever inherits
+  // from a HELD most-recent predecessor, and by the time this happened the
+  // batch itself was APPROVED/SENT, not HELD.
+  //
+  // Fixed the same way as the line-level version: read this IMMUTABLE
+  // column (not the mutable residual) as `carriedFromPrior` on EVERY pass,
+  // first or later — "the batch's own absorbed inherited demand, added
+  // back before re-deriving." Since nothing besides this batch's own
+  // passes ever touches this specific inherited amount (it is private to
+  // whichever batch resolveCarriedShortfall handed it to), the correct
+  // value to re-derive FROM is always the full original, not "whatever is
+  // left after my own last pass" — exactly mirroring why a settlement_line
+  // this batch previously fully absorbed must have its FULL original
+  // demand (not 0) fed back in as the baseline on a repeat pass.
+  inheritedExternalDemandCents Int     @default(0)
   // [Fix round, C2] Stamped the FIRST time this batch is ever recomputed
   // (settlement-batch-builder.service.ts's recomputeBatch), whether or not
   // it actually inherited anything. Before this is set, a recompute is
   // allowed to inherit a carried shortfall from the merchant's most-recent
   // OTHER batch (the normal "shortfall rolls to the next batch" flow) —
-  // seeding carriedExternalDemandCents from it. Once set, EVERY subsequent
+  // seeding carriedExternalDemandCents (and, as of fix round #3,
+  // inheritedExternalDemandCents) from it. Once set, EVERY subsequent
   // recompute of THIS SAME batch (an admin retry on a HELD batch, or an
   // "extend" that adds new lines to one) must consume the batch's OWN
-  // currently-stored carriedExternalDemandCents instead of re-querying a
+  // currently-stored inheritedExternalDemandCents instead of re-querying a
   // sibling — querying a sibling again on a later pass would either
   // silently DROP progress already made recovering it, or (if the
   // predecessor is itself untouched, as it usually is) simply re-fetch
