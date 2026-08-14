@@ -139,6 +139,13 @@ enum SettlementStatus {
   SENT
   SETTLED
   FAILED
+  // [Task 8] Net payout would have gone negative (fees + withholding +
+  // membership offset + clawback exceed gross for the period), OR an
+  // admin manually paused the batch via POST .../:id/hold. Distinguished
+  // by SettlementBatch.holdReason, not a second enum value — see that
+  // column's doc comment. Never paid while HELD; the arithmetic shortfall
+  // (if any) carries to the merchant's NEXT batch via carriedShortfallCents.
+  HELD
 }
 
 enum InvoiceType {
@@ -370,6 +377,20 @@ model Merchant {
   intermediationContractVersion String?
   intermediationAcceptedAt      DateTime?
 
+  // [Task 8] Founding-member commercial terms — both nullable, both set
+  // (if ever) once, by an admin, outside this task's automated flow.
+  // Platform fee is a fixed ₺ amount, not a percentage (see
+  // PlatformPricing) — this column locks one merchant's amount below the
+  // platform default rather than expressing a discount rate. NULL means
+  // "use whatever PlatformPricing says as of the settlement period date".
+  bagFeeCentsOverride   Int?
+  // First-year membership fee exemption. When set and the settlement
+  // period date is before this instant, the membership offset engine
+  // treats the merchant's then-open period as priceCents=0 (nothing to
+  // recover) rather than skipping membership handling altogether — see
+  // memberships/membership-offset.service.ts.
+  membershipExemptUntil DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -442,9 +463,28 @@ model MembershipSubscription {
   priceCents         Int
   status             MembershipStatus @default(TRIAL)
 
+  // [Task 8] How much of `priceCents` is still unrecovered for the CURRENT
+  // period — the offset engine's running balance. Starts equal to
+  // priceCents when a period opens (0 if membershipExemptUntil covers it),
+  // decremented by each settlement batch's membershipOffsetCents, floored
+  // at 0. periodPaidAt is stamped the instant it FIRST reaches 0 (idempotent
+  // marker — see membership-offset.service.ts).
+  outstandingCents Int       @default(0)
+  periodPaidAt     DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // [Task 8] Exactly one subscription per merchant, ever — a renewal
+  // (memberships/membership-renewal-cron.service.ts) UPDATES this SAME
+  // row's currentPeriodStart/End/priceCents/outstandingCents/periodPaidAt
+  // in place rather than creating a new row per year, so "the merchant's
+  // subscription" is always a plain findUnique, and creation (on
+  // merchant.approved.v1) is naturally idempotent against a duplicate
+  // outbox delivery via the DB constraint (catch P2002, no-op) rather
+  // than a "most recent by createdAt" convention a duplicate row could
+  // silently defeat.
+  @@unique([merchantId])
   @@map("membership_subscriptions")
 }
 
@@ -591,7 +631,7 @@ model Reservation {
   // 5-minute tick, the same "write a sentinel column in the same guarded
   // update that decides to act" pattern publishedAt/redeemedAt use
   // elsewhere in this file.
-  pickupReminderSentAt    DateTime?
+  pickupReminderSentAt     DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -677,12 +717,26 @@ model SettlementBatch {
   periodEnd   DateTime
   status      SettlementStatus @default(PENDING)
 
-  grossCents            Int @default(0)
-  bagFeeCents           Int @default(0)
-  withholdingCents      Int @default(0)
-  membershipOffsetCents Int @default(0)
-  refundClawbackCents   Int @default(0)
-  netPayoutCents        Int @default(0)
+  grossCents            Int     @default(0)
+  bagFeeCents           Int     @default(0)
+  // [Task 8] KDV %20 on bagFeeCents, tracked separately — the bag fee
+  // itself is never a taxable-inclusive blend; see settlement-math.ts.
+  bagFeeVatCents        Int     @default(0)
+  withholdingCents      Int     @default(0)
+  membershipOffsetCents Int     @default(0)
+  refundClawbackCents   Int     @default(0)
+  netPayoutCents        Int     @default(0)
+  // [Task 8] Set only when this batch went HELD because fees + withholding
+  // + membershipOffset + clawback exceeded grossCents (settlement-math.ts's
+  // never-negative-net invariant). The exact deficit — what still needs to
+  // be recovered — becomes an input to computing the merchant's NEXT batch
+  // (settlements.service.ts folds it into that batch's priorClawbackCents).
+  // Zero on every non-HELD batch.
+  carriedShortfallCents Int     @default(0)
+  // [Task 8] Why this batch is HELD — "negative net, ₺X carried" for the
+  // automatic path, or the admin's note for a manual POST .../:id/hold.
+  // NULL for every batch that has never been HELD.
+  holdReason            String?
 
   dueAt          DateTime?
   pspTransferRef String?
@@ -693,6 +747,11 @@ model SettlementBatch {
 
   settlementLines    SettlementLine[]
   commissionInvoices CommissionInvoice[]
+  // [Task 8] The settled lines whose reservation was refunded AFTER this
+  // batch sent — the clawback lands on the NEXT batch, but this relation
+  // still points back at the batch that ORIGINALLY paid the line out, for
+  // audit ("what got clawed back, and why"). See SettlementLine.clawbackBatchId.
+  clawedBackLines    SettlementLine[]    @relation("SettlementLineClawback")
 
   @@index([merchantId, status])
   @@map("settlement_batches")
@@ -710,7 +769,20 @@ model SettlementLine {
   redeemedAt       DateTime
   grossCents       Int
   bagFeeCents      Int
+  bagFeeVatCents   Int      @default(0)
   withholdingCents Int
+
+  // [Task 8] Populated exactly once, the first time a DONE refund is
+  // observed against this (already-settled) line's reservation — never
+  // again after that (clawbackAppliedAt IS NULL is the eligibility guard
+  // settlements.service.ts's clawback sweep queries on, so re-running the
+  // sweep can never double-claw the same line). clawbackBatchId points at
+  // the batch that actually absorbed the negative adjustment (a LATER
+  // batch than `batchId`, which stays the original payout's record).
+  clawbackCents     Int              @default(0)
+  clawbackAppliedAt DateTime?
+  clawbackBatchId   String?
+  clawbackBatch     SettlementBatch? @relation("SettlementLineClawback", fields: [clawbackBatchId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -734,10 +806,47 @@ model CommissionInvoice {
   status       InvoiceStatus @default(DRAFT)
   issuedAt     DateTime?
 
+  // [Task 8] netAmountCents/vatCents/totalAmountCents are the invoice's own
+  // aggregate totals (BAG_FEE type: bagFeeCents / bagFeeVatCents / their
+  // sum; MEMBERSHIP type: the amount offset this batch / 0 / same value —
+  // no KDV line, see invoicing/commission-invoice.service.ts's doc
+  // comment for why). Withholding is DELIBERATELY never one of these
+  // fields or a linesJson entry — it is a tevkifat on the payout dekont,
+  // not a commission-invoice line (brief §6). linesJson is the itemized
+  // breakdown (one entry per SettlementLine contributing to this invoice)
+  // the e-document adapter serializes into the actual UBL payload.
+  netAmountCents   Int   @default(0)
+  vatCents         Int   @default(0)
+  totalAmountCents Int   @default(0)
+  linesJson        Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("commission_invoices")
+}
+
+// [Task 8] Platform pricing, indexed by effectiveFrom so a price change
+// never rewrites history — every settlement batch resolves its fee/
+// membership price "as of" its OWN period date (settlements/pricing.service.ts),
+// so a batch computed for a day before a price change keeps recomputing
+// identically forever, even after the change ships. One row is seeded by
+// this table's own creation migration as the platform's initial pricing
+// (see that migration's doc comment); a price change is a NEW row with a
+// FUTURE effectiveFrom (POST /api/admin/pricing), never an UPDATE of an
+// existing row — mutating history in place is exactly what this table
+// exists to prevent.
+model PlatformPricing {
+  id String @id @default(cuid())
+
+  bagFeeCents           Int
+  membershipAnnualCents Int
+  effectiveFrom         DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([effectiveFrom])
+  @@map("platform_pricing")
 }
 
 // ========================================
@@ -912,7 +1021,7 @@ model OutboxEvent {
   // still matches what THIS claim set, so a worker that finishes late
   // (past its own lease, after someone else already reclaimed the row)
   // can never stomp on the reclaimer's work.
-  claimedAt DateTime?
+  claimedAt     DateTime?
 
   createdAt DateTime @default(now())
 
