@@ -1,13 +1,32 @@
 /**
  * PII masking for log output. Port of kds's
- * backend/src/common/helpers/pii-mask.helper.ts (maskPhone only — kurtar's
- * SMS/OTP layer is the only current consumer).
+ * backend/src/common/helpers/pii-mask.helper.ts — maskPhone (Task 3, SMS/
+ * OTP) and maskEmail (Task 7, EmailService's log lines).
  *
- * The contract: keep enough of the number for debugging (country-code
- * prefix + last 2 digits) but redact the rest, so a support engineer can
- * still tell two numbers apart in adjacent log lines without seeing the
+ * The contract: keep enough of the value for debugging (country-code
+ * prefix + last 2 digits for a phone; first local-part character +
+ * full domain for an email) but redact the rest, so a support engineer can
+ * still tell two values apart in adjacent log lines without seeing the
  * full PII.
  */
+
+/**
+ * Mask an email address for log output.
+ *
+ *   "a@example.com"        -> "*@example.com"   (1-char local part)
+ *   "jane.doe@example.com" -> "j***@example.com"
+ *   "not-an-email"         -> "***"              (no '@' -> fully masked)
+ *   ""                     -> ""
+ */
+export function maskEmail(value: string | null | undefined): string {
+  if (!value) return "";
+  const at = value.indexOf("@");
+  if (at <= 0) return "***";
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  if (local.length === 1) return `*@${domain}`;
+  return `${local[0]}***@${domain}`;
+}
 
 /**
  * Mask a phone number for log output.

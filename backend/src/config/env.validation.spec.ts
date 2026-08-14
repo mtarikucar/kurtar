@@ -2,6 +2,7 @@ import {
   validate,
   VALID_NODE_ENVS,
   VALID_PAYMENT_PROVIDERS,
+  VALID_PUSH_PROVIDERS,
 } from "./env.validation";
 
 describe("env.validation — NODE_ENV enumeration (fail-fast)", () => {
@@ -27,13 +28,13 @@ describe("env.validation — NODE_ENV enumeration (fail-fast)", () => {
     },
   );
 
-  it("accepts NODE_ENV=production when DATABASE_URL/REDIS_URL/WEBHOOK_SECRET/JWT_SECRET are set and a non-mock PAYMENT_PROVIDER is configured", () => {
+  it("accepts NODE_ENV=production when DATABASE_URL/REDIS_URL/WEBHOOK_SECRET/JWT_SECRET are set and non-mock PAYMENT_PROVIDER/PUSH_PROVIDER are configured", () => {
     // Task 4 additionally requires a real (non-mock) PAYMENT_PROVIDER and
-    // WEBHOOK_SECRET in production — see the dedicated describe blocks
-    // below. "iyzico" is not implemented yet (PaymentProviderRegistry.get()
-    // would 404 the first time it's actually dispatched to), but
-    // env.validation only asserts the *value* is one this enum recognizes,
-    // not that an adapter exists.
+    // WEBHOOK_SECRET in production; Task 7 adds the same requirement for
+    // PUSH_PROVIDER — see the dedicated describe blocks below. "iyzico" and
+    // "expo" are not implemented/exercised here, but env.validation only
+    // asserts the *value* is one each enum recognizes, not that an adapter
+    // exists.
     expect(() =>
       validate({
         NODE_ENV: "production",
@@ -42,6 +43,7 @@ describe("env.validation — NODE_ENV enumeration (fail-fast)", () => {
         WEBHOOK_SECRET: "prod-webhook-secret",
         JWT_SECRET: "prod-jwt-secret",
         PAYMENT_PROVIDER: "iyzico",
+        PUSH_PROVIDER: "expo",
       }),
     ).not.toThrow();
   });
@@ -136,6 +138,60 @@ describe("env.validation — PAYMENT_PROVIDER enumeration + prod-mock refusal (T
     (provider) => {
       expect(() =>
         validate({ NODE_ENV: "development", PAYMENT_PROVIDER: provider }),
+      ).not.toThrow();
+    },
+  );
+});
+
+describe("env.validation — PUSH_PROVIDER enumeration + prod-mock refusal (Task 7)", () => {
+  it("accepts PUSH_PROVIDER unset in development (defaults to mock)", () => {
+    expect(() => validate({ NODE_ENV: "development" })).not.toThrow();
+  });
+
+  it("accepts PUSH_PROVIDER=mock explicitly in development/test/staging", () => {
+    for (const env of ["development", "test", "staging"] as const) {
+      expect(() =>
+        validate({ NODE_ENV: env, PUSH_PROVIDER: "mock" }),
+      ).not.toThrow();
+    }
+  });
+
+  it("refuses to boot on an unrecognized PUSH_PROVIDER value", () => {
+    expect(() =>
+      validate({ NODE_ENV: "development", PUSH_PROVIDER: "fcm" }),
+    ).toThrow(/PUSH_PROVIDER must be one of/);
+  });
+
+  it("refuses to boot with PUSH_PROVIDER=mock (or unset) in production", () => {
+    const base = {
+      NODE_ENV: "production",
+      DATABASE_URL: "postgresql://x",
+      REDIS_URL: "redis://x",
+      WEBHOOK_SECRET: "prod-webhook-secret",
+      JWT_SECRET: "prod-jwt-secret",
+      PAYMENT_PROVIDER: "iyzico",
+    };
+    expect(() => validate({ ...base })).toThrow(
+      /PUSH_PROVIDER=mock \(or unset\) is not allowed in production/,
+    );
+    expect(() => validate({ ...base, PUSH_PROVIDER: "mock" })).toThrow(
+      /PUSH_PROVIDER=mock \(or unset\) is not allowed in production/,
+    );
+  });
+
+  it.each(VALID_PUSH_PROVIDERS.filter((provider) => provider !== "mock"))(
+    "accepts the recognized provider %s as a value in production",
+    (provider) => {
+      expect(() =>
+        validate({
+          NODE_ENV: "production",
+          DATABASE_URL: "postgresql://x",
+          REDIS_URL: "redis://x",
+          WEBHOOK_SECRET: "prod-webhook-secret",
+          JWT_SECRET: "prod-jwt-secret",
+          PAYMENT_PROVIDER: "iyzico",
+          PUSH_PROVIDER: provider,
+        }),
       ).not.toThrow();
     },
   );
