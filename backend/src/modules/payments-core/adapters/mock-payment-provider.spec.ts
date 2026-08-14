@@ -142,6 +142,51 @@ describe("MockPaymentProvider", () => {
     expect(result.refundRef).toEqual(expect.stringContaining("mock-refund-"));
   });
 
+  describe("payout", () => {
+    it("is idempotent by ref: a repeat call with the SAME amount returns the same pspTransferRef", async () => {
+      const provider = new MockPaymentProvider(
+        configWithSecret(),
+        new PaymentProviderRegistry(),
+      );
+      const first = await provider.payout("TR000...", 10000, "batch-1");
+      const second = await provider.payout("TR000...", 10000, "batch-1");
+      expect(second).toEqual(first);
+      expect(provider.getPayoutLog()).toHaveLength(1);
+    });
+
+    it("[Fix round, C3] throws on a repeat call for the SAME ref with a DIFFERENT amount, rather than silently replaying the first transfer", async () => {
+      const provider = new MockPaymentProvider(
+        configWithSecret(),
+        new PaymentProviderRegistry(),
+      );
+      await provider.payout("TR000...", 10000, "batch-2");
+      await expect(
+        provider.payout("TR000...", 8000, "batch-2"),
+      ).rejects.toThrow(/amount mismatch/i);
+      // The original 10000-kuruş record is untouched.
+      expect(provider.getPayoutLog()).toEqual([
+        expect.objectContaining({ ref: "batch-2", amountCents: 10000 }),
+      ]);
+    });
+
+    it("forcePayoutFailure() makes the next payout() call for that ref throw exactly once", async () => {
+      const provider = new MockPaymentProvider(
+        configWithSecret(),
+        new PaymentProviderRegistry(),
+      );
+      provider.forcePayoutFailure("batch-3");
+      await expect(
+        provider.payout("TR000...", 5000, "batch-3"),
+      ).rejects.toThrow(/Simulated payout failure/);
+      // One-shot: the retry succeeds normally and is recorded.
+      const result = await provider.payout("TR000...", 5000, "batch-3");
+      expect(result.pspTransferRef).toEqual(
+        expect.stringContaining("mock-payout-"),
+      );
+      expect(provider.getPayoutLog()).toHaveLength(1);
+    });
+  });
+
   describe("parseWebhook", () => {
     it("rejects a request missing/mismatching the webhook secret header", async () => {
       const provider = new MockPaymentProvider(

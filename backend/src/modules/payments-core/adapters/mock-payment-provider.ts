@@ -168,6 +168,18 @@ export class MockPaymentProvider implements PaymentProvider, OnModuleInit {
   ): Promise<PayoutResult> {
     const existing = this.payouts.get(ref);
     if (existing) {
+      // [Fix round, C3] A repeated call for the same ref MUST carry the
+      // same amount — the caller (settlement-payout.service.ts) is
+      // supposed to guarantee this via SettlementBatch.payoutAttemptedAt
+      // freezing netPayoutCents before ever reaching here; this assertion
+      // is what makes a regression in that guarantee fail LOUD in tests
+      // instead of silently returning a stale transfer ref for a batch
+      // whose books now say something different.
+      if (existing.amountCents !== amountCents) {
+        throw new Error(
+          `Payout amount mismatch for ref ${ref}: first attempt was ${existing.amountCents} kuruş, this call is ${amountCents} kuruş — the amount for a given payout ref must never change once attempted.`,
+        );
+      }
       return { pspTransferRef: existing.pspTransferRef };
     }
     if (this.forcedPayoutFailures.delete(ref)) {

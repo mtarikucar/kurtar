@@ -49,13 +49,26 @@ describe("OutboxHandlerRegistry", () => {
     );
   });
 
-  it("a later registration for the same type wins over an earlier one", () => {
+  it("[Fix round, I14] a second registration for the same type THROWS instead of silently overwriting", () => {
     const registry = new OutboxHandlerRegistry();
     const first = fakeHandler([OUTBOX_EVENT_TYPES.OFFER_PUBLISHED_V1]);
     const second = fakeHandler([OUTBOX_EVENT_TYPES.OFFER_PUBLISHED_V1]);
     registry.register(first);
-    registry.register(second);
 
-    expect(registry.find(OUTBOX_EVENT_TYPES.OFFER_PUBLISHED_V1)).toBe(second);
+    expect(() => registry.register(second)).toThrow(/collision/i);
+    // The original registration is untouched — the failed second
+    // registration never silently replaced it.
+    expect(registry.find(OUTBOX_EVENT_TYPES.OFFER_PUBLISHED_V1)).toBe(first);
+  });
+
+  it("a collision on only ONE of several types in a multi-type handler still throws", () => {
+    const registry = new OutboxHandlerRegistry();
+    registry.register(fakeHandler([OUTBOX_EVENT_TYPES.MERCHANT_APPROVED_V1]));
+    const colliding = fakeHandler([
+      OUTBOX_EVENT_TYPES.MERCHANT_REJECTED_V1, // no collision
+      OUTBOX_EVENT_TYPES.MERCHANT_APPROVED_V1, // collides
+    ]);
+
+    expect(() => registry.register(colliding)).toThrow(/collision/i);
   });
 });
