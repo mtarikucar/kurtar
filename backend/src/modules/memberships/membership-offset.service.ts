@@ -23,18 +23,37 @@ export interface MembershipDueForRecompute {
    * (membership-renewal-cron.service.ts) — this is the "self-heals on
    * real earnings" half of that story. */
   needsActivation: boolean;
-  /** [Fix round, I6 — second-order fix] True when this period's date falls
-   * inside the merchant's (possibly since-granted) exemption window.
-   * `dueCents`/`dueVatCents` are 0 in this case, but that 0 is an
-   * ARTIFACT of "nothing is being collected right now" — it is NOT the
-   * subscription's true balance. The caller (recomputeBatch) MUST skip
-   * persistOffset entirely when this is true: persistOffset's formula
-   * takes `dueCentsBase` as the baseline it writes back as the new
-   * `outstandingCents`, and feeding it the artificial 0 would overwrite
-   * a real, still-owed balance with 0 — silently erasing debt that is
-   * merely PAUSED, not forgiven (a real bug caught by
-   * memberships.realdb.spec.ts's retroactive-exemption test: the first
-   * version of this fix did exactly that). */
+  /** [Fix round #2, I6 — second-order fix, corrected] True when this
+   * period's date falls inside the merchant's (possibly since-granted)
+   * exemption window. `dueCents`/`dueVatCents` are `batchPriorOffsetCents`/
+   * `batchPriorOffsetVatCents` in this case — this batch's OWN
+   * already-committed contribution, RESTORED unchanged, not zeroed — so
+   * computeSettlement reproduces the SAME batch-level offset it already
+   * had rather than resetting it. `persistOffset` still writes NOTHING to
+   * the subscription while this is true (see its own doc comment): the
+   * subscription's TRUE outstandingCents already correctly reflects
+   * whatever this batch collected during an EARLIER, non-exempt pass, and
+   * must not be touched again just because exemption was granted later.
+   *
+   * [Fix round #2 — this flag's FIRST version caused a NEW double-loss,
+   * caught by the re-review, not self-caught] Feeding the exempt branch a
+   * hard 0 (rather than the batch's own prior contribution) was correct
+   * for the subscription side but wrong for the BATCH side:
+   * recomputeBatch still writes membershipOffsetCents/VatCents onto the
+   * batch from computeSettlement's result, which was fed that artificial
+   * 0 as membershipDueCents. Sequence: batch computed with a real offset
+   * of 5000 (subscription outstanding 6000 -> 1000); founding status
+   * granted retroactively covering this batch's period (the exact GTM
+   * action I6 exists for); a LATER recompute (extend/retry/approve) sees
+   * exempt=true, feeds membershipDueCents=0, and OVERWRITES the batch's
+   * own membershipOffsetCents from 5000 down to 0 — paying the merchant
+   * 5000 MORE than before, while the subscription still shows only 1000
+   * owed (unchanged) — the same 5000 benefits the merchant twice.
+   * Restoring batchPriorOffsetCents here closes this: computeSettlement
+   * re-derives the SAME 5000 every pass regardless of exemption, capped
+   * at exactly what was already committed — never MORE (newly-arriving
+   * gross while exempt can't grow the offset) and never LESS (a later
+   * pass can't silently drop it either). */
   exempt: boolean;
 }
 
@@ -111,9 +130,14 @@ export class MembershipOffsetService {
 
     return {
       subscriptionId: sub.id,
-      dueCents: exempt ? 0 : sub.outstandingCents + batchPriorOffsetCents,
+      // [Fix round #2, I6] Exempt: RESTORE this batch's own prior
+      // contribution (not 0) — see the interface doc comment above for
+      // the double-loss bug this closes.
+      dueCents: exempt
+        ? batchPriorOffsetCents
+        : sub.outstandingCents + batchPriorOffsetCents,
       dueVatCents: exempt
-        ? 0
+        ? batchPriorOffsetVatCents
         : sub.outstandingVatCents + batchPriorOffsetVatCents,
       alreadyMarkedPaid: sub.periodPaidAt != null,
       needsActivation: sub.status === "TRIAL" || sub.status === "PAST_DUE",
@@ -132,14 +156,19 @@ export class MembershipOffsetService {
    * TRIAL/PAST_DUE -> ACTIVE the first time a subscription is actually
    * touched by a real batch.
    *
-   * [Fix round, I6 — second-order fix] No-ops entirely — writes nothing —
-   * when `due.exempt` is true. `dueCentsBase` is an ARTIFICIAL 0 in that
-   * case (lockAndResolveDue's exemption branch), not the subscription's
-   * real balance; without this guard the formula below would compute
-   * `max(0, 0 - 0) = 0` and overwrite a genuinely still-owed balance with
-   * 0, silently erasing debt that is only meant to be PAUSED while the
-   * exemption window is open. This guard lives here (not just in the
-   * caller) so every call path is protected, not only the ones that
+   * [Fix round #2, I6 — second-order fix, corrected] Writes NOTHING to
+   * the subscription when `due.exempt` is true — `dueCentsBase` here is
+   * ONLY this batch's own restored prior contribution (see
+   * lockAndResolveDue), not the subscription's true full balance, so the
+   * normal `dueCentsBase - appliedOffsetCents` formula is not a valid
+   * basis for a subscription-side write while exempt (it would only ever
+   * see this batch's own slice, never whatever else the subscription may
+   * separately still owe). Returns `dueVatCentsBase` UNCHANGED (not a
+   * hardcoded 0 — that was the double-loss bug the re-review caught) so
+   * the caller's `batch.membershipOffsetVatCents` write also reproduces
+   * the batch's own already-committed VAT contribution instead of being
+   * zeroed alongside the net amount. This guard lives here (not just in
+   * the caller) so every call path is protected, not only the ones that
    * remember to check `due.exempt` themselves first. */
   async persistOffset(
     tx: Prisma.TransactionClient,
@@ -149,7 +178,7 @@ export class MembershipOffsetService {
     appliedOffsetCents: number,
   ): Promise<{ appliedOffsetVatCents: number }> {
     if (due.exempt) {
-      return { appliedOffsetVatCents: 0 };
+      return { appliedOffsetVatCents: dueVatCentsBase };
     }
     const appliedOffsetVatCents = splitMembershipOffsetVat(
       dueCentsBase,

@@ -269,12 +269,26 @@ d(
       // Priced at 500 (+VAT 100 = 600 total due) but the merchant never earns
       // anything against it this period — a dormant merchant, the exact case
       // P1's forgiveness policy is designed for.
+      //
+      // [Fix round #2, minor] Dates deliberately kept INSIDE 2026 (no
+      // earlier than the seed migration's platform_pricing floor,
+      // 2026-01-01) and well clear of settlements.realdb.spec.ts test
+      // [d]'s subscription (currentPeriodEnd 2027-01-01) — runOnce sweeps
+      // EVERY due subscription platform-wide (correct production
+      // behaviour), so under --maxWorkers=2 a `now` at or past
+      // 2027-01-01 here would ALSO renew/reset that OTHER file's
+      // subscription mid-test. Fixing the assertion side alone (>=
+      // instead of ===, already done) isn't enough — the SIDE EFFECT of
+      // mutating another file's row is still real regardless of what
+      // this file asserts about it; every `now` this file ever passes to
+      // runOnce now stays under a ceiling no other spec file's fixture
+      // reaches.
       const sub = await prisma.membershipSubscription.create({
         data: {
           merchantId: merchant.id,
           anchorDate: new Date("2026-01-01T00:00:00.000Z"),
           currentPeriodStart: new Date("2026-01-01T00:00:00.000Z"),
-          currentPeriodEnd: new Date("2027-01-01T00:00:00.000Z"),
+          currentPeriodEnd: new Date("2026-06-01T00:00:00.000Z"),
           priceCents: 500,
           vatCents: 100,
           status: "TRIAL",
@@ -283,14 +297,8 @@ d(
         },
       });
 
-      // runOnce sweeps EVERY due subscription platform-wide by design (that
-      // is correct production behaviour) — under --maxWorkers=2 that can
-      // legitimately include another spec file's own due subscription
-      // created concurrently, so `result.renewed`/`writtenOff` are NOT
-      // asserted as exact counts here (>= 1 only); everything below checks
-      // THIS test's own subscription row and audit rows specifically,
-      // which is immune to that cross-file overlap.
-      const rolloverNow = new Date("2027-01-02T03:00:00.000Z");
+      // Still >= (not ===) as defense in depth — see the note above.
+      const rolloverNow = new Date("2026-06-02T03:00:00.000Z");
       const result = await renewalCron.runOnce(rolloverNow);
       expect(result.renewed).toBeGreaterThanOrEqual(1);
       expect(result.writtenOff).toBeGreaterThanOrEqual(1);
@@ -303,7 +311,7 @@ d(
       // it is exactly the new period's own (indexed) price+VAT, resolved
       // independently here to avoid hardcoding the seed migration's price.
       expect(renewed.currentPeriodStart.toISOString()).toBe(
-        "2027-01-01T00:00:00.000Z",
+        "2026-06-01T00:00:00.000Z",
       );
       const expectedNewPricing = await pricing.resolvePlatformPricing(
         prisma as never,
@@ -318,8 +326,11 @@ d(
         expectedNewPricing.membershipAnnualCents + expectedNewVat,
       );
       // But the forgiven 600 is TRACKED, permanently and explicitly — not
-      // silently absorbed into the fresh balance above.
+      // silently absorbed into the fresh balance above. [Fix round #2,
+      // P1-minor] Net/VAT split too — writtenOffCents alone (600) would
+      // overstate forgiven REVENUE by the 100 kuruş of VAT in it.
       expect(renewed.writtenOffCents).toBe(600);
+      expect(renewed.writtenOffVatCents).toBe(100);
       expect(renewed.status).toBe("PAST_DUE");
 
       const auditRows = await prisma.auditLog.findMany({
@@ -330,16 +341,24 @@ d(
       expect(auditRows[0].diffJson).toMatchObject({
         merchantId: merchant.id,
         writtenOffCents: 600,
+        writtenOffVatCents: 100,
+        writtenOffNetCents: 500,
       });
 
       // A finance person's exact question from the review: "how much
-      // membership revenue did we write off, for this merchant, ever" — a
-      // plain sum, no joins.
+      // membership REVENUE (not VAT) did we write off, for this merchant,
+      // ever" — writtenOffCents - writtenOffVatCents, a plain aggregate,
+      // no joins.
       const lifetimeWriteOff = await prisma.membershipSubscription.aggregate({
         where: { merchantId: merchant.id },
-        _sum: { writtenOffCents: true },
+        _sum: { writtenOffCents: true, writtenOffVatCents: true },
       });
       expect(lifetimeWriteOff._sum.writtenOffCents).toBe(600);
+      expect(lifetimeWriteOff._sum.writtenOffVatCents).toBe(100);
+      expect(
+        lifetimeWriteOff._sum.writtenOffCents! -
+          lifetimeWriteOff._sum.writtenOffVatCents!,
+      ).toBe(500); // true forgiven revenue, VAT excluded
 
       // Self-heals: the NEW period's first real settlement offset flips
       // PAST_DUE -> ACTIVE (membership-offset.service.ts's needsActivation
@@ -349,9 +368,9 @@ d(
         offerId: offer.id,
         qty: 1,
         unitPriceCents: 101,
-        redeemedAt: new Date("2027-01-05T11:00:00.000Z"),
+        redeemedAt: new Date("2026-06-05T11:00:00.000Z"),
       });
-      await batchBuilder.runNightlyCycle(new Date("2027-01-06T02:00:00.000Z"));
+      await batchBuilder.runNightlyCycle(new Date("2026-06-06T02:00:00.000Z"));
 
       const afterOffset = await prisma.membershipSubscription.findUniqueOrThrow(
         { where: { id: sub.id } },
@@ -367,18 +386,22 @@ d(
       const merchant = await seedMerchant(prisma);
       merchantIds.push(merchant.id);
 
+      // [Fix round #2, minor] Same INSIDE-2026 window as the test above —
+      // kept clear of settlements.realdb.spec.ts test [d]'s 2027-01-01
+      // fixture (and no earlier than the seed pricing floor) so this
+      // file's own runOnce sweep can never touch it.
       const sub = await prisma.membershipSubscription.create({
         data: {
           merchantId: merchant.id,
           anchorDate: new Date("2026-01-01T00:00:00.000Z"),
           currentPeriodStart: new Date("2026-01-01T00:00:00.000Z"),
-          currentPeriodEnd: new Date("2027-01-01T00:00:00.000Z"),
+          currentPeriodEnd: new Date("2026-06-01T00:00:00.000Z"),
           priceCents: 500,
           vatCents: 100,
           status: "ACTIVE",
           outstandingCents: 0, // fully recovered before renewal
           outstandingVatCents: 0,
-          periodPaidAt: new Date("2026-06-01T00:00:00.000Z"),
+          periodPaidAt: new Date("2026-03-01T00:00:00.000Z"),
         },
       });
 
@@ -387,7 +410,7 @@ d(
       // subscription's own writtenOffCents/status, and its own AuditLog
       // rows) are what actually proves this test's claim.
       const result = await renewalCron.runOnce(
-        new Date("2027-01-02T03:00:00.000Z"),
+        new Date("2026-06-02T03:00:00.000Z"),
       );
       expect(result.renewed).toBeGreaterThanOrEqual(1);
 
@@ -395,6 +418,7 @@ d(
         where: { id: sub.id },
       });
       expect(renewed.writtenOffCents).toBe(0);
+      expect(renewed.writtenOffVatCents).toBe(0);
       expect(renewed.status).toBe("ACTIVE"); // NOT demoted to PAST_DUE — nothing was forgiven
 
       const auditRows = await prisma.auditLog.findMany({
@@ -408,12 +432,17 @@ d(
       const merchant = await seedMerchant(prisma);
       merchantIds.push(merchant.id);
 
+      // [Fix round #2, minor] Same INSIDE-2026 window — kept clear of
+      // settlements.realdb.spec.ts test [d]'s 2027-01-01 fixture (and no
+      // earlier than the seed pricing floor — moot for THIS subscription
+      // since CANCELLED never reaches pricing resolution, but keeping the
+      // whole file's convention consistent).
       const sub = await prisma.membershipSubscription.create({
         data: {
           merchantId: merchant.id,
           anchorDate: new Date("2026-01-01T00:00:00.000Z"),
           currentPeriodStart: new Date("2026-01-01T00:00:00.000Z"),
-          currentPeriodEnd: new Date("2027-01-01T00:00:00.000Z"),
+          currentPeriodEnd: new Date("2026-06-01T00:00:00.000Z"),
           priceCents: 500,
           vatCents: 100,
           status: "CANCELLED",
@@ -427,16 +456,17 @@ d(
       // in the same platform-wide call. What actually proves I7 is that
       // THIS CANCELLED subscription specifically was skipped (checked
       // below): untouched period, untouched balance, no audit row.
-      await renewalCron.runOnce(new Date("2027-06-01T03:00:00.000Z"));
+      await renewalCron.runOnce(new Date("2026-09-01T03:00:00.000Z"));
 
       const untouched = await prisma.membershipSubscription.findUniqueOrThrow({
         where: { id: sub.id },
       });
       expect(untouched.currentPeriodEnd.toISOString()).toBe(
-        "2027-01-01T00:00:00.000Z",
+        "2026-06-01T00:00:00.000Z",
       ); // completely unchanged
       expect(untouched.outstandingCents).toBe(300);
       expect(untouched.writtenOffCents).toBe(0);
+      expect(untouched.writtenOffVatCents).toBe(0);
       expect(untouched.status).toBe("CANCELLED");
 
       const auditRows = await prisma.auditLog.findMany({
@@ -501,6 +531,102 @@ d(
       });
       expect(subAfter.outstandingCents).toBe(600); // untouched — paused, not written off
       expect(subAfter.status).toBe("TRIAL"); // never activated — no offset ever applied
+    }, 30000);
+
+    it("[Fix round #2, I6-residual] a batch WITH an already-committed prior offset does not lose that offset once exemption is granted retroactively — the double-loss the re-review caught", async () => {
+      const { batchBuilder } = buildHarness(prisma);
+      // bagFeeCentsOverride: 0, gross 5051 -> withholding round(5051*1%)=51
+      // -> available 5000 exactly. Subscription due 6000 (5000 net + 1000
+      // VAT, the reviewer's own recurring example) -> this FIRST pass
+      // offsets a real 5000 (PARTIAL — 1000 of the 6000 due remains),
+      // matching the re-review's own worked numbers exactly: "subscription
+      // outstanding 6000 -> 1000".
+      const merchant = await seedMerchant(prisma, { bagFeeCentsOverride: 0 });
+      merchantIds.push(merchant.id);
+      const store = await seedStore(prisma, merchant.id);
+      const bagTemplate = await seedBagTemplate(prisma, store.id, 5051);
+      const offer = await seedOffer(prisma, bagTemplate.id, store.id, 10);
+
+      const sub = await prisma.membershipSubscription.create({
+        data: {
+          merchantId: merchant.id,
+          anchorDate: new Date("2026-01-01T00:00:00.000Z"),
+          currentPeriodStart: new Date("2026-01-01T00:00:00.000Z"),
+          currentPeriodEnd: new Date("2027-01-01T00:00:00.000Z"),
+          priceCents: 5000,
+          vatCents: 1000,
+          status: "TRIAL",
+          outstandingCents: 6000,
+          outstandingVatCents: 1000,
+        },
+      });
+
+      await seedRedeemedPaidReservation(prisma, {
+        storeId: store.id,
+        offerId: offer.id,
+        qty: 1,
+        unitPriceCents: 5051,
+        redeemedAt: new Date("2026-08-01T11:00:00.000Z"),
+      });
+      const now1 = new Date("2026-08-02T02:00:00.000Z");
+      await batchBuilder.runNightlyCycle(now1);
+
+      const batch = await prisma.settlementBatch.findFirstOrThrow({
+        where: { merchantId: merchant.id },
+      });
+      expect(batch.grossCents).toBe(5051);
+      expect(batch.withholdingCents).toBe(51);
+      expect(batch.membershipOffsetCents).toBe(5000); // the batch's real, committed offset
+      // Proportional VAT split of a PARTIAL offset: round(5000*1000/6000).
+      expect(batch.membershipOffsetVatCents).toBe(833);
+      expect(batch.netPayoutCents).toBe(0); // 5000 available, all 5000 offset
+      expect(batch.status).toBe("CALCULATED");
+
+      const subAfterFirstPass =
+        await prisma.membershipSubscription.findUniqueOrThrow({
+          where: { id: sub.id },
+        });
+      expect(subAfterFirstPass.outstandingCents).toBe(1000); // 6000 - 5000
+      expect(subAfterFirstPass.outstandingVatCents).toBe(167); // 1000 - 833
+      expect(subAfterFirstPass.status).toBe("ACTIVE"); // TRIAL -> ACTIVE on the real offset
+
+      // GTM action, well AFTER this batch already committed its offset:
+      // founding status granted retroactively, covering this batch's
+      // period date (2026-08-01).
+      await prisma.merchant.update({
+        where: { id: merchant.id },
+        data: { membershipExemptUntil: new Date("2026-09-01T00:00:00.000Z") },
+      });
+
+      // Recompute the SAME batch again — the operator's/cron's natural
+      // next touch (an extend, a retry, an approve's pre-lock recompute
+      // all funnel through the exact same recomputeBatch call). Before
+      // this fix, this would have reset membershipOffsetCents/VatCents to
+      // 0 (feeding computeSettlement an artificial due=0), flipping
+      // netPayoutCents from 0 to 5000 — paying the merchant 5000 THEY
+      // ALREADY effectively kept via the subscription's own balance
+      // already being reduced. Must be a true no-op.
+      const now2 = new Date("2026-08-03T02:00:00.000Z");
+      const recomputed = await batchBuilder.recomputeBatch(batch.id, now2);
+      expect(recomputed.membershipOffsetCents).toBe(5000); // UNCHANGED, not reset to 0
+      expect(recomputed.membershipOffsetVatCents).toBe(833); // UNCHANGED
+      expect(recomputed.netPayoutCents).toBe(0); // UNCHANGED — the 5000 the bug would have paid out again
+
+      // A second no-op recompute must ALSO reproduce the same numbers.
+      const recomputedAgain = await batchBuilder.recomputeBatch(batch.id, now2);
+      expect(recomputedAgain.membershipOffsetCents).toBe(5000);
+      expect(recomputedAgain.netPayoutCents).toBe(0);
+
+      // The subscription itself is genuinely untouched by exemption —
+      // paused collection going forward, not a re-derivation of what this
+      // batch already, correctly, took.
+      const subAfterExemption =
+        await prisma.membershipSubscription.findUniqueOrThrow({
+          where: { id: sub.id },
+        });
+      expect(subAfterExemption.outstandingCents).toBe(1000);
+      expect(subAfterExemption.outstandingVatCents).toBe(167);
+      expect(subAfterExemption.status).toBe("ACTIVE");
     }, 30000);
   },
 );

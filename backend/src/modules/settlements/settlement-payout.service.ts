@@ -134,11 +134,34 @@ export class SettlementPayoutService {
     // the provider call below with the confirmed-frozen
     // `batch.netPayoutCents` read above, which cannot have changed since:
     // hold()/recomputeBatch() both refuse a batch with this set).
+    //
+    // [Fix round #2, C3-residual] The guarded updateMany's result used to
+    // be discarded — if adminHold (or a concurrent recompute) flips the
+    // batch's status away from APPROVED in the window between the
+    // findUnique read above and THIS statement, the WHERE clause matches
+    // 0 rows (nothing gets stamped), but execution fell through and
+    // called the provider anyway with the now-possibly-stale
+    // `batch.netPayoutCents` read before the race — the provider would
+    // move money for a batch that is no longer authoritatively APPROVED,
+    // and markSent's own guard further down would then ALSO match 0 rows
+    // (the batch is HELD, not APPROVED), leaving a payout with no
+    // pspTransferRef/sentAt recorded anywhere. Now captures the count and
+    // bails out — re-reading and returning the batch's actual current
+    // state — instead of proceeding, exactly mirroring how markSent
+    // itself already treats a lost race (re-read, never double-act).
     if (batch.payoutAttemptedAt === null) {
-      await this.prisma.settlementBatch.updateMany({
+      const stamped = await this.prisma.settlementBatch.updateMany({
         where: { id: batchId, status: "APPROVED", payoutAttemptedAt: null },
         data: { payoutAttemptedAt: new Date() },
       });
+      if (stamped.count === 0) {
+        this.logger.warn(
+          `executeOne: batch ${batchId} was concurrently modified (held or already attempted) between read and stamp — not calling the provider, re-reading current state.`,
+        );
+        return this.prisma.settlementBatch.findUniqueOrThrow({
+          where: { id: batchId },
+        });
+      }
     }
 
     const merchantRef = batch.merchant.pspSubMerchantKey || batch.merchant.iban;

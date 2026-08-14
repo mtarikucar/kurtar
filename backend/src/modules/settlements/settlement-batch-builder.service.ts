@@ -17,15 +17,21 @@ const PAYOUT_DUE_BUSINESS_DAYS = 5;
 
 interface ClawbackCandidate {
   reservationId: string;
-  /** Already-recovered cumulative amount for this line (SettlementLine.
-   * clawbackCents as it stood before this pass) — [Fix round, I4] this
-   * column is genuinely cumulative now, not write-once. */
+  /** [Fix round #2, C2-residual] The line's recovered amount EXCLUDING
+   * whatever THIS recomputing batch itself contributed on a prior pass —
+   * i.e. clawbackCents minus (clawbackCents if clawbackBatchId === this
+   * batch's id, else 0). This is the "undo my own prior contribution,
+   * then re-derive" baseline lockPendingClawback now computes, mirroring
+   * membership-offset.service.ts's lockAndResolveDue (which does exactly
+   * this for `batchPriorOffsetCents`) — see that method's fix-round doc
+   * comment for the identical reasoning applied to a single subscription
+   * balance instead of a per-line one. */
   priorClawbackCents: number;
   /** The line's full theoretical demand: grossCents - bagFeeCents -
    * bagFeeVatCents - withholdingCents, floored at 0. */
   fullDemandCents: number;
   /** fullDemandCents - priorClawbackCents, floored at 0 — what's still
-   * outstanding for THIS line specifically. */
+   * outstanding for THIS line specifically, as of the baseline above. */
   remainingCents: number;
 }
 
@@ -370,7 +376,11 @@ export class SettlementBatchBuilderService {
       );
       const membershipDueCents = due?.dueCents ?? 0;
 
-      const clawback = await this.lockPendingClawback(tx, batch.merchantId);
+      const clawback = await this.lockPendingClawback(
+        tx,
+        batch.merchantId,
+        batchId,
+      );
 
       // [Fix round, C2] Cross-batch shortfall inheritance happens EXACTLY
       // ONCE per batch, on its first-ever recompute pass — every later
@@ -520,14 +530,44 @@ export class SettlementBatchBuilderService {
    * now (see the class doc comment) — `remainingCents` (this line's full
    * demand minus what's already been recovered across any prior batches)
    * is what's actually available to allocate this pass, not the line's
-   * full original demand. A line only appears here at all while
-   * `remainingCents > 0` (the WHERE clause on `clawbackAppliedAt IS NULL`
-   * covers the same condition from the other direction — appliedAt is
-   * only ever stamped once remainingCents hits exactly 0).
+   * full original demand.
+   *
+   * [Fix round #2, C2-residual — CRITICAL, this was still half-open]
+   * A line this SAME batch already fully recovered on an earlier pass
+   * (clawbackAppliedAt set, clawbackBatchId = this batch) used to be
+   * excluded entirely by the `clawbackAppliedAt IS NULL` filter — meaning
+   * every recompute of an APPROVED-bound or retried batch (adminApprove
+   * recomputes once more before locking in; adminRetry on a HELD batch
+   * recomputes explicitly) silently REWROTE refundClawbackCents back
+   * towards 0, forgiving money the batch had already, correctly,
+   * recovered. Concretely: batch2 absorbs a 16830 clawback in its first
+   * pass (line fully resolved) -> adminApprove's pre-lock recompute used
+   * to find NO candidates at all (the line no longer matched), rederive
+   * refundClawbackCents=0, and approve/pay the FULL, un-clawed-back gross.
+   *
+   * Fixed the same way membership-offset.service.ts's lockAndResolveDue
+   * already handles the identical problem for a subscription balance:
+   * "undo THIS BATCH's own prior contribution, then re-derive fresh."
+   * The WHERE clause now ALSO matches a line whose clawbackBatchId is
+   * this batch (regardless of clawbackAppliedAt), and for those rows
+   * `priorClawbackCents` (the baseline this pass builds from) is
+   * `clawbackCents` MINUS whatever this batch itself put there —
+   * concretely 0, since clawbackBatchId being this batch's id means this
+   * batch is the ONLY possible contributor since its own last pass (any
+   * OTHER batch touching the line afterwards would have overwritten
+   * clawbackBatchId to ITS OWN id first). A line last touched by a
+   * DIFFERENT, still-open batch is deliberately left alone here (its
+   * clawbackBatchId won't match `batchId`) — untangling a genuine
+   * interleaved multi-open-batch race on the very same line is out of
+   * this fix's scope; the concrete, review-confirmed scenarios (a single
+   * batch recomputed via adminApprove/adminRetry with no other batch
+   * touching its lines in between) are what this closes, and is what the
+   * two extended realdb scenarios below assert stays idempotent.
    */
   private async lockPendingClawback(
     tx: Prisma.TransactionClient,
     merchantId: string,
+    batchId: string,
   ): Promise<{ totalCents: number; candidates: ClawbackCandidate[] }> {
     const rows = await tx.$queryRaw<
       {
@@ -537,13 +577,14 @@ export class SettlementBatchBuilderService {
         bagFeeVatCents: number;
         withholdingCents: number;
         clawbackCents: number;
+        clawbackBatchId: string | null;
       }[]
     >(Prisma.sql`
-      SELECT sl."reservationId", sl."grossCents", sl."bagFeeCents", sl."bagFeeVatCents", sl."withholdingCents", sl."clawbackCents"
+      SELECT sl."reservationId", sl."grossCents", sl."bagFeeCents", sl."bagFeeVatCents", sl."withholdingCents", sl."clawbackCents", sl."clawbackBatchId"
       FROM "settlement_lines" sl
       JOIN "settlement_batches" sb ON sb.id = sl."batchId"
       JOIN "payments" p ON p."reservationId" = sl."reservationId"
-      WHERE sl."clawbackAppliedAt" IS NULL
+      WHERE (sl."clawbackAppliedAt" IS NULL OR sl."clawbackBatchId" = ${batchId})
         AND sb."merchantId" = ${merchantId}
         AND sb."status" IN ('SENT', 'SETTLED')
         AND EXISTS (
@@ -560,10 +601,17 @@ export class SettlementBatchBuilderService {
           0,
           r.grossCents - r.bagFeeCents - r.bagFeeVatCents - r.withholdingCents,
         );
-        const remainingCents = Math.max(0, fullDemandCents - r.clawbackCents);
+        const priorContributionByThisBatch =
+          r.clawbackBatchId === batchId ? r.clawbackCents : 0;
+        const priorClawbackCents =
+          r.clawbackCents - priorContributionByThisBatch;
+        const remainingCents = Math.max(
+          0,
+          fullDemandCents - priorClawbackCents,
+        );
         return {
           reservationId: r.reservationId,
-          priorClawbackCents: r.clawbackCents,
+          priorClawbackCents,
           fullDemandCents,
           remainingCents,
         };

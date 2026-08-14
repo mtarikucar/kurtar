@@ -468,6 +468,51 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     const recomputedBatch1 = await batchBuilder.recomputeBatch(batch1.id, now2);
     expect(recomputedBatch1.netPayoutCents).toBe(16830);
     expect(recomputedBatch1.status).toBe("SENT");
+
+    // [Fix round #2, C2-residual — the exact scenario the re-review named]
+    // batch2 is CALCULATED, its clawback already fully applied to the
+    // line (clawbackAppliedAt set). The operator's very next action here
+    // is adminApprove, which recomputes ONCE MORE before locking in
+    // (settlements.service.ts). Before this fix, lockPendingClawback
+    // excluded the already-applied line entirely, so this recompute would
+    // silently rederive refundClawbackCents=0 and pay out the FULL,
+    // un-clawed-back 26730 instead of 9900 — forgiving the whole 16830.
+    // Must now be a true no-op: identical numbers, twice over (approve's
+    // own internal recompute, then a second explicit recompute) proving
+    // stability, not a one-time coincidence.
+    const approvedBatch2 = await settlements.adminApprove(batch2.id, now2);
+    expect(approvedBatch2.refundClawbackCents).toBe(expectedClawback);
+    expect(approvedBatch2.netPayoutCents).toBe(9900);
+    expect(approvedBatch2.status).toBe("APPROVED");
+
+    const reRecomputedBatch2 = await batchBuilder.recomputeBatch(
+      batch2.id,
+      now2,
+    );
+    expect(reRecomputedBatch2.refundClawbackCents).toBe(expectedClawback);
+    expect(reRecomputedBatch2.netPayoutCents).toBe(9900);
+
+    const lineAfterApprove = await prisma.settlementLine.findUniqueOrThrow({
+      where: { reservationId: reservation.id },
+    });
+    expect(lineAfterApprove.clawbackCents).toBe(expectedClawback); // unchanged
+    expect(lineAfterApprove.clawbackAppliedAt).not.toBeNull();
+    expect(lineAfterApprove.clawbackBatchId).toBe(batch2.id);
+    // Total ever withheld from this line === its total demand — nothing
+    // forgiven, nothing double-counted, across the whole chain.
+    expect(lineAfterApprove.clawbackCents).toBe(
+      lineAfterApprove.grossCents -
+        lineAfterApprove.bagFeeCents -
+        lineAfterApprove.bagFeeVatCents -
+        lineAfterApprove.withholdingCents,
+    );
+
+    // Close the loop: payout must actually send the correct, still-clawed-
+    // back amount — proving the fix end to end, not just at the batch-row
+    // level.
+    const sentBatch2 = await payout.executeOne(batch2.id);
+    expect(sentBatch2.status).toBe("SENT");
+    expect(sentBatch2.netPayoutCents).toBe(9900);
   }, 30000);
 
   it("[c] payout provider failure ⇒ batch stays APPROVED, retried next tick, exactly one payout recorded on eventual success", async () => {
@@ -862,6 +907,43 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     expect(line2.clawbackAppliedAt).toBeNull();
     expect(line2.clawbackBatchId).toBe(batch2.id);
 
+    // [Fix round #2, C2-residual — the exact "partial variant" the
+    // re-review named] batch2 is HELD. The operator's natural next action
+    // on a HELD batch is adminRetry, which recomputes. Before this fix,
+    // line1 (already fully applied) would drop out of lockPendingClawback
+    // entirely, so this retry would rederive refundClawbackCents from
+    // ONLY line2's still-open remainder (6930 demand, but recomputed as
+    // if nothing had ever been recovered) instead of the true combined
+    // 16830 — net would flip from 0 to 9900 (paying out money already
+    // clawed back) while line1's books still assert full recovery. Must
+    // be a true no-op: identical numbers, and line1/line2's cumulative
+    // amounts unchanged.
+    const retriedBatch2 = await settlements.adminRetry(batch2.id, now2);
+    expect(retriedBatch2.status).toBe("HELD");
+    expect(retriedBatch2.refundClawbackCents).toBe(16830);
+    expect(retriedBatch2.netPayoutCents).toBe(0);
+    expect(retriedBatch2.carriedShortfallCents).toBe(6930);
+
+    const line1AfterRetry = await prisma.settlementLine.findUniqueOrThrow({
+      where: { reservationId: first.reservation.id },
+    });
+    const line2AfterRetry = await prisma.settlementLine.findUniqueOrThrow({
+      where: { reservationId: second.reservation.id },
+    });
+    expect(line1AfterRetry.clawbackCents).toBe(perLineDemand); // unchanged
+    expect(line1AfterRetry.clawbackAppliedAt).not.toBeNull();
+    expect(line2AfterRetry.clawbackCents).toBe(16830 - perLineDemand); // unchanged
+    expect(line2AfterRetry.clawbackAppliedAt).toBeNull();
+
+    // A second no-op retry must ALSO reproduce the same numbers.
+    await settlements.adminRetry(batch2.id, now2);
+    const batch2AfterSecondRetry =
+      await prisma.settlementBatch.findUniqueOrThrow({
+        where: { id: batch2.id },
+      });
+    expect(batch2AfterSecondRetry.refundClawbackCents).toBe(16830);
+    expect(batch2AfterSecondRetry.netPayoutCents).toBe(0);
+
     // batch3: another fresh gross 20000 on a NEW day -> re-discovers line2's
     // REMAINING demand (perLineDemand - 4950 = 6930) directly via
     // lockPendingClawback (it belongs to batch1, which is SENT) — this must
@@ -906,6 +988,19 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
       where: { id: batch2.id },
     });
     expect(batch2After.carriedShortfallCents).toBe(6930);
+
+    // Total ever withheld across BOTH lines, across the whole 3-batch
+    // chain, equals their combined total demand exactly — nothing
+    // forgiven (the C2-residual bug), nothing double-counted (the
+    // original C2 bug this test file's [f]/[g] already guard).
+    const line1Final = await prisma.settlementLine.findUniqueOrThrow({
+      where: { reservationId: first.reservation.id },
+    });
+    const totalWithheld =
+      line1Final.clawbackCents + line2Resolved.clawbackCents;
+    const totalDemand = perLineDemand * 2;
+    expect(totalWithheld).toBe(totalDemand);
+    expect(totalWithheld).toBe(23760);
   }, 30000);
 
   it("[h] [I12] a reservation refunded WHILE its batch is still CALCULATED (not yet approved) is still paid out in full at send time — recomputeBatch re-derives from settlement_lines, not payment/refund status — and clawed back on a later batch", async () => {
