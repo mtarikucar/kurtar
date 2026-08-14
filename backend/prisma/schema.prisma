@@ -461,16 +461,41 @@ model MembershipSubscription {
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
   priceCents         Int
+  // [Fix round, P2] KDV %20 on `priceCents` for the CURRENT period —
+  // mirrors the bag fee's netCents/vatCents split exactly. A membership
+  // invoice to a merchant is a taxable service in Turkey; this was missing
+  // in the original ship and is now first-class, carried through
+  // subscription -> offset -> batch (SettlementBatch.membershipOffsetVatCents)
+  // -> invoice (CommissionInvoice.vatCents for the MEMBERSHIP row).
+  vatCents           Int              @default(0)
   status             MembershipStatus @default(TRIAL)
 
-  // [Task 8] How much of `priceCents` is still unrecovered for the CURRENT
-  // period — the offset engine's running balance. Starts equal to
-  // priceCents when a period opens (0 if membershipExemptUntil covers it),
-  // decremented by each settlement batch's membershipOffsetCents, floored
-  // at 0. periodPaidAt is stamped the instant it FIRST reaches 0 (idempotent
-  // marker — see membership-offset.service.ts).
-  outstandingCents Int       @default(0)
-  periodPaidAt     DateTime?
+  // [Task 8] How much of `priceCents + vatCents` (combined) is still
+  // unrecovered for the CURRENT period — the offset engine's running
+  // balance. Starts equal to priceCents+vatCents when a period opens (0 if
+  // membershipExemptUntil covers it), decremented by each settlement
+  // batch's membershipOffsetCents, floored at 0. periodPaidAt is stamped
+  // the instant it FIRST reaches 0 (idempotent marker — see
+  // membership-offset.service.ts).
+  outstandingCents    Int       @default(0)
+  // [Fix round, P2] The portion of `outstandingCents` that is still-unpaid
+  // VAT specifically (outstandingCents - outstandingVatCents is always the
+  // still-unpaid NET portion) — lets the offset engine allocate a partial
+  // recovery proportionally between net and VAT (membership-offset.
+  // service.ts's persistOffset) instead of only ever tracking one lump sum.
+  outstandingVatCents Int       @default(0)
+  periodPaidAt        DateTime?
+
+  // [Fix round, P1] Cumulative lifetime amount forgiven at a renewal
+  // rollover because the just-ended period's outstandingCents was still
+  // > 0 (membership-renewal-cron.service.ts) — TGTG-style "you don't pay
+  // until you earn" forgiveness IS correct policy (a merchant who never
+  // earns the fee never owes it), but it must never be silent: a matching
+  // AuditLog row is written at the SAME instant this increments, and this
+  // column alone lets a finance person answer "how much have we written
+  // off THIS merchant, ever" without joining AuditLog (AuditLog is what
+  // answers a time-scoped "how much did we write off LAST YEAR" query).
+  writtenOffCents Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -717,26 +742,73 @@ model SettlementBatch {
   periodEnd   DateTime
   status      SettlementStatus @default(PENDING)
 
-  grossCents            Int     @default(0)
-  bagFeeCents           Int     @default(0)
+  grossCents                 Int       @default(0)
+  bagFeeCents                Int       @default(0)
   // [Task 8] KDV %20 on bagFeeCents, tracked separately — the bag fee
   // itself is never a taxable-inclusive blend; see settlement-math.ts.
-  bagFeeVatCents        Int     @default(0)
-  withholdingCents      Int     @default(0)
-  membershipOffsetCents Int     @default(0)
-  refundClawbackCents   Int     @default(0)
-  netPayoutCents        Int     @default(0)
+  bagFeeVatCents             Int       @default(0)
+  withholdingCents           Int       @default(0)
+  membershipOffsetCents      Int       @default(0)
+  // [Fix round, P2] The portion of membershipOffsetCents that is VAT
+  // specifically (membershipOffsetCents - membershipOffsetVatCents is the
+  // net portion) — mirrors bagFeeCents/bagFeeVatCents. Also what a repeat
+  // recompute of THIS batch "adds back" (alongside membershipOffsetCents
+  // itself) to the subscription's outstandingVatCents before re-deriving,
+  // the same idempotency trick membershipOffsetCents already uses.
+  membershipOffsetVatCents   Int       @default(0)
+  refundClawbackCents        Int       @default(0)
+  netPayoutCents             Int       @default(0)
   // [Task 8] Set only when this batch went HELD because fees + withholding
   // + membershipOffset + clawback exceeded grossCents (settlement-math.ts's
   // never-negative-net invariant). The exact deficit — what still needs to
   // be recovered — becomes an input to computing the merchant's NEXT batch
   // (settlements.service.ts folds it into that batch's priorClawbackCents).
   // Zero on every non-HELD batch.
-  carriedShortfallCents Int     @default(0)
+  carriedShortfallCents      Int       @default(0)
+  // [Fix round, C2] The portion of carriedShortfallCents that is
+  // externally-caused (inherited from a predecessor batch, or an unmet
+  // refund-clawback demand) — DELIBERATELY NOT the same number as
+  // carriedShortfallCents itself, which also bakes in this batch's OWN
+  // fixed-fees-exceed-gross deficit. That distinction is exactly what a
+  // real bug in this fix's first draft got wrong: feeding the FULL
+  // carriedShortfallCents back into a later recompute pass double-counts
+  // the own-fee-deficit component (computeSettlement already re-derives
+  // it fresh from `lines` every single pass; the stored total already
+  // includes it once), which made a batch's reported shortfall GROW on
+  // every retry with zero new information (2000 -> 4000 -> 6000 -> ...)
+  // instead of converging. This column is what actually feeds forward
+  // into the NEXT pass's priorClawbackCents — updated each pass via
+  // "how much of THIS column's value did refundClawbackCents actually
+  // absorb" (the same absorb-the-oldest-debt-first arithmetic
+  // recomputeBatch already applies when allocating clawback across
+  // lines), fully decoupled from whatever the batch's own lines do.
+  carriedExternalDemandCents Int       @default(0)
+  // [Fix round, C2] Stamped the FIRST time this batch is ever recomputed
+  // (settlement-batch-builder.service.ts's recomputeBatch), whether or not
+  // it actually inherited anything. Before this is set, a recompute is
+  // allowed to inherit a carried shortfall from the merchant's most-recent
+  // OTHER batch (the normal "shortfall rolls to the next batch" flow) —
+  // seeding carriedExternalDemandCents from it. Once set, EVERY subsequent
+  // recompute of THIS SAME batch (an admin retry on a HELD batch, or an
+  // "extend" that adds new lines to one) must consume the batch's OWN
+  // currently-stored carriedExternalDemandCents instead of re-querying a
+  // sibling — querying a sibling again on a later pass would either
+  // silently DROP progress already made recovering it, or (if the
+  // predecessor is itself untouched, as it usually is) simply re-fetch
+  // the same starting value while ignoring any partial recovery already
+  // achieved. NULL means "never recomputed yet".
+  shortfallResolvedAt        DateTime?
+  // [Fix round, C3] Stamped BEFORE the payout provider is ever called for
+  // this batch (settlement-payout.service.ts's executeOne) — freezes
+  // netPayoutCents from that instant on: hold()/recomputeBatch() both
+  // refuse to touch a batch with this set, so the amount a provider was
+  // told to transfer can never drift out from under an in-flight or
+  // already-attempted payout. NULL until the first attempt.
+  payoutAttemptedAt          DateTime?
   // [Task 8] Why this batch is HELD — "negative net, ₺X carried" for the
   // automatic path, or the admin's note for a manual POST .../:id/hold.
   // NULL for every batch that has never been HELD.
-  holdReason            String?
+  holdReason                 String?
 
   dueAt          DateTime?
   pspTransferRef String?
