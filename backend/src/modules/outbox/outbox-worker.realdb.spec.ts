@@ -27,10 +27,17 @@ function fakeType(type: string): OutboxEventType {
  *   (e) scheduledFor in the future is skipped, then dispatched once that
  *       instant has passed — proven via drainOnce's explicit `now`
  *       parameter, never a real sleep
- *   plus a Critical-fix regression: a row stranded in PROCESSING past its
- *       lease (the crash-mid-drain scenario) is reclaimed and dispatched
- *       exactly once; a row still legitimately in-flight (fresh
- *       claimedAt) is left alone.
+ *   plus two fix-round regressions:
+ *     - Critical 1: a row stranded in PROCESSING past its lease (the
+ *       crash-mid-drain scenario) is reclaimed and dispatched exactly
+ *       once; a row still legitimately in-flight (fresh claimedAt) is
+ *       left alone.
+ *     - Fix round 2, leg (a): a slow FIRST event in a claimed batch does
+ *       not cause its untouched batch-mates' SHARED initial claimedAt to
+ *       be mistaken for genuine abandonment by another replica — the
+ *       per-event lease renewal (touchClaim) means a worker that's merely
+ *       queued behind a slow sibling in its own sequential loop, not
+ *       actually reclaimed, never double-dispatches.
  *
  * (b) offer.published fan-out and (d) the pickup-reminder cron are their
  * own files (handlers/offer-published-fanout.realdb.spec.ts,
@@ -332,5 +339,113 @@ d("OutboxWorkerService — real DB concurrency + retry + scheduling", () => {
       where: { id: inFlight.id },
       data: { status: "dead", lastError: "test fixture cleanup" },
     });
+  }, 15_000);
+
+  it("[Fix round 2, leg (a)] a slow FIRST event in a batch does not get its later batch-mates double-dispatched once their SHARED initial claimedAt goes stale — per-event lease renewal (touchClaim) protects them", async () => {
+    // 3 events, claimed together in ONE batch by worker A — the original
+    // (fix-round-1) design stamped one SHARED claimedAt for the whole
+    // batch at claim time; if worker A is still stuck on the first event
+    // when a later batch-mate's (shared) lease goes stale, another
+    // replica could legitimately reclaim — and duplicate-dispatch — a
+    // sibling that was never actually abandoned, just queued behind a
+    // slow one in worker A's own sequential loop.
+    const seeded = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        prisma.outboxEvent.create({
+          data: {
+            type: "test.slow-batch.v1",
+            payload: {},
+            idempotencyKey: nextIdempotencyKey(),
+          },
+        }),
+      ),
+    );
+    const seededIds = seeded.map((r) => r.id);
+
+    let releaseFirst: () => void = () => {};
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    // Resolved by the handler the INSTANT it captures which event it's
+    // blocking on — the deterministic signal the test awaits instead of
+    // polling DB state (claimBatch alone would already show every row as
+    // PROCESSING before dispatch — let alone handle() — has even started
+    // for the first one, so DB status isn't the right signal here).
+    let markHandlerStarted: () => void = () => {};
+    const handlerStarted = new Promise<void>((resolve) => {
+      markHandlerStarted = resolve;
+    });
+    let blockedEventId: string | null = null;
+    const dispatchLogA: string[] = [];
+    const dispatchLogB: string[] = [];
+
+    const handlerA: OutboxEventHandler = {
+      types: [fakeType("test.slow-batch.v1")],
+      handle: async (_payload, event) => {
+        if (blockedEventId === null) {
+          blockedEventId = event.id;
+          markHandlerStarted();
+          await firstBlocked; // no wall-clock sleep — a controllable deferred
+        }
+        dispatchLogA.push(event.id);
+      },
+    };
+    const handlerB: OutboxEventHandler = {
+      types: [fakeType("test.slow-batch.v1")],
+      handle: async (_payload, event) => {
+        dispatchLogB.push(event.id);
+      },
+    };
+
+    const workerA = buildWorker(prisma, handlerA);
+    const workerB = buildWorker(prisma, handlerB);
+
+    // Worker A claims the whole batch (shared initial claimedAt) and
+    // starts dispatching sequentially — blocks on whichever event it
+    // reaches first (touchClaim succeeds for it, then handle() blocks).
+    const drainAPromise = workerA.drainOnce(10);
+
+    await handlerStarted; // deterministic: handlerA has captured blockedEventId and is now blocked
+    const blockedId = blockedEventId!;
+    const laterIds = seededIds.filter((id) => id !== blockedId);
+    expect(laterIds).toHaveLength(2);
+
+    // Simulate enough wall-clock time passing that the batch's SHARED
+    // initial claimedAt would be stale for the events worker A hasn't
+    // reached yet (it's still blocked on the first one). WITHOUT the
+    // per-event touchClaim fix, this is exactly the window that let
+    // another replica reclaim (and duplicate-dispatch) a batch-mate still
+    // legitimately queued behind a slow sibling in the SAME worker's own
+    // loop.
+    await prisma.outboxEvent.updateMany({
+      where: { id: { in: laterIds } },
+      data: { claimedAt: new Date(Date.now() - 10 * 60 * 1000) },
+    });
+
+    // Worker B's drain legitimately reclaims them (genuinely stale from
+    // ITS point of view too) and dispatches both.
+    await workerB.drainOnce(10);
+    expect(dispatchLogB.slice().sort()).toEqual(laterIds.slice().sort());
+
+    // NOW let worker A's blocked event finish — its for-loop moves on to
+    // the two later events, but touchClaim on each fails (worker B
+    // already changed their claimedAt), so worker A SKIPS them rather
+    // than double-dispatching.
+    releaseFirst();
+    const resultA = await drainAPromise;
+
+    expect(dispatchLogA).toEqual([blockedId]); // worker A only ever dispatched the blocked one
+    expect(resultA.skipped).toBe(2); // the two reclaimed-out-from-under-it events
+
+    // Every seeded event was dispatched EXACTLY once, across both
+    // workers.
+    const allDispatched = [...dispatchLogA, ...dispatchLogB];
+    expect(allDispatched.slice().sort()).toEqual(seededIds.slice().sort());
+    expect(new Set(allDispatched).size).toBe(3);
+
+    const finalRows = await prisma.outboxEvent.findMany({
+      where: { id: { in: seededIds } },
+    });
+    expect(finalRows.every((r) => r.status === "done")).toBe(true);
   }, 15_000);
 });

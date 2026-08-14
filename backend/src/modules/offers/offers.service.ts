@@ -443,17 +443,32 @@ export class OffersService {
         // actually refunds — not the expiredCount PENDING_PAYMENT ones,
         // which were never charged. OfferCancelledHandler pushes only
         // these ids ("your money is being refunded").
+        //
+        // [Fix round 2] TWO events, not one — the consumer-push leg and
+        // the merchant-email leg used to share a single offer.cancelled.v1
+        // event/handler; a persistently-failing email retried the WHOLE
+        // handler (re-pushing consumers who'd already been notified) up
+        // to MAX_OUTBOX_ATTEMPTS times. Splitting them means each leg
+        // retries independently — see event-types.ts's doc comment.
         await this.outbox.publish(tx, {
           type: OUTBOX_EVENT_TYPES.OFFER_CANCELLED_V1,
+          payload: {
+            offerId,
+            storeId: offer.storeId,
+            reservationIds: fanOut.toRefund.map((r) => r.reservationId),
+          },
+          idempotencyKey: `offer-cancelled:${offerId}`,
+        });
+        await this.outbox.publish(tx, {
+          type: OUTBOX_EVENT_TYPES.OFFER_CANCELLED_MERCHANT_EMAIL_V1,
           payload: {
             offerId,
             storeId: offer.storeId,
             expiredCount: fanOut.expiredCount,
             cancelledCount: fanOut.cancelledCount,
             reason,
-            reservationIds: fanOut.toRefund.map((r) => r.reservationId),
           },
-          idempotencyKey: `offer-cancelled:${offerId}`,
+          idempotencyKey: `offer-cancelled-merchant-email:${offerId}`,
         });
 
         return fanOut;

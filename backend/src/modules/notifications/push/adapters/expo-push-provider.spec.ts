@@ -172,4 +172,116 @@ describe("ExpoPushProvider.sendBatch", () => {
     provider.onModuleInit();
     expect(registry.get("expo")).toBe(provider);
   });
+
+  it("[Fix round 2, leg (b)] passes a per-chunk AbortSignal (fetch has no default timeout otherwise)", async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: [{ status: "ok" }] }));
+    global.fetch = fetchMock as any;
+    const provider = new ExpoPushProvider(
+      configReturning(undefined),
+      new PushProviderRegistry(),
+    );
+
+    await provider.sendBatch([{ to: "tok1", title: "a", body: "b" }]);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("[Fix round 2, leg (b)] a timeout (AbortError) is classified as outcome 'error', never throws out of sendBatch", async () => {
+    const abortError = new DOMException(
+      "The operation was aborted",
+      "AbortError",
+    );
+    global.fetch = jest.fn().mockRejectedValue(abortError) as any;
+    const provider = new ExpoPushProvider(
+      configReturning(undefined),
+      new PushProviderRegistry(),
+    );
+
+    const results = await provider.sendBatch([
+      { to: "tok1", title: "a", body: "b" },
+    ]);
+
+    expect(results).toEqual([
+      {
+        to: "tok1",
+        outcome: "error",
+        error: expect.stringContaining("aborted"),
+      },
+    ]);
+  });
+
+  it("[Fix round 2, leg (b)] chunks are sent with bounded CONCURRENCY, not strictly sequentially — multiple in flight at once", async () => {
+    let concurrentInFlight = 0;
+    let maxObservedConcurrency = 0;
+    const releases: Array<() => void> = [];
+    const fetchMock = jest.fn().mockImplementation(async () => {
+      concurrentInFlight++;
+      maxObservedConcurrency = Math.max(
+        maxObservedConcurrency,
+        concurrentInFlight,
+      );
+      await new Promise<void>((resolve) => releases.push(resolve));
+      concurrentInFlight--;
+      return jsonResponse({ data: [{ status: "ok" }] });
+    });
+    global.fetch = fetchMock as any;
+    const provider = new ExpoPushProvider(
+      configReturning(undefined),
+      new PushProviderRegistry(),
+    );
+    // 5 chunks (500 messages / 100 per chunk) — comfortably under the
+    // concurrency cap, so all 5 should be in flight simultaneously.
+    const messages = Array.from({ length: 500 }, (_, i) => ({
+      to: `tok${i}`,
+      title: "t",
+      body: "b",
+    }));
+
+    const sendPromise = provider.sendBatch(messages);
+    // Let every chunk's fetch() actually start (they all synchronously
+    // reach the blocking await above) before releasing any of them — a
+    // microtask-queue flush, not a wall-clock sleep.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(maxObservedConcurrency).toBeGreaterThan(1);
+
+    releases.forEach((release) => release());
+    await sendPromise;
+  });
+
+  it("[Fix round 2, leg (b)] overall message order is preserved across chunks regardless of which chunk's fetch resolves first", async () => {
+    // Chunk 0 (messages 0-99) resolves LAST; chunk 1 (100-149) resolves
+    // FIRST — results must still come back in original chunk order.
+    let chunk0Release: () => void = () => {};
+    const chunk0Blocked = new Promise<void>((resolve) => {
+      chunk0Release = resolve;
+    });
+    const fetchMock = jest.fn().mockImplementation(async (_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string);
+      if (body[0].to === "tok0") {
+        await chunk0Blocked; // first chunk deliberately slow
+      }
+      return jsonResponse({ data: body.map(() => ({ status: "ok" })) });
+    });
+    global.fetch = fetchMock as any;
+    const provider = new ExpoPushProvider(
+      configReturning(undefined),
+      new PushProviderRegistry(),
+    );
+    const messages = Array.from({ length: 150 }, (_, i) => ({
+      to: `tok${i}`,
+      title: "t",
+      body: "b",
+    }));
+
+    const sendPromise = provider.sendBatch(messages);
+    await new Promise((resolve) => setImmediate(resolve));
+    chunk0Release(); // let the slow first chunk finish last
+    const results = await sendPromise;
+
+    expect(results.map((r) => r.to)).toEqual(messages.map((m) => m.to));
+  });
 });

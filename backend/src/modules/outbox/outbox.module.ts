@@ -5,6 +5,7 @@ import { OutboxHandlerRegistry } from "./outbox-handler.registry";
 import { OutboxWorkerService } from "./outbox-worker.service";
 import { OfferPublishedHandler } from "./handlers/offer-published.handler";
 import { OfferCancelledHandler } from "./handlers/offer-cancelled.handler";
+import { OfferCancelledMerchantEmailHandler } from "./handlers/offer-cancelled-merchant-email.handler";
 import { ReservationConfirmedHandler } from "./handlers/reservation-confirmed.handler";
 import { ReservationRedeemedHandler } from "./handlers/reservation-redeemed.handler";
 import { MerchantStatusEmailHandler } from "./handlers/merchant-status-email.handler";
@@ -24,6 +25,7 @@ import { MerchantStatusEmailHandler } from "./handlers/merchant-status-email.han
     OutboxWorkerService,
     OfferPublishedHandler,
     OfferCancelledHandler,
+    OfferCancelledMerchantEmailHandler,
     ReservationConfirmedHandler,
     ReservationRedeemedHandler,
     MerchantStatusEmailHandler,

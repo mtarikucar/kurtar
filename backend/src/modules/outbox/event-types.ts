@@ -15,6 +15,16 @@
 export const OUTBOX_EVENT_TYPES = {
   OFFER_PUBLISHED_V1: "offer.published.v1",
   OFFER_CANCELLED_V1: "offer.cancelled.v1",
+  // [Fix round 2, moderate finding] Split out from offer.cancelled.v1 —
+  // that one event used to drive BOTH the consumer push and the merchant
+  // email via one Promise.allSettled-then-rethrow handler. Combined with
+  // the Important-6 fix (email throw-on-false), a persistently-failing
+  // email retried the WHOLE handler up to MAX_OUTBOX_ATTEMPTS times,
+  // re-sending the consumer "your money is being refunded" push on every
+  // retry even though it had already succeeded. Two independent events,
+  // each with its own handler and its own retry/backoff/DEAD lifecycle,
+  // closes that: a stuck email retries only the email.
+  OFFER_CANCELLED_MERCHANT_EMAIL_V1: "offer.cancelled.merchant-email.v1",
   RESERVATION_CONFIRMED_V1: "reservation.confirmed.v1",
   RESERVATION_REDEEMED_V1: "reservation.redeemed.v1",
   MERCHANT_APPROVED_V1: "merchant.approved.v1",
@@ -44,16 +54,24 @@ export interface OfferPublishedV1Payload {
 export interface OfferCancelledV1Payload {
   offerId: string;
   storeId: string;
-  expiredCount: number;
-  cancelledCount: number;
-  reason: string;
   /** Reservations this cancellation moved CONFIRMED -> CANCELLED_BY_MERCHANT
    * (i.e. exactly the ones being refunded) — the audience for the
    * "your money is being refunded" push. Deliberately excludes the
-   * expiredCount ones (PENDING_PAYMENT -> EXPIRED): those were never
-   * charged, so there is nothing to refund and a different message (if
-   * any) would apply. */
+   * expiredCount PENDING_PAYMENT ones: those were never charged, so
+   * there is nothing to refund and a different message (if any) would
+   * apply. */
   reservationIds: string[];
+}
+
+/** [Fix round 2] The merchant-email half of an offer cancellation — split
+ * from OfferCancelledV1Payload (see OUTBOX_EVENT_TYPES's doc comment) so
+ * the email leg retries independently of the consumer-push leg. */
+export interface OfferCancelledMerchantEmailV1Payload {
+  offerId: string;
+  storeId: string;
+  expiredCount: number;
+  cancelledCount: number;
+  reason: string;
 }
 
 export interface ReservationConfirmedV1Payload {

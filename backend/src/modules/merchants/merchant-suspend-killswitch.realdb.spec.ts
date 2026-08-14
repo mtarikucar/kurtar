@@ -182,6 +182,18 @@ d("MerchantsService.adminSuspend — real DB kill-switch", () => {
         },
       }),
     );
+    // [Fix round 2] The merchant-email leg was split out into its own
+    // event type (offer.cancelled.merchant-email.v1) — see event-types.ts.
+    await safeCleanup("outboxEvent", () =>
+      prisma.outboxEvent.deleteMany({
+        where: {
+          type: "offer.cancelled.merchant-email.v1",
+          idempotencyKey: {
+            in: offerIds.map((id) => `offer-cancelled-merchant-email:${id}`),
+          },
+        },
+      }),
+    );
     await safeCleanup("merchantVerificationEvent", () =>
       prisma.merchantVerificationEvent.deleteMany({ where: { merchantId } }),
     );

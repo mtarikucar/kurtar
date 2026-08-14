@@ -79,6 +79,16 @@ export class EmailService {
       port,
       secure: port === 465,
       auth: { user, pass },
+      // [Fix round 2, leg (b)] Explicit, bounded timeouts — an outbox
+      // handler (MerchantStatusEmailHandler / OfferCancelledMerchantEmailHandler)
+      // calling sendMail() is bound by the SAME "handler runtime must stay
+      // well under the outbox worker's lease" reasoning as
+      // ExpoPushProvider's fetch timeout. nodemailer's own defaults are
+      // not unbounded, but making them explicit here keeps that guarantee
+      // visible in one place rather than relying on a library default.
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 20_000,
     });
     transporter.verify((error) => {
       if (error) {
