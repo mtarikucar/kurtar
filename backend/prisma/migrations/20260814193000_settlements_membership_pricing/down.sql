@@ -7,9 +7,21 @@
 -- same "unsafe to revert while data depends on it" posture as dropping a
 -- populated column, not a bug in this script.
 
--- Delete exactly the seed row `up` inserted, by its fixed id — never a
--- table-wide DELETE, so any admin-created PlatformPricing row (e.g. from
--- POST /api/admin/pricing) is left untouched.
+-- [Fix round #2, minor — corrected] Delete exactly the seed row `up`
+-- inserted, by its fixed id. NOTE this DELETE does NOT, by itself, leave
+-- any admin-created PlatformPricing row (e.g. from POST /api/admin/
+-- pricing) untouched — the `DROP TABLE` a few statements below removes
+-- the whole table, admin-created rows included, same as any other revert
+-- of a table THIS migration itself created. That is the correct, expected
+-- behavior (reverting the migration that created platform_pricing must
+-- remove platform_pricing, full stop — the same "unsafe/lossy to revert
+-- once real data depends on it" posture this file already documents for
+-- the SettlementStatus.HELD revert below), not a bug — the original
+-- comment here claimed otherwise, which was simply wrong, not a real
+-- guarantee this script ever provided. The scoped DELETE is kept anyway
+-- for order-independent clarity (explicit about exactly what `up` added,
+-- readable on its own without needing to know DROP TABLE follows), not
+-- because it's load-bearing for data safety.
 DELETE FROM "platform_pricing" WHERE "id" = 'seed_platform_pricing_initial';
 
 -- Drop the clawback FK before dropping the table it targets is unnecessary
@@ -18,6 +30,8 @@ DELETE FROM "platform_pricing" WHERE "id" = 'seed_platform_pricing_initial';
 ALTER TABLE "settlement_lines" DROP CONSTRAINT IF EXISTS "settlement_lines_clawbackBatchId_fkey";
 
 DROP INDEX IF EXISTS "platform_pricing_effectiveFrom_idx";
+-- Removes ALL rows, including any admin-created since `up` ran — see the
+-- note above.
 DROP TABLE IF EXISTS "platform_pricing";
 
 ALTER TABLE "commission_invoices" DROP COLUMN IF EXISTS "vatCents";

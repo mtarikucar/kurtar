@@ -495,7 +495,16 @@ model MembershipSubscription {
   // column alone lets a finance person answer "how much have we written
   // off THIS merchant, ever" without joining AuditLog (AuditLog is what
   // answers a time-scoped "how much did we write off LAST YEAR" query).
+  // COMBINED net+KDV, same convention as outstandingCents.
   writtenOffCents Int @default(0)
+  // [Fix round #2, P1-minor] The VAT-only portion of writtenOffCents — post
+  // P2, outstandingCents (and therefore a write-off of it) is net+KDV
+  // combined, so writtenOffCents ALONE overstates "how much membership
+  // REVENUE did we write off" by the VAT component. writtenOffCents -
+  // writtenOffVatCents is the true forgiven-revenue figure; this column is
+  // what makes that subtraction possible directly in SQL, mirroring the
+  // outstandingCents/outstandingVatCents split above.
+  writtenOffVatCents Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
