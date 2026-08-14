@@ -1,0 +1,114 @@
+# Production stack — runs the kurtar API against its own PostGIS + Redis,
+# on its own port block (4750-4755), separate from any other project that
+# may share this VPS. Modeled on kds-marketing's docker-compose.prod.yml
+# (standalone-product-on-shared-VPS pattern): own network, own named
+# volume, DB/Redis bound to 127.0.0.1 only (never exposed publicly), app
+# image pulled from GHCR with a tag variable so a release only ever swaps
+# ${IMAGE_TAG} — no rebuild on the server.
+#
+# Port map (deliberately the SAME numbers as ops/docker-compose.yml's dev
+# DB/Redis ports — dev runs on a developer's own machine and prod runs on
+# the VPS, so the two are never expected to run on the same host at once;
+# reusing the numbers keeps the whole port scheme easy to remember. If you
+# ever need to smoke-test this file locally while the dev stack is also
+# up, stop the dev stack first (`docker compose -f ../ops/docker-compose.
+# yml down`) — they WILL collide on 4754/4755 otherwise):
+#   4750 -> api    (host -> container 4750; reverse-proxied by host nginx
+#                    or a Cloudflare tunnel — not this compose file's job)
+#   4754 -> db     (postgis, localhost-bound)
+#   4755 -> redis  (localhost-bound)
+#
+# Required in ./.env.production (see backend/.env.example for the full
+# app-level variable list; POSTGRES_PASSWORD is compose-only):
+#   IMAGE_TAG, GHCR_OWNER, POSTGRES_PASSWORD, DATABASE_URL, REDIS_URL,
+#   KURTAR_API_PORT, NODE_ENV=production, JWT_SECRET, WEBHOOK_SECRET,
+#   SMS_PROVIDER (+ its credential set), PAYMENT_PROVIDER.
+#
+# IMAGE_TAG has no default (${IMAGE_TAG:?...}, not ${IMAGE_TAG:-latest}) —
+# it must always be an explicit release version (e.g. v0.3.0), the same
+# tag release-deploy.yml's build job actually pushed. A silent :latest/
+# :current fallback here would let `docker compose pull` succeed against
+# whatever happens to be sitting under that mutable tag instead of failing
+# loudly when the caller forgot to set IMAGE_TAG.
+#
+# Migrations are NOT run automatically on container start (see
+# scripts/db-migration-doctor.sh) — the deploy workflow runs
+# `prisma migrate deploy` against the freshly-pulled image as a one-off
+# `compose run` BEFORE `up -d` swaps the long-running api container, so a
+# bad migration never gets a chance to serve traffic.
+
+name: kurtar-prod
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: kurtar_db_prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: kurtar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: kurtar
+    volumes:
+      - kurtar_pgdata_prod:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:4754:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kurtar -d kurtar"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - kurtar_net_prod
+
+  # Backs the discovery offers-list cache (discovery-cache.service.ts) and
+  # future Redis-backed features. NOT currently wired to ThrottlerModule
+  # (app.module.ts's `ThrottlerModule.forRoot(THROTTLER_PROFILES)` uses no
+  # `storage` option, so rate-limit counters are in-memory, per-process —
+  # correct for Wave 1's single-api-container topology, but note for
+  # whoever scales the api service past one replica: each replica would
+  # then enforce its own independent limit rather than sharing one, and a
+  # Redis-backed ThrottlerModule storage adapter would need to be wired in
+  # at that point).
+  redis:
+    image: redis:7-alpine
+    container_name: kurtar_redis_prod
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "127.0.0.1:4755:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - kurtar_net_prod
+
+  api:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-api:${IMAGE_TAG:?IMAGE_TAG is required}
+    container_name: kurtar_api_prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env.production
+    ports:
+      - "4750:4750"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4750/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - kurtar_net_prod
+
+volumes:
+  kurtar_pgdata_prod:
+
+networks:
+  kurtar_net_prod:
+    name: kurtar_net_prod

@@ -1,0 +1,399 @@
+name: Quality Gates
+
+# Lint + typecheck + unit tests + real-DB tests + migration hygiene, as a
+# blocking gate. Runs on every PR and on push to main; release-deploy.yml
+# (once a remote/secrets exist) is expected to `needs:` this workflow the
+# same way kds's release-deploy.yml `uses: ./.github/workflows/quality-
+# gates.yml` before it ever builds an image.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Lets release-deploy.yml `uses: ./.github/workflows/quality-gates.yml`
+  # as its own blocking `quality` job — no image is ever built from a red
+  # suite.
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20.x'
+
+jobs:
+  # -----------------------------------------------------------------
+  # Fast lane: lint + both tsconfigs + the mocked/unit suite. Runs with
+  # NO TEST_DATABASE_URL set, which is exactly what proves every
+  # *.realdb.spec.ts file's `describe.skip` gate (TEST_DATABASE_URL ?
+  # describe : describe.skip — see backend/src/prisma/schema.realdb.
+  # spec.ts and its 10 siblings) actually skips cleanly rather than
+  # erroring, e.g. on a missing DB client.
+  # -----------------------------------------------------------------
+  backend-quality:
+    name: Backend lint + typecheck + unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          # Root lockfile — this is an npm workspace (root package.json
+          # "workspaces": ["backend"]); backend/ has its own package.json
+          # but no lockfile of its own.
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        working-directory: .
+        run: npm ci --no-audit --no-fund
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint
+
+      # Two tsconfigs give meaningfully different coverage: tsconfig.json
+      # is the source-only surface `nest build` type-checks against;
+      # tsconfig.eslint.json additionally includes test/**/* so *.spec.ts
+      # files get checked too (tsconfig.build.json is a near-duplicate of
+      # tsconfig.json for typecheck purposes — same excludes — so it adds
+      # nothing a plain `npm run build` wouldn't already catch).
+      - name: Typecheck (source)
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Typecheck (source + tests)
+        run: npx tsc --noEmit -p tsconfig.eslint.json
+
+      - name: Unit tests (no TEST_DATABASE_URL — realdb specs must skip cleanly)
+        run: npm test
+
+  # -----------------------------------------------------------------
+  # Real Postgres/PostGIS + Redis. `prisma migrate deploy` (NOT `db
+  # push`) so every migrations/*/migration.sql file — including the
+  # hand-written GIST index and CHECK constraints — actually executes in
+  # CI. A prior project (kds) shipped a prod incident because its CI used
+  # `db push`, which builds the current schema shape directly and never
+  # runs the real migration SQL, so a migration that was broken in
+  # practice looked green in CI right up until the real prod deploy ran
+  # it for the first time. `migrate deploy` is the only invocation that
+  # proves the actual SQL kurtar will run in production.
+  #
+  # Concurrency choice — --runInBand (measured locally before this workflow
+  # was written): reservations.realdb.spec.ts intentionally
+  # requests connection_limit=60 on its own PrismaClient for its 50-
+  # parallel-create oversell race test; several other realdb files open
+  # their own PrismaClient (and, per file, sometimes a second one via a
+  # hand-built Nest test harness) on top of that. Under Jest's default
+  # full-parallel scheduling or even --maxWorkers=2, those pools can
+  # overlap against the SAME Postgres instance and stack past whatever
+  # max_connections the service container has (previously observed
+  # first-hand during Task 5's local runs — see that task's report —
+  # as a stray-row/cleanup failure traced back to exactly this
+  # contention, though it did not reproduce deterministically). Locally
+  # `--runInBand` ran the full 51-suite/447-test suite in ~11-12s across
+  # 3 consecutive runs (vs ~6.5s for --maxWorkers=2) — a negligible cost
+  # for a suite this size — with zero cross-file connection overlap by
+  # construction (Jest runs files strictly sequentially in-band, so one
+  # file's afterAll/$disconnect always completes before the next file's
+  # beforeAll opens a new pool). That determinism, not raw speed, is why
+  # this job uses --runInBand instead of a bounded --maxWorkers.
+  # -----------------------------------------------------------------
+  backend-realdb:
+    name: Backend real-DB tests (PostGIS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: kurtar
+          POSTGRES_PASSWORD: kurtar
+          POSTGRES_DB: kurtar_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kurtar -d kurtar_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://kurtar:kurtar@localhost:5432/kurtar_ci
+      TEST_DATABASE_URL: postgresql://kurtar:kurtar@localhost:5432/kurtar_ci
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        working-directory: .
+        run: npm ci --no-audit --no-fund
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations (migrate deploy — real SQL, not db push)
+        run: npx prisma migrate deploy
+
+      # [B6] The "every migration has a down.sql" check in the
+      # migrations-parity job below only proves the FILE exists — it never
+      # proves the SQL inside it actually runs cleanly against a real,
+      # fully-migrated database. This step does: revert every migration's
+      # down.sql in reverse chronological order (undoing the `migrate
+      # deploy` above, migration by migration), drop Prisma's own
+      # `_prisma_migrations` ledger (untouched by any down.sql, by design —
+      # see the init migration's down.sql note on why it never drops
+      # postgis either), then redeploy every up from scratch. Dropping the
+      # ledger is what makes the redeploy a genuine proof rather than a
+      # no-op: with the ledger intact, `migrate deploy` would see every
+      # migration already marked "applied" and skip re-running any of them,
+      # silently leaving the database empty. Runs against the SAME service
+      # container the full suite below then reuses, so a broken down.sql
+      # fails this step loudly with a normal psql error instead of the
+      # suite failing later with a much more confusing "table does not
+      # exist".
+      - name: Migration reversibility round-trip (revert every down.sql, then redeploy)
+        run: |
+          set -euo pipefail
+          echo "Reverting every migration's down.sql, reverse chronological order..."
+          mapfile -t dirs < <(printf '%s\n' prisma/migrations/*/ | sort -r)
+          for dir in "${dirs[@]}"; do
+            name=$(basename "$dir")
+            [ "$name" = "migration_lock.toml" ] && continue
+            down="${dir}down.sql"
+            if [ -f "$down" ]; then
+              echo "  - reverting ${name}"
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$down"
+            fi
+          done
+          echo "Dropping Prisma's migration ledger so 'migrate deploy' treats this as a fresh database..."
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c 'DROP TABLE IF EXISTS "_prisma_migrations";'
+          echo "Redeploying every up migration from scratch..."
+          npx prisma migrate deploy
+          echo "Round-trip OK — every migration's down.sql is genuinely reversible."
+
+      - name: Full test suite against real Postgres/PostGIS (--runInBand)
+        run: npx jest --runInBand
+
+  # -----------------------------------------------------------------
+  # 1. Schema/migration parity — `prisma migrate diff` between what the
+  #    migrations folder actually produces and what schema.prisma
+  #    currently declares must be empty, catching a schema.prisma edit
+  #    that never got a matching migration (ported from kds-marketing's
+  #    ci.yml). The shadow DB must be PostGIS-enabled (not plain
+  #    postgres:16-alpine, unlike kds-marketing which has no geo columns)
+  #    because the init migration runs `CREATE EXTENSION postgis` itself.
+  #
+  #    One EXPECTED, permanent divergence: stores.location is a raw
+  #    `Unsupported("geography(Point,4326)")` column (Prisma cannot
+  #    express a GIST index natively — see schema.prisma's comment on
+  #    Store.location) indexed by a hand-written
+  #    `CREATE INDEX ... USING GIST` statement in the init migration.
+  #    `migrate diff` always reports this one index as a divergence
+  #    because schema.prisma has no way to declare it. The check below
+  #    allows *exactly* that one expected statement through and fails
+  #    loudly on anything else.
+  #
+  # 2. Reversibility — every migrations/*/ folder must ship a down.sql
+  #    (project hard rule: every schema migration is an up/down pair).
+  # -----------------------------------------------------------------
+  migrations-parity:
+    name: Migrations <-> schema parity + reversibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      shadow-db:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: shadow
+          POSTGRES_PASSWORD: shadow
+          POSTGRES_DB: shadow
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U shadow -d shadow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        working-directory: .
+        run: npm ci --no-audit --no-fund
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Migrations <-> schema.prisma diff
+        run: |
+          set -euo pipefail
+          diff_out=$(npx prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url postgresql://shadow:shadow@localhost:5433/shadow \
+            --script)
+
+          # Normalise (strip leading whitespace per line, drop blank lines)
+          # before comparing against the one allowed statement — the SAME
+          # transform applied to BOTH sides, so incidental indentation in
+          # either the actual diff output or this script's own $allowed
+          # heredoc can never mask a real divergence (or fail a benign
+          # one) by comparing unlike-for-like.
+          normalise() {
+            printf '%s\n' "$1" | sed 's/^[[:space:]]*//; /^[[:space:]]*$/d'
+          }
+          normalised=$(normalise "$diff_out")
+          allowed='-- DropIndex
+          DROP INDEX "store_location_gist";'
+          allowed_normalised=$(normalise "$allowed")
+
+          if [ -z "$normalised" ]; then
+            echo "Migrations and schema.prisma are in sync — no diff."
+          elif [ "$normalised" = "$allowed_normalised" ]; then
+            echo "Only the expected, documented divergence found (hand-written"
+            echo "GIST index on stores.location — Prisma cannot express GIST"
+            echo "indexes natively; see schema.prisma's comment on Store.location)."
+            echo "$normalised"
+          else
+            echo "::error::Migrations and schema.prisma have diverged beyond the one known/expected exception."
+            echo "Either schema.prisma changed without a matching migration, or a"
+            echo "migration changed without schema.prisma being updated to match."
+            echo "--- diff ---"
+            echo "$normalised"
+            exit 1
+          fi
+
+      - name: Every migration has a down.sql
+        run: |
+          set -euo pipefail
+          missing=0
+          for dir in prisma/migrations/*/; do
+            name=$(basename "$dir")
+            [ "$name" = "migration_lock.toml" ] && continue
+            if [ ! -f "${dir}migration.sql" ]; then
+              continue
+            fi
+            if [ ! -f "${dir}down.sql" ]; then
+              echo "::error::${dir} is missing down.sql — every migration must be reversible."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Every migration folder has a down.sql."
+
+  # -----------------------------------------------------------------
+  # Project hard rule: zero AI/Claude traces in commit messages, ever.
+  # Greps the commit range this workflow run covers (PR base..head, or
+  # the pushed range on a plain push) rather than any single commit.
+  # -----------------------------------------------------------------
+  commit-hygiene:
+    name: Commit message hygiene
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Grep commit messages for AI/Claude traces
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base="$PR_BASE_SHA"
+            head="$PR_HEAD_SHA"
+          else
+            base="$PUSH_BEFORE_SHA"
+            head="$PUSH_AFTER_SHA"
+          fi
+
+          # A brand-new branch's first push reports an all-zero `before`
+          # SHA (not a valid ref) — and so does EVERY tag push, always,
+          # since the tag ref itself didn't exist before (this matters
+          # here: release-deploy.yml `uses:` this workflow as its own
+          # `quality` job, triggered by a `v*.*.*` tag push). Falling back
+          # to just the tip commit in that case would only re-check the
+          # one commit the tag happens to point at, silently skipping
+          # every other commit the release actually contains. Prefer the
+          # range of commits on HEAD that aren't already reachable from
+          # main instead — on a tag cut cleanly from main that range is
+          # normally empty (those commits were already scanned by this
+          # same workflow's own `push: branches: [main]` trigger when they
+          # landed); it's non-empty exactly when there's something a prior
+          # run hasn't already checked, which is exactly what's worth
+          # checking here. Only fall back to the tip-commit-only check if
+          # neither remote nor local main is resolvable at all.
+          if [ -z "$base" ] || ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
+            range=""
+            if git rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
+              range="origin/main..${head}"
+            elif git rev-parse --verify --quiet main >/dev/null 2>&1; then
+              range="main..${head}"
+            fi
+
+            messages=""
+            if [ -n "$range" ]; then
+              messages=$(git log --format='%H%n%B%n---' "$range" 2>/dev/null || true)
+            fi
+            if [ -z "$messages" ]; then
+              messages=$(git log -1 --format='%H%n%B%n---' "$head")
+            fi
+          else
+            messages=$(git log --format='%H%n%B%n---' "${base}..${head}")
+          fi
+
+          pattern='Co-Authored-By:|Generated with|Claude|Anthropic'
+          if printf '%s\n' "$messages" | grep -Eiq "$pattern"; then
+            echo "::error::A commit message contains a disallowed AI/Claude trace (project hard rule — zero AI/Claude traces in git history)."
+            printf '%s\n' "$messages" | grep -EiC1 "$pattern"
+            exit 1
+          fi
+          echo "Commit hygiene OK — no AI/Claude traces found."

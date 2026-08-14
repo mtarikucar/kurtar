@@ -1,0 +1,906 @@
+// Kurtar data model — Task 2.
+//
+// Conventions (mirrored from https://github.com kds/backend/prisma/schema.prisma):
+//   - Models are PascalCase; every table carries an explicit @@map snake_case
+//     name. Hand-written migration SQL MUST reference these exact snake_case
+//     names (a mismatch here caused a production incident in kds — see
+//     20260722170000-era history there).
+//   - Ids are cuid (String @id @default(cuid())).
+//   - Money is always kuruş, stored as Int, field name suffixed `Cents`.
+//   - Timestamps are plain `DateTime` (Postgres TIMESTAMP(3), no explicit
+//     timezone type) — this mirrors kds; the application layer is
+//     responsible for always writing/reading UTC.
+//   - FK onDelete policy: Cascade for data that has no meaning without its
+//     parent (sessions, tokens, preferences, favorites, staff logins).
+//     Restrict for anything with financial or audit significance, so a
+//     parent can never be silently hard-deleted out from under history —
+//     soft-delete (status flags) is the intended removal path for those.
+//     SetNull for optional links where the child row stays meaningful on
+//     its own once the parent is gone.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================================
+// ENUMS
+// ========================================
+
+enum UserStatus {
+  ACTIVE
+  BANNED
+  DELETED
+}
+
+/// Which principal table a RefreshToken row belongs to. Task 3's adaptation
+/// of the Task-2 RefreshToken model (originally User-only) to the three
+/// actor types auth issues tokens for. See the RefreshToken model comment
+/// for the full FK/CHECK story.
+enum PrincipalType {
+  CONSUMER
+  MERCHANT
+  ADMIN
+}
+
+enum MerchantVerificationStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum MerchantUserRole {
+  OWNER
+  STAFF
+}
+
+enum MembershipStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+enum BagCategory {
+  MEAL
+  BAKERY
+  GROCERY
+  PRODUCE
+  OTHER
+}
+
+enum DietFlag {
+  VEGETARIAN
+  VEGAN
+  GLUTEN_FREE
+  LACTOSE_FREE
+}
+
+enum OfferStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  SOLD_OUT
+  CLOSED
+  CANCELLED
+}
+
+enum ReservationStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  REDEEMED
+  CANCELLED_BY_USER
+  CANCELLED_BY_MERCHANT
+  NO_SHOW
+  EXPIRED
+}
+
+enum PaymentProvider {
+  IYZICO
+  PAYTR
+  MOCK
+}
+
+enum PaymentStatus {
+  INTENT
+  PROCESSING
+  PAID
+  FAILED
+  REFUND_PENDING
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum RefundReason {
+  USER_CANCEL
+  MERCHANT_CANCEL
+  ADMIN
+  COMPLAINT
+}
+
+enum RefundStatus {
+  PENDING
+  SENT
+  FAILED
+  DONE
+}
+
+enum SettlementStatus {
+  PENDING
+  CALCULATED
+  APPROVED
+  SENT
+  SETTLED
+  FAILED
+}
+
+enum InvoiceType {
+  BAG_FEE
+  MEMBERSHIP
+}
+
+enum EDocType {
+  EFATURA
+  EARSIVFATURA
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+enum ComplaintStatus {
+  OPEN
+  MERCHANT_RESPONDED
+  RESOLVED
+  ESCALATED
+}
+
+enum ReportTargetType {
+  STORE
+  OFFER
+  RATING
+}
+
+enum ReportStatus {
+  OPEN
+  ACTIONED
+  DISMISSED
+}
+
+enum Platform {
+  IOS
+  ANDROID
+}
+
+enum ModerationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ========================================
+// USERS & AUTH
+// ========================================
+
+model User {
+  id              String     @id @default(cuid())
+  phoneE164       String     @unique
+  phoneVerifiedAt DateTime?
+  name            String?
+  email           String?
+  status          UserStatus @default(ACTIVE)
+  locale          String     @default("tr")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens    RefreshToken[]
+  pushTokens       PushToken[]
+  notificationPref NotificationPreference?
+  reservations     Reservation[]
+  ratings          Rating[]
+  favorites        Favorite[]
+  impactLedgers    ImpactLedger[]
+  complaintTickets ComplaintTicket[]
+
+  @@map("users")
+}
+
+model PhoneOtp {
+  id           String    @id @default(cuid())
+  phoneE164    String
+  codeHash     String
+  expiresAt    DateTime
+  attemptCount Int       @default(0)
+  lockedUntil  DateTime?
+  consumedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phoneE164, createdAt])
+  @@map("phone_otps")
+}
+
+/// Per-session refresh tokens. Only the hash is stored, mirroring kds.
+///
+/// Task 3 adaptation: kds's RefreshToken is User-only (single actor type).
+/// kurtar auth issues tokens for three actor types (CONSUMER/MERCHANT/ADMIN),
+/// so a single row must be able to belong to any one of User, MerchantUser,
+/// or AdminUser. Chosen approach (documented in the Task 3 brief as the
+/// recommended option): `principalType` discriminates the row, `userId`
+/// stays but becomes nullable, and two new nullable FKs
+/// (`merchantUserId`, `adminUserId`) cover the other two actors. A
+/// hand-written CHECK constraint (added in the admin_users migration, since
+/// Prisma's DSL cannot express multi-column CHECKs) enforces that EXACTLY
+/// the one FK column matching `principalType` is set and the other two are
+/// NULL — so a row can never point at two principals at once, or none.
+model RefreshToken {
+  id String @id @default(cuid())
+
+  principalType PrincipalType
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  merchantUserId String?
+  merchantUser   MerchantUser? @relation(fields: [merchantUserId], references: [id], onDelete: Cascade)
+
+  adminUserId String?
+  adminUser   AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  tokenHash String    @unique
+  familyId  String
+  rotatedAt DateTime?
+  revokedAt DateTime?
+  expiresAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([merchantUserId])
+  @@index([adminUserId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+model PushToken {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expoPushToken String    @unique
+  platform      Platform
+  lastSeenAt    DateTime
+  disabledAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("push_tokens")
+}
+
+model NotificationPreference {
+  id String @id @default(cuid())
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  favoritesEnabled Boolean @default(true)
+  nearbyEnabled    Boolean @default(false)
+  nearbyRadiusM    Int     @default(3000)
+  marketingEnabled Boolean @default(false)
+  // Local hour-of-day bounds [0-23]; enforced at the application layer.
+  quietHoursStart  Int?
+  quietHoursEnd    Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("notification_preferences")
+}
+
+/// Platform admin — the third actor type auth issues tokens for (Task 3).
+/// Deliberately minimal: no roles/permissions model beyond `active`, since
+/// nothing in the current brief set needs finer-grained admin authorization
+/// yet.
+model AdminUser {
+  id String @id @default(cuid())
+
+  email        String  @unique
+  passwordHash String
+  name         String
+  active       Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+
+  @@map("admin_users")
+}
+
+// ========================================
+// MERCHANTS
+// ========================================
+
+model Merchant {
+  id String @id @default(cuid())
+
+  legalName  String
+  tradeName  String
+  taxId      String
+  mersisNo   String?
+  kepAddress String?
+  iban       String
+
+  verificationStatus MerchantVerificationStatus @default(DRAFT)
+  verifiedAt         DateTime?
+  nextReverifyAt     DateTime?
+
+  pspSubMerchantKey   String?
+  pspOnboardingStatus String?
+
+  foodInspectionQrUrl String?
+
+  sttAttestationAcceptedAt      DateTime?
+  intermediationContractVersion String?
+  intermediationAcceptedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  merchantUsers      MerchantUser[]
+  verificationEvents MerchantVerificationEvent[]
+  membershipSubs     MembershipSubscription[]
+  stores             Store[]
+  settlementBatches  SettlementBatch[]
+  commissionInvoices CommissionInvoice[]
+  complaintTickets   ComplaintTicket[]
+
+  @@index([verificationStatus])
+  @@map("merchants")
+}
+
+model MerchantUser {
+  id String @id @default(cuid())
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  email        String           @unique
+  // The signing owner/contact's display name, captured once at
+  // POST /api/merchants/signup (Task 5) — the OWNER MerchantUser created
+  // there is the only merchant_users row Task 5 ever creates, so this is
+  // never backfilled from anywhere else.
+  name         String
+  passwordHash String
+  role         MerchantUserRole @default(OWNER)
+  lastLoginAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+
+  @@map("merchant_users")
+}
+
+model MerchantVerificationEvent {
+  id String @id @default(cuid())
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+
+  fromStatus   MerchantVerificationStatus
+  toStatus     MerchantVerificationStatus
+  // Soft reference to the admin/superadmin actor — that identity does not
+  // live in this schema, so it is intentionally NOT a foreign key (mirrors
+  // kds's soft-reference pattern for cross-boundary actor ids).
+  actorAdminId String?
+  note         String?
+  docsJson     Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("merchant_verification_events")
+}
+
+model MembershipSubscription {
+  id String @id @default(cuid())
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+
+  anchorDate         DateTime
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  priceCents         Int
+  status             MembershipStatus @default(TRIAL)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("membership_subscriptions")
+}
+
+// ========================================
+// STORES & OFFERS
+// ========================================
+
+model Store {
+  id String @id @default(cuid())
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+
+  name     String
+  address  String
+  district String
+  city     String
+
+  latitude  Float
+  longitude Float
+  // Kept in sync with latitude/longitude by the application layer (or a
+  // trigger added in a later task); indexed via a hand-written GIST index
+  // in the init migration (Prisma cannot express GIST index type natively).
+  location  Unsupported("geography(Point,4326)")?
+
+  coverImageUrl    String?
+  categoryTags     BagCategory[]
+  openingHoursJson Json?
+  active           Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bagTemplates  BagTemplate[]
+  dailyOffers   DailyOffer[]
+  reservations  Reservation[]
+  ratings       Rating[]
+  favorites     Favorite[]
+  impactLedgers ImpactLedger[]
+
+  @@index([city, active])
+  @@map("stores")
+}
+
+model BagTemplate {
+  id String @id @default(cuid())
+
+  storeId String
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  title                 String
+  category              BagCategory
+  dietFlags             DietFlag[]
+  allergenDisclaimer    String
+  originalValueCentsMin Int
+  originalValueCentsMax Int
+  priceCents            Int
+  description           String?
+  active                Boolean     @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dailyOffers DailyOffer[]
+
+  @@map("bag_templates")
+}
+
+model DailyOffer {
+  id String @id @default(cuid())
+
+  bagTemplateId String
+  bagTemplate   BagTemplate @relation(fields: [bagTemplateId], references: [id], onDelete: Restrict)
+
+  // Denormalized from bagTemplate.storeId for cheap store-scoped queries.
+  storeId String
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  offerDate DateTime @db.Date
+
+  qtyTotal    Int
+  // Bounds enforced by CHECK constraints added by hand in the init
+  // migration (qty_reserved >= 0, qty_reserved <= qty_total, etc.) —
+  // Prisma's schema DSL cannot express CHECK constraints.
+  qtyReserved Int @default(0)
+  qtyRedeemed Int @default(0)
+
+  pickupStartAt DateTime
+  pickupEndAt   DateTime
+
+  status      OfferStatus @default(DRAFT)
+  // Set by POST /api/offers/:id/schedule (Task 5) — the publish-scheduler
+  // cron selects SCHEDULED rows with publishAt <= now() and flips them to
+  // PUBLISHED the same way the manual /publish endpoint does. Never read
+  // once an offer leaves SCHEDULED.
+  publishAt   DateTime?
+  publishedAt DateTime?
+  // Optimistic-concurrency token for the atomic reserve/redeem write path
+  // (Task 4).
+  version     Int         @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reservations Reservation[]
+
+  @@unique([bagTemplateId, offerDate])
+  @@index([status, pickupEndAt])
+  @@index([storeId, offerDate])
+  @@map("daily_offers")
+}
+
+// ========================================
+// RESERVATIONS & PAYMENTS
+// ========================================
+
+model Reservation {
+  id String @id @default(cuid())
+
+  // Short human-readable pickup code, shown at the counter.
+  code String @unique
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  offerId String
+  offer   DailyOffer @relation(fields: [offerId], references: [id], onDelete: Restrict)
+
+  storeId String
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  qty            Int
+  unitPriceCents Int
+  totalCents     Int
+
+  status                   ReservationStatus @default(PENDING_PAYMENT)
+  cancelDeadlineAt         DateTime
+  redeemedAt               DateTime?
+  // Soft reference to the merchant staff account that redeemed the pickup —
+  // intentionally not a foreign key, matching the brief.
+  redeemedByMerchantUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payment          Payment?
+  settlementLine   SettlementLine?
+  rating           Rating?
+  impactLedger     ImpactLedger?
+  complaintTickets ComplaintTicket[]
+
+  @@index([userId, createdAt])
+  @@index([offerId, status])
+  @@index([status, cancelDeadlineAt])
+  @@map("reservations")
+}
+
+model Payment {
+  id String @id @default(cuid())
+
+  reservationId String      @unique
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  provider       PaymentProvider
+  merchantOid    String          @unique
+  pspPaymentId   String?
+  amountCents    Int
+  status         PaymentStatus   @default(INTENT)
+  idempotencyKey String          @unique
+  rawWebhookJson Json?
+  paidAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refunds Refund[]
+
+  @@map("payments")
+}
+
+model Refund {
+  id String @id @default(cuid())
+
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  amountCents     Int
+  reason          RefundReason
+  pspRefundId     String?
+  status          RefundStatus @default(PENDING)
+  requestedByType String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("refunds")
+}
+
+model WebhookEventLog {
+  id String @id @default(cuid())
+
+  provider        PaymentProvider
+  externalEventId String          @unique
+  payloadHash     String
+  processedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("webhook_event_logs")
+}
+
+// ========================================
+// SETTLEMENTS & INVOICING
+// ========================================
+
+model SettlementBatch {
+  id String @id @default(cuid())
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+
+  periodStart DateTime
+  periodEnd   DateTime
+  status      SettlementStatus @default(PENDING)
+
+  grossCents            Int @default(0)
+  bagFeeCents           Int @default(0)
+  withholdingCents      Int @default(0)
+  membershipOffsetCents Int @default(0)
+  refundClawbackCents   Int @default(0)
+  netPayoutCents        Int @default(0)
+
+  dueAt          DateTime?
+  pspTransferRef String?
+  sentAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  settlementLines    SettlementLine[]
+  commissionInvoices CommissionInvoice[]
+
+  @@index([merchantId, status])
+  @@map("settlement_batches")
+}
+
+model SettlementLine {
+  id String @id @default(cuid())
+
+  batchId String
+  batch   SettlementBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+
+  reservationId String      @unique
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  redeemedAt       DateTime
+  grossCents       Int
+  bagFeeCents      Int
+  withholdingCents Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("settlement_lines")
+}
+
+model CommissionInvoice {
+  id String @id @default(cuid())
+
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+
+  batchId String?
+  batch   SettlementBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  type         InvoiceType
+  docType      EDocType
+  nilveraDocId String?
+  ublXmlRef    String?
+  status       InvoiceStatus @default(DRAFT)
+  issuedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("commission_invoices")
+}
+
+// ========================================
+// RATINGS & SOCIAL
+// ========================================
+
+model Rating {
+  id String @id @default(cuid())
+
+  reservationId String      @unique
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  storeId String
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Restrict)
+
+  overallStars Int
+  foodQuality  Int?
+  service      Int?
+  comment      String?
+
+  moderationStatus ModerationStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([storeId, moderationStatus])
+  @@map("ratings")
+}
+
+model Favorite {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  storeId String
+  store   Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, storeId])
+  @@index([storeId])
+  @@map("favorites")
+}
+
+model ImpactLedger {
+  id String @id @default(cuid())
+
+  reservationId String      @unique
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  storeId String?
+  store   Store?  @relation(fields: [storeId], references: [id], onDelete: SetNull)
+
+  mealsSaved      Int
+  co2eGrams       Int
+  moneySavedCents Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("impact_ledgers")
+}
+
+// ========================================
+// TRUST & SAFETY
+// ========================================
+
+model ComplaintTicket {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  merchantId String?
+  merchant   Merchant? @relation(fields: [merchantId], references: [id], onDelete: SetNull)
+
+  reservationId String?
+  reservation   Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  category    String
+  description String
+  status      ComplaintStatus @default(OPEN)
+
+  slaDeadlineAt DateTime
+  resolvedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, slaDeadlineAt])
+  @@map("complaint_tickets")
+}
+
+model ContentReport {
+  id String @id @default(cuid())
+
+  targetType ReportTargetType
+  targetId   String
+  reason     String
+
+  status             ReportStatus @default(OPEN)
+  takedownDeadlineAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, takedownDeadlineAt])
+  @@map("content_reports")
+}
+
+// ========================================
+// PLATFORM INFRA
+// ========================================
+
+/// Transactional outbox — same shape as kds's OutboxEvent
+/// (backend/src/modules/outbox), minus the tenant/branch columns kurtar
+/// has no equivalent of.
+model OutboxEvent {
+  // Generated at the application layer (cuid) so events sort roughly by
+  // creation time without needing a sequence; safe across replicas.
+  id String @id @default(cuid())
+
+  // Versioned dotted name, e.g. "reservation.created.v1".
+  type String
+
+  // Full event body; consumers parse this against the event contract.
+  payload Json
+
+  // Idempotency key emitted by the producer; consumers dedupe on this.
+  idempotencyKey String
+
+  // Drain state machine: queued -> dispatching -> dispatched | failed.
+  status    String  @default("queued")
+  attempts  Int     @default(0)
+  lastError String?
+
+  dispatchedAt  DateTime?
+  nextAttemptAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  // Worker scans `status='queued' AND nextAttemptAt <= now()` in id order.
+  @@index([status, nextAttemptAt])
+  @@index([type, createdAt])
+  @@map("outbox_events")
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+
+  actorType String
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String
+  diffJson  Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("audit_logs")
+}
+
+/// Turkish public holidays — drives the 5-business-day settlement calendar.
+model PublicHoliday {
+  id String @id @default(cuid())
+
+  date DateTime @unique @db.Date
+  name String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("public_holidays")
+}
