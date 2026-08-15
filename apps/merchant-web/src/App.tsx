@@ -1,89 +1,71 @@
-import { useEffect, useState } from "react";
-import { createClient } from "@kurtar/api-client";
-import { colors, spacing, typeScale } from "@kurtar/ui-tokens";
+import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
+import { useAuth } from "./auth/AuthContext";
+import {
+  GuestOnlyLayout,
+  OnboardingLayout,
+  RequireApprovedLayout,
+} from "./auth/guards";
+import { LoginPage } from "./auth/LoginPage";
+import { SignupPage } from "./auth/SignupPage";
+import { OnboardingPage } from "./onboarding/OnboardingPage";
+import { AppShell } from "./layout/AppShell";
+import { TodayPage } from "./today/TodayPage";
+import { StoresPage } from "./stores/StoresPage";
+import { CalendarPage } from "./calendar/CalendarPage";
+import { EarningsPage } from "./earnings/EarningsPage";
+import { ReputationPage } from "./reputation/ReputationPage";
+import { Spinner } from "./shared/ui/Spinner";
+import { useRouteFocus } from "./shared/useRouteFocus";
+import { ROUTES } from "./routes";
 
-// Placeholder wiring only — Task 10 owns building out the real merchant
-// panel (auth flow, offer/store management, settlements) on top of this.
-// See docs/frontend-contract.md for the client usage guide and the auth
-// flow this app should implement (merchant email+password, cookie
-// transport).
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4750";
+/** "/" itself resolves to wherever the current session actually belongs —
+ * every other route is reached through a real link/redirect, never "/". */
+function RootRedirect() {
+  const { status, merchant } = useAuth();
+  if (status === "checking") return <Spinner />;
+  if (status === "unauthenticated")
+    return <Navigate to={ROUTES.login} replace />;
+  if (merchant && merchant.verificationStatus !== "APPROVED") {
+    return <Navigate to={ROUTES.onboarding} replace />;
+  }
+  return <Navigate to={ROUTES.today} replace />;
+}
 
-// A real app persists this in React state/context and updates it from
-// `onTokensIssued` — this placeholder never logs in, so it stays null.
-let accessToken: string | null = null;
+/** Split out from App() so useRouteFocus (which needs `useLocation`) runs
+ * inside the <BrowserRouter> it depends on. */
+function RoutedApp() {
+  useRouteFocus();
+  return (
+    <Routes>
+      <Route element={<GuestOnlyLayout />}>
+        <Route path={ROUTES.login} element={<LoginPage />} />
+        <Route path={ROUTES.signup} element={<SignupPage />} />
+      </Route>
 
-const client = createClient({
-  baseUrl: apiBaseUrl,
-  transport: "cookie",
-  getAccessToken: () => accessToken,
-  onTokensIssued: (tokens) => {
-    accessToken = tokens.accessToken;
-  },
-});
+      <Route element={<OnboardingLayout />}>
+        <Route path={ROUTES.onboarding} element={<OnboardingPage />} />
+      </Route>
 
-type HealthState =
-  | { status: "loading" }
-  | { status: "ok"; service: string }
-  | { status: "error"; message: string };
+      <Route element={<RequireApprovedLayout />}>
+        <Route element={<AppShell />}>
+          <Route path={ROUTES.today} element={<TodayPage />} />
+          <Route path={ROUTES.stores} element={<StoresPage />} />
+          <Route path={ROUTES.calendar} element={<CalendarPage />} />
+          <Route path={ROUTES.earnings} element={<EarningsPage />} />
+          <Route path={ROUTES.reputation} element={<ReputationPage />} />
+        </Route>
+      </Route>
+
+      <Route path="/" element={<RootRedirect />} />
+      <Route path="*" element={<RootRedirect />} />
+    </Routes>
+  );
+}
 
 export default function App() {
-  const [health, setHealth] = useState<HealthState>({ status: "loading" });
-
-  useEffect(() => {
-    let cancelled = false;
-    client.health
-      .check()
-      // HealthController_getHealth has no declared OpenAPI response schema
-      // (see docs/frontend-contract.md's "known OpenAPI contract gaps") —
-      // this cast reads the real backend/src/modules/health/health.
-      // controller.ts's HealthStatus shape by hand, at the APP layer, not
-      // inside @kurtar/api-client itself.
-      .then((result) => {
-        if (cancelled) return;
-        const body = result as { status?: string; service?: string };
-        setHealth({ status: "ok", service: body.service ?? "kurtar-api" });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setHealth({
-          status: "error",
-          message: error instanceof Error ? error.message : "Unknown error",
-        });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: spacing.lg,
-        backgroundColor: colors.neutral[50],
-        color: colors.neutral[900],
-        fontFamily: "system-ui, -apple-system, sans-serif",
-      }}
-    >
-      <h1
-        style={{
-          fontSize: typeScale.display.size,
-          color: colors.primary[500],
-          margin: 0,
-        }}
-      >
-        kurtar işletme
-      </h1>
-      <p style={{ fontSize: typeScale.body.size, margin: 0 }}>
-        {health.status === "loading" && "Sunucu durumu kontrol ediliyor…"}
-        {health.status === "ok" && `Bağlantı OK — ${health.service}`}
-        {health.status === "error" && `Bağlantı hatası: ${health.message}`}
-      </p>
-    </main>
+    <BrowserRouter>
+      <RoutedApp />
+    </BrowserRouter>
   );
 }

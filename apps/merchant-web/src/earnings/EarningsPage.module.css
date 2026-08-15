@@ -1,0 +1,112 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.title {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-h1);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.cardHeading {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-h3);
+}
+
+.kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--font-size-body);
+}
+
+.kvLabel {
+  color: var(--color-neutral-500);
+}
+
+.kvValue {
+  font-weight: var(--font-weight-bodyStrong);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.statementRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  text-align: left;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.statementHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.statementPeriod {
+  font-size: var(--font-size-bodyStrong);
+  font-weight: var(--font-weight-bodyStrong);
+}
+
+.statementMeta {
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-500);
+}
+
+.breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.breakdownRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--font-size-body);
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--color-neutral-100);
+}
+
+.breakdownLabel {
+  color: var(--color-neutral-600);
+}
+
+.breakdownValueNegative {
+  color: var(--color-danger-700);
+}
+
+.breakdownNet {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: var(--space-sm);
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-h2);
+}
+
+.explainer {
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-500);
+}
+
+.backButton {
+  align-self: flex-start;
+}
