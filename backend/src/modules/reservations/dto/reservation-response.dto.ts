@@ -1,10 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { ReservationStatus } from "@prisma/client";
+import { PrincipalType, ReservationStatus } from "@prisma/client";
 
 /** [Contract completion] The raw Reservation Prisma model, scalar columns
  * only — listMine's raw `SELECT * FROM reservations` returns exactly
  * these columns, no relations (never `payment`/`rating`/etc — those need
- * an explicit include/join this raw query doesn't do). */
+ * an explicit include/join this raw query doesn't do).
+ * [Consumer redeem] redeemedByActorType/redeemedByUserId are the new
+ * "which actor redeemed this" columns — see reservations.service.ts's
+ * redeem() doc comment. Exactly one of redeemedByUserId/
+ * redeemedByMerchantUserId is ever set, matching redeemedByActorType;
+ * all three are null until the reservation is actually redeemed. */
 export class ReservationDto {
   @ApiProperty() id!: string;
   @ApiProperty() code!: string;
@@ -17,6 +22,10 @@ export class ReservationDto {
   @ApiProperty({ enum: ReservationStatus }) status!: ReservationStatus;
   @ApiProperty() cancelDeadlineAt!: Date;
   @ApiPropertyOptional({ nullable: true, type: Date }) redeemedAt!: Date | null;
+  @ApiPropertyOptional({ nullable: true, enum: PrincipalType })
+  redeemedByActorType!: PrincipalType | null;
+  @ApiPropertyOptional({ nullable: true, type: String })
+  redeemedByUserId!: string | null;
   @ApiPropertyOptional({ nullable: true, type: String })
   redeemedByMerchantUserId!: string | null;
   @ApiPropertyOptional({ nullable: true, type: Date })

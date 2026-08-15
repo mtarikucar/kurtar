@@ -334,13 +334,19 @@ d("ReservationsService — real DB concurrency", () => {
 
     const results = await Promise.allSettled([
       service.redeem(
-        "realdb-merchant-user-1",
-        merchantId,
+        {
+          actorType: "MERCHANT",
+          merchantUserId: "realdb-merchant-user-1",
+          merchantId,
+        },
         created.reservationId,
       ),
       service.redeem(
-        "realdb-merchant-user-1",
-        merchantId,
+        {
+          actorType: "MERCHANT",
+          merchantUserId: "realdb-merchant-user-1",
+          merchantId,
+        },
         created.reservationId,
       ),
     ]);
@@ -353,6 +359,78 @@ d("ReservationsService — real DB concurrency", () => {
       where: { id: created.reservationId },
     });
     expect(finalReservation.status).toBe("REDEEMED");
+
+    const finalOffer = await prisma.dailyOffer.findUniqueOrThrow({
+      where: { id: offer.id },
+    });
+    expect(finalOffer.qtyRedeemed).toBe(2); // reservation.qty, exactly once — not 4
+  }, 15_000);
+
+  // [Consumer redeem] The race this whole feature exists to make safe:
+  // the CONSUMER swipes on their own phone at (almost) the same moment
+  // MERCHANT staff taps "redeem" in the panel — a real double-tap
+  // scenario now that both paths exist. Exactly one REDEEMED transition,
+  // exactly one qtyRedeemed increment, and the row records WHICHEVER
+  // actor's guarded update actually won (real Postgres decides the
+  // winner, not a mock) — asserted by checking redeemedByActorType is one
+  // of the two valid values and matches whichever soft-reference column
+  // actually got set, never both.
+  it("[Consumer redeem] a CONSUMER swipe and a MERCHANT tap racing for the SAME reservation produce exactly one REDEEMED transition and one qtyRedeemed increment, attributed to whichever actor won", async () => {
+    const { service } = buildReservationsHarness(prisma);
+    const now = Date.now();
+    const bagTemplate = await createBagTemplate(prisma, storeId, 5000);
+    const offer = await seedOffer(
+      prisma,
+      bagTemplate.id,
+      storeId,
+      2,
+      new Date(now - 30 * 60 * 1000),
+      new Date(now + 30 * 60 * 1000),
+    );
+    const [user] = await seedUsers(prisma, 1);
+
+    const created = await service.create(user.id, offer.id, 2);
+    await prisma.reservation.update({
+      where: { id: created.reservationId },
+      data: { status: "CONFIRMED" },
+    });
+
+    const results = await Promise.allSettled([
+      service.redeem(
+        { actorType: "CONSUMER", userId: user.id },
+        created.reservationId,
+      ),
+      service.redeem(
+        {
+          actorType: "MERCHANT",
+          merchantUserId: "realdb-merchant-user-2",
+          merchantId,
+        },
+        created.reservationId,
+      ),
+    ]);
+
+    // Idempotent by design regardless of who wins — BOTH calls resolve
+    // successfully.
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+
+    const finalReservation = await prisma.reservation.findUniqueOrThrow({
+      where: { id: created.reservationId },
+    });
+    expect(finalReservation.status).toBe("REDEEMED");
+    // Attributed to exactly one actor — never both, never neither.
+    expect(["CONSUMER", "MERCHANT"]).toContain(
+      finalReservation.redeemedByActorType,
+    );
+    if (finalReservation.redeemedByActorType === "CONSUMER") {
+      expect(finalReservation.redeemedByUserId).toBe(user.id);
+      expect(finalReservation.redeemedByMerchantUserId).toBeNull();
+    } else {
+      expect(finalReservation.redeemedByMerchantUserId).toBe(
+        "realdb-merchant-user-2",
+      );
+      expect(finalReservation.redeemedByUserId).toBeNull();
+    }
 
     const finalOffer = await prisma.dailyOffer.findUniqueOrThrow({
       where: { id: offer.id },

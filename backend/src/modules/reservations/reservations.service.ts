@@ -771,9 +771,27 @@ export class ReservationsService {
     return results;
   }
 
+  /**
+   * [Consumer redeem] The approved product design (plan §4.6): the
+   * CONSUMER redeems their own reservation — a live-clock phone swipe in
+   * front of shop staff, the defining interaction of this product
+   * category and the reason it needs no merchant hardware at the
+   * counter. The MERCHANT path stays as the documented fallback (a dead
+   * customer phone). `redeemedBy` is a discriminated union rather than
+   * two separate public methods specifically so both actors run through
+   * ONE authorization branch, ONE status/window check, and ONE guarded
+   * update — the same trustworthiness guarantee (a strict server-side
+   * pickup-window check) applies identically to both, and the atomic
+   * `updateMany` below already makes concurrent redeems from DIFFERENT
+   * actors race-safe for free (it only cares about the reservation's
+   * current status, never who's calling) — proven for merchant-vs-
+   * merchant already, extended to consumer-vs-merchant in
+   * reservations.realdb.spec.ts.
+   */
   async redeem(
-    merchantUserId: string,
-    merchantId: string,
+    redeemedBy:
+      | { actorType: "CONSUMER"; userId: string }
+      | { actorType: "MERCHANT"; merchantUserId: string; merchantId: string },
     reservationId: string,
   ): Promise<{ reservationId: string; status: "REDEEMED"; redeemedAt: Date }> {
     const reservation = await this.prisma.reservation.findUnique({
@@ -787,7 +805,16 @@ export class ReservationsService {
       },
     });
     if (!reservation) throw reservationNotFoundError();
-    if (reservation.store.merchantId !== merchantId) {
+
+    if (redeemedBy.actorType === "CONSUMER") {
+      if (reservation.userId !== redeemedBy.userId) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          errorCode: "FORBIDDEN",
+          message: "This reservation does not belong to you.",
+        });
+      }
+    } else if (reservation.store.merchantId !== redeemedBy.merchantId) {
       throw new ForbiddenException({
         statusCode: 403,
         errorCode: "FORBIDDEN",
@@ -820,7 +847,13 @@ export class ReservationsService {
         data: {
           status: "REDEEMED",
           redeemedAt: attemptedAt,
-          redeemedByMerchantUserId: merchantUserId,
+          redeemedByActorType: redeemedBy.actorType,
+          redeemedByUserId:
+            redeemedBy.actorType === "CONSUMER" ? redeemedBy.userId : null,
+          redeemedByMerchantUserId:
+            redeemedBy.actorType === "MERCHANT"
+              ? redeemedBy.merchantUserId
+              : null,
         },
       });
       if (updated.count === 0) {

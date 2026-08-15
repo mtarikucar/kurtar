@@ -544,6 +544,13 @@ describe("ReservationsService.cancel", () => {
 });
 
 describe("ReservationsService.redeem", () => {
+  const MERCHANT_REDEEMER = {
+    actorType: "MERCHANT" as const,
+    merchantUserId: "mu1",
+    merchantId: "merchant1",
+  };
+  const CONSUMER_REDEEMER = { actorType: "CONSUMER" as const, userId: "u1" };
+
   function baseReservation(overrides: Record<string, any> = {}) {
     return {
       id: "resv1",
@@ -579,7 +586,33 @@ describe("ReservationsService.redeem", () => {
       outbox as any,
     );
     await expect(
-      service.redeem("mu1", "other-merchant", "resv1"),
+      service.redeem(
+        {
+          actorType: "MERCHANT",
+          merchantUserId: "mu1",
+          merchantId: "other-merchant",
+        },
+        "resv1",
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  // [Consumer redeem] The owner-only mirror of the FORBIDDEN test above —
+  // a consumer can never redeem someone ELSE's reservation, only their
+  // own.
+  it("throws FORBIDDEN when a CONSUMER tries to redeem a reservation that isn't theirs", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation({ userId: "the-real-owner" }),
+    );
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+    await expect(
+      service.redeem(CONSUMER_REDEEMER, "resv1"),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -600,13 +633,38 @@ describe("ReservationsService.redeem", () => {
       outbox as any,
     );
     const err = await service
-      .redeem("mu1", "merchant1", "resv1")
+      .redeem(MERCHANT_REDEEMER, "resv1")
       .catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
     expect(err.response.errorCode).toBe("RESERVATION_NOT_REDEEMABLE");
   });
 
-  it("first redeem transitions to REDEEMED and increments qtyRedeemed", async () => {
+  // [Consumer redeem] The SAME strict window check applies to the
+  // consumer path — no relaxation for the owner-initiated swipe.
+  it("throws RESERVATION_NOT_REDEEMABLE outside the pickup window for a CONSUMER too", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation({
+        offer: {
+          pickupStartAt: new Date(Date.now() + 60_000),
+          pickupEndAt: new Date(Date.now() + 120_000),
+        },
+      }),
+    );
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+    const err = await service
+      .redeem(CONSUMER_REDEEMER, "resv1")
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.response.errorCode).toBe("RESERVATION_NOT_REDEEMABLE");
+  });
+
+  it("first redeem by a MERCHANT transitions to REDEEMED, records redeemedByActorType/MerchantUserId, and increments qtyRedeemed", async () => {
     const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
@@ -619,12 +677,18 @@ describe("ReservationsService.redeem", () => {
       outbox as any,
     );
 
-    const result = await service.redeem("mu1", "merchant1", "resv1");
+    const result = await service.redeem(MERCHANT_REDEEMER, "resv1");
     expect(result.status).toBe("REDEEMED");
     // [I4] Derived from allowedFromStatusesFor("REDEEMED") = ["CONFIRMED"].
     expect(tx.reservation.updateMany).toHaveBeenCalledWith({
       where: { id: "resv1", status: { in: ["CONFIRMED"] } },
-      data: expect.objectContaining({ status: "REDEEMED" }),
+      data: {
+        status: "REDEEMED",
+        redeemedAt: expect.any(Date),
+        redeemedByActorType: "MERCHANT",
+        redeemedByUserId: null,
+        redeemedByMerchantUserId: "mu1",
+      },
     });
     expect(tx.dailyOffer.update).toHaveBeenCalledWith({
       where: { id: "offer1" },
@@ -651,6 +715,43 @@ describe("ReservationsService.redeem", () => {
     });
   });
 
+  // [Consumer redeem] The mirror of the MERCHANT test above — same
+  // transition, same outbox events (the rating-invite/impact-ledger
+  // payloads never reference WHO redeemed, only WHAT/WHOM the reservation
+  // is for), but records redeemedByActorType=CONSUMER/redeemedByUserId
+  // instead, with redeemedByMerchantUserId left null.
+  it("first redeem by the owning CONSUMER transitions to REDEEMED, records redeemedByActorType/UserId, and increments qtyRedeemed", async () => {
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation(),
+    );
+    tx.reservation.updateMany.mockResolvedValue({ count: 1 });
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.redeem(CONSUMER_REDEEMER, "resv1");
+    expect(result.status).toBe("REDEEMED");
+    expect(tx.reservation.updateMany).toHaveBeenCalledWith({
+      where: { id: "resv1", status: { in: ["CONFIRMED"] } },
+      data: {
+        status: "REDEEMED",
+        redeemedAt: expect.any(Date),
+        redeemedByActorType: "CONSUMER",
+        redeemedByUserId: "u1",
+        redeemedByMerchantUserId: null,
+      },
+    });
+    expect(tx.dailyOffer.update).toHaveBeenCalledWith({
+      where: { id: "offer1" },
+      data: { qtyRedeemed: { increment: 1 } },
+    });
+    expect(tx.outboxEvent.create).toHaveBeenCalledTimes(2);
+  });
+
   it("a second call after already REDEEMED short-circuits — same success, no DB writes", async () => {
     const redeemedAt = new Date();
     const { prisma, offerStock, facade, outbox } = buildDeps();
@@ -664,7 +765,32 @@ describe("ReservationsService.redeem", () => {
       outbox as any,
     );
 
-    const result = await service.redeem("mu1", "merchant1", "resv1");
+    const result = await service.redeem(MERCHANT_REDEEMER, "resv1");
+    expect(result).toEqual({
+      reservationId: "resv1",
+      status: "REDEEMED",
+      redeemedAt,
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  // [Consumer redeem] Idempotent replay must hold for the consumer path
+  // too — e.g. the offline-queue reconciliation retrying a swipe that
+  // already landed.
+  it("a second call by the CONSUMER after already REDEEMED (by either actor) short-circuits the same way", async () => {
+    const redeemedAt = new Date();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation({ status: "REDEEMED", redeemedAt }),
+    );
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.redeem(CONSUMER_REDEEMER, "resv1");
     expect(result).toEqual({
       reservationId: "resv1",
       status: "REDEEMED",
@@ -691,7 +817,38 @@ describe("ReservationsService.redeem", () => {
       outbox as any,
     );
 
-    const result = await service.redeem("mu1", "merchant1", "resv1");
+    const result = await service.redeem(MERCHANT_REDEEMER, "resv1");
+    expect(result).toEqual({
+      reservationId: "resv1",
+      status: "REDEEMED",
+      redeemedAt: winnerRedeemedAt,
+    });
+    expect(tx.dailyOffer.update).not.toHaveBeenCalled();
+  });
+
+  // [Consumer redeem] The exact race this whole feature exists to make
+  // safe: the consumer swipes AND the merchant taps at (almost) the same
+  // moment. Whichever the DB's guarded updateMany lets through wins;
+  // the other must land here, not double-increment qtyRedeemed.
+  it("a CONSUMER losing the in-transaction race to a MERCHANT's concurrent redeem is treated as idempotent success", async () => {
+    const winnerRedeemedAt = new Date();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation(),
+    );
+    tx.reservation.updateMany.mockResolvedValue({ count: 0 });
+    tx.reservation.findUniqueOrThrow.mockResolvedValue({
+      status: "REDEEMED",
+      redeemedAt: winnerRedeemedAt,
+    });
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.redeem(CONSUMER_REDEEMER, "resv1");
     expect(result).toEqual({
       reservationId: "resv1",
       status: "REDEEMED",
@@ -718,7 +875,7 @@ describe("ReservationsService.redeem", () => {
     );
 
     const err = await service
-      .redeem("mu1", "merchant1", "resv1")
+      .redeem(MERCHANT_REDEEMER, "resv1")
       .catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
     expect(err.response.errorCode).toBe("RESERVATION_NOT_REDEEMABLE");

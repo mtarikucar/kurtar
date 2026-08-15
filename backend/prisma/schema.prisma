@@ -682,6 +682,17 @@ model Reservation {
   status                   ReservationStatus @default(PENDING_PAYMENT)
   cancelDeadlineAt         DateTime
   redeemedAt               DateTime?
+  // [Consumer redeem] Which actor redeemed this pickup — CONSUMER (the
+  // phone-swipe, this product's defining interaction) or MERCHANT (staff
+  // panel, the documented fallback for a dead customer phone). Null until
+  // redeemed. Exactly one of redeemedByUserId/redeemedByMerchantUserId is
+  // ever set, matching this discriminator — whichever actor's guarded
+  // update actually won the redeem race.
+  redeemedByActorType      PrincipalType?
+  // Soft reference to the consumer who redeemed their own pickup —
+  // intentionally not a foreign key, matching redeemedByMerchantUserId's
+  // own precedent below.
+  redeemedByUserId         String?
   // Soft reference to the merchant staff account that redeemed the pickup —
   // intentionally not a foreign key, matching the brief.
   redeemedByMerchantUserId String?

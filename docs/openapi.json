@@ -767,7 +767,7 @@
             "bearer": []
           }
         ],
-        "summary": "Redeem a reservation's pickup code (MERCHANT, staff scan at the counter).",
+        "summary": "Redeem a reservation's pickup code — CONSUMER (the phone-swipe, owner-only) or MERCHANT (staff panel, fallback for a dead customer phone).",
         "tags": [
           "reservations"
         ]
@@ -7063,6 +7063,19 @@
           },
           "redeemedAt": {
             "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "redeemedByActorType": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "CONSUMER",
+              "MERCHANT",
+              "ADMIN"
+            ]
+          },
+          "redeemedByUserId": {
             "type": "string",
             "nullable": true
           },

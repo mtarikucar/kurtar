@@ -94,26 +94,32 @@ export class ReservationsController {
     });
   }
 
-  // Judgment call (Task 5 review): redeem is exempted from
-  // MerchantApprovalGuard's default-deny. It never creates a new sale —
-  // it fulfills one already paid for — and blocking it would strand a
-  // customer who paid before the merchant was suspended. The suspend
-  // kill-switch already force-cancels+refunds every PENDING_PAYMENT/
-  // CONFIRMED reservation on an ACTIVE offer (reservations/reservations.service.ts's
-  // cancelAllForOffer); the only reservations that can still be CONFIRMED
-  // for a SUSPENDED merchant are ones tied to an already-CLOSED offer,
-  // which stores.service.ts/offers.service.ts deliberately leave
-  // untouched ("existing reservations unaffected") — those customers are
-  // still entitled to their food.
+  // [Consumer redeem] CONSUMER (owner, live-clock phone swipe — the
+  // product's defining interaction, plan §4.6) or MERCHANT (staff panel,
+  // the documented fallback for a dead customer phone). Judgment call
+  // preserved from the original Task 5 review for the MERCHANT path:
+  // redeem is exempted from MerchantApprovalGuard's default-deny — it
+  // never creates a new sale, it fulfills one already paid for, and
+  // blocking it would strand a customer who paid before the merchant was
+  // suspended (MerchantApprovalGuard is a no-op for CONSUMER callers
+  // regardless, so this exemption only ever affects the MERCHANT path).
   @ApiOperation({
     summary:
-      "Redeem a reservation's pickup code (MERCHANT, staff scan at the counter).",
+      "Redeem a reservation's pickup code — CONSUMER (the phone-swipe, owner-only) or MERCHANT (staff panel, fallback for a dead customer phone).",
   })
   @ApiCreatedResponse({ type: ReservationRedeemResponseDto })
-  @Actors("MERCHANT")
+  @Actors("CONSUMER", "MERCHANT")
   @AllowUnapprovedMerchant()
   @Post(":id/redeem")
   redeem(@CurrentUser() user: AuthenticatedPrincipal, @Param("id") id: string) {
-    return this.reservations.redeem(user.id, user.merchantId!, id);
+    const redeemedBy =
+      user.actor === "CONSUMER"
+        ? ({ actorType: "CONSUMER", userId: user.id } as const)
+        : ({
+            actorType: "MERCHANT",
+            merchantUserId: user.id,
+            merchantId: user.merchantId!,
+          } as const);
+    return this.reservations.redeem(redeemedBy, id);
   }
 }
