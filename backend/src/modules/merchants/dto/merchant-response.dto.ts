@@ -100,3 +100,71 @@ export class AdminMerchantListResponseDto {
   @ApiProperty() page!: number;
   @ApiProperty() pageSize!: number;
 }
+
+/** GET /admin/merchants/:id — MerchantsService.adminGetDetail's
+ * AdminMerchantVerificationEvent. See adminGetDetail's own doc comment
+ * for the full masking/audit rationale. */
+export class AdminMerchantVerificationEventDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({ enum: MerchantVerificationStatus })
+  fromStatus!: MerchantVerificationStatus;
+  @ApiProperty({ enum: MerchantVerificationStatus })
+  toStatus!: MerchantVerificationStatus;
+  @ApiPropertyOptional({ nullable: true, type: String })
+  actorAdminId!: string | null;
+  @ApiPropertyOptional({ nullable: true, type: String }) note!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    type: "object",
+    additionalProperties: true,
+    description: "This event's own submitted-documents snapshot, if any.",
+  })
+  docsJson!: unknown;
+  @ApiProperty() createdAt!: Date;
+}
+
+/** GET /admin/merchants/:id — the admin-only KYC detail read.
+ * MerchantsService.adminGetDetail's AdminMerchantDetail. `iban` is the
+ * FULL value (not masked) — a deliberate call, justified at length in
+ * adminGetDetail's own doc comment: the whole point of this endpoint is
+ * letting an approver cross-check the IBAN against the bank document in
+ * docsJson, which a masked value can't do. ADMIN-only, and every read of
+ * this endpoint writes its own AuditLog row (action
+ * "merchant.kyc.viewed") — reading this row is itself a sensitive
+ * action. */
+export class AdminMerchantDetailResponseDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() legalName!: string;
+  @ApiProperty() tradeName!: string;
+  @ApiProperty() taxId!: string;
+  @ApiPropertyOptional({ nullable: true, type: String }) mersisNo!:
+    string | null;
+  @ApiPropertyOptional({ nullable: true, type: String })
+  kepAddress!: string | null;
+  @ApiProperty({
+    description:
+      "Full IBAN, deliberately not masked to last-4 — see this endpoint's own doc comment for why.",
+  })
+  iban!: string;
+  @ApiProperty({ enum: MerchantVerificationStatus })
+  verificationStatus!: MerchantVerificationStatus;
+  @ApiPropertyOptional({ nullable: true, type: Date }) verifiedAt!: Date | null;
+  @ApiPropertyOptional({ nullable: true, type: Date })
+  nextReverifyAt!: Date | null;
+  @ApiPropertyOptional({ nullable: true, type: Date })
+  sttAttestationAcceptedAt!: Date | null;
+  @ApiPropertyOptional({ nullable: true, type: Date })
+  intermediationAcceptedAt!: Date | null;
+  @ApiPropertyOptional({ nullable: true, type: String })
+  intermediationContractVersion!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    type: "object",
+    additionalProperties: true,
+    description:
+      "The most recent non-null docsJson among verificationEvents below — the documents behind the merchant's current status. Null if never submitted.",
+  })
+  docsJson!: unknown;
+  @ApiProperty({ type: [AdminMerchantVerificationEventDto] })
+  verificationEvents!: AdminMerchantVerificationEventDto[];
+}

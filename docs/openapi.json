@@ -2151,6 +2151,84 @@
         ]
       }
     },
+    "/api/admin/merchants/{id}": {
+      "get": {
+        "operationId": "AdminMerchantsController_getDetail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Client-Transport",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cookie"
+              ]
+            },
+            "description": "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMerchantDetailResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A merchant's full KYC detail — docsJson, IBAN, verification history — what an approver needs to actually judge the submission. Every read is audited.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/merchants/{id}/approve": {
       "post": {
         "operationId": "AdminMerchantsController_approve",
@@ -8025,6 +8103,145 @@
           "total",
           "page",
           "pageSize"
+        ]
+      },
+      "AdminMerchantVerificationEventDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "fromStatus": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED",
+              "UNDER_REVIEW",
+              "APPROVED",
+              "REJECTED",
+              "SUSPENDED"
+            ]
+          },
+          "toStatus": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED",
+              "UNDER_REVIEW",
+              "APPROVED",
+              "REJECTED",
+              "SUSPENDED"
+            ]
+          },
+          "actorAdminId": {
+            "type": "string",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "docsJson": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "This event's own submitted-documents snapshot, if any."
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "fromStatus",
+          "toStatus",
+          "createdAt"
+        ]
+      },
+      "AdminMerchantDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradeName": {
+            "type": "string"
+          },
+          "taxId": {
+            "type": "string"
+          },
+          "mersisNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "kepAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "iban": {
+            "type": "string",
+            "description": "Full IBAN, deliberately not masked to last-4 — see this endpoint's own doc comment for why."
+          },
+          "verificationStatus": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED",
+              "UNDER_REVIEW",
+              "APPROVED",
+              "REJECTED",
+              "SUSPENDED"
+            ]
+          },
+          "verifiedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "nextReverifyAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "sttAttestationAcceptedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "intermediationAcceptedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "intermediationContractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "docsJson": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true,
+            "description": "The most recent non-null docsJson among verificationEvents below — the documents behind the merchant's current status. Null if never submitted."
+          },
+          "verificationEvents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminMerchantVerificationEventDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "legalName",
+          "tradeName",
+          "taxId",
+          "iban",
+          "verificationStatus",
+          "verificationEvents"
         ]
       },
       "AdminMerchantActionDto": {

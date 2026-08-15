@@ -39,6 +39,34 @@ export interface MerchantSuspendResult {
   offersCancelled: number;
 }
 
+export interface AdminMerchantVerificationEvent {
+  id: string;
+  fromStatus: MerchantVerificationStatus;
+  toStatus: MerchantVerificationStatus;
+  actorAdminId: string | null;
+  note: string | null;
+  docsJson: Prisma.JsonValue | null;
+  createdAt: Date;
+}
+
+export interface AdminMerchantDetail {
+  id: string;
+  legalName: string;
+  tradeName: string;
+  taxId: string;
+  mersisNo: string | null;
+  kepAddress: string | null;
+  iban: string;
+  verificationStatus: MerchantVerificationStatus;
+  verifiedAt: Date | null;
+  nextReverifyAt: Date | null;
+  sttAttestationAcceptedAt: Date | null;
+  intermediationAcceptedAt: Date | null;
+  intermediationContractVersion: string | null;
+  docsJson: Prisma.JsonValue | null;
+  verificationEvents: AdminMerchantVerificationEvent[];
+}
+
 function merchantNotFoundError() {
   return new NotFoundException({
     statusCode: 404,
@@ -265,6 +293,110 @@ export class MerchantsService {
       this.prisma.merchant.count({ where }),
     ]);
     return { items, total, page, pageSize };
+  }
+
+  /**
+   * [Admin KYC detail] GET /admin/merchants/:id — the ONLY place an admin
+   * sees what a merchant actually submitted before approving/rejecting
+   * them. `adminList` above is deliberately a thin queue (id/legalName/
+   * tradeName/taxId/verificationStatus/verifiedAt/createdAt) — none of
+   * taxId's cross-check material, iban, mersisNo, kepAddress, docsJson,
+   * or the attestation timestamps are selected there. Without a detail
+   * read exposing those, the approval step (the platform's SOLE identity
+   * control at launch — nothing else binds taxId to legalName or stops
+   * two merchants sharing an IBAN) is a rubber stamp: a human asked to
+   * approve or reject with nothing to actually judge.
+   *
+   * Reading this row is itself a sensitive action (bank details, KYC
+   * documents), so the read and its own AuditLog row commit together in
+   * ONE transaction — if the audit write fails, the read fails too,
+   * rather than silently handing back sensitive data with no trail. Same
+   * {actorType,actorId,action,entity,entityId,diffJson} shape and the
+   * same entity.verb action-naming convention every other admin mutation
+   * in this codebase already uses (stores.service.ts's adminDeactivate,
+   * ratings.service.ts's moderate, etc.) — this is the one case where the
+   * audited action is a READ, not a write, so diffJson records the
+   * merchant's verificationStatus AT THE TIME OF VIEWING (there is no
+   * before/after diff for a read, but "what state was true when this
+   * admin looked" is still real, useful audit context).
+   *
+   * [Masking decision] iban is returned IN FULL, not masked to last-4.
+   * The whole reason this endpoint exists is so an approver can
+   * cross-check the IBAN against the bank document in docsJson — a
+   * masked value would be useless for that, defeating the endpoint's own
+   * purpose. This is the tradeoff the brief asked to make deliberately:
+   * full IBAN is exposed ONLY here, ONLY to ADMIN, ONLY with an audit
+   * trail — confirmed NOT to appear on adminList above (thin queue,
+   * no iban selected) and confirmed the only OTHER places `merchant.iban`
+   * is ever selected are (a) the merchant's own GET /merchants/me (a
+   * merchant seeing their own registered bank details back is not a
+   * leak), (b) admin/exports' merchants.csv and settlements.service.ts's
+   * adminGet — both already ADMIN-scoped surfaces, not new exposure.
+   *
+   * `docsJson` is stored per-VerificationEvent (each submission/
+   * resubmission can carry its own document snapshot), not on Merchant
+   * itself — the top-level `docsJson` field here is a convenience: the
+   * most recent non-null one, i.e. the documents behind whatever
+   * submission the merchant's CURRENT status reflects. The full
+   * `verificationEvents` history (including every past docsJson, not
+   * just the latest) is also returned in full — nothing is hidden behind
+   * the convenience field.
+   */
+  async adminGetDetail(
+    adminId: string,
+    merchantId: string,
+  ): Promise<AdminMerchantDetail> {
+    return this.prisma.$transaction(async (tx) => {
+      const merchant = await tx.merchant.findUnique({
+        where: { id: merchantId },
+        select: {
+          id: true,
+          legalName: true,
+          tradeName: true,
+          taxId: true,
+          mersisNo: true,
+          kepAddress: true,
+          iban: true,
+          verificationStatus: true,
+          verifiedAt: true,
+          nextReverifyAt: true,
+          sttAttestationAcceptedAt: true,
+          intermediationAcceptedAt: true,
+          intermediationContractVersion: true,
+          verificationEvents: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              fromStatus: true,
+              toStatus: true,
+              actorAdminId: true,
+              note: true,
+              docsJson: true,
+              createdAt: true,
+            },
+          },
+        },
+      });
+      if (!merchant) throw merchantNotFoundError();
+
+      await tx.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId: adminId,
+          action: "merchant.kyc.viewed",
+          entity: "Merchant",
+          entityId: merchantId,
+          diffJson: { verificationStatus: merchant.verificationStatus },
+        },
+      });
+
+      const latestDocsJson =
+        [...merchant.verificationEvents]
+          .reverse()
+          .find((e) => e.docsJson !== null)?.docsJson ?? null;
+
+      return { ...merchant, docsJson: latestDocsJson };
+    });
   }
 
   async adminApprove(
