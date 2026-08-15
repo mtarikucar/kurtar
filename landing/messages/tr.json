@@ -1,0 +1,344 @@
+{
+  "common": {
+    "skipToContent": "İçeriğe geç",
+    "brand": "kurtar",
+    "backHome": "Anasayfaya dön",
+    "readMore": "Devamını oku",
+    "minuteRead": "{minutes} dakikalık okuma"
+  },
+  "nav": {
+    "mainLabel": "Ana menü",
+    "howItWorks": "Nasıl çalışır",
+    "forMerchants": "İşletmeniz mi var?",
+    "blog": "Blog",
+    "download": "Uygulamayı indir"
+  },
+  "footer": {
+    "tagline": "Mahalledeki fırından restorana, gün sonunda çöpe gidecek taze yiyecekleri üçte bir fiyatına kurtarın.",
+    "productHeading": "Ürün",
+    "legalHeading": "Yasal",
+    "companyHeading": "kurtar",
+    "languageHeading": "Dil",
+    "links": {
+      "home": "Anasayfa",
+      "howItWorks": "Nasıl çalışır",
+      "forMerchants": "İşletmeniz mi var?",
+      "blog": "Blog"
+    },
+    "legalLinks": {
+      "intermediation": "Aracılık sözleşmesi",
+      "distanceSelling": "Mesafeli satış sözleşmesi",
+      "preInfo": "Ön bilgilendirme formu",
+      "kvkk": "KVKK aydınlatma metni",
+      "cookies": "Çerez politikası"
+    },
+    "rights": "Tüm hakları saklıdır."
+  },
+  "localeSwitcher": {
+    "label": "Dil seçimi"
+  },
+  "home": {
+    "meta": {
+      "title": "kurtar — gün sonu sürpriz paketlerle gıda israfını önleyin",
+      "description": "İstanbul'daki fırın, pastane, kafe, restoran ve manavların gün sonunda satamadığı taze ürünleri üçte bir fiyatına kurtarın. Ne çıkacağı sürpriz, tasarruf kesin."
+    },
+    "hero": {
+      "eyebrow": "Kapanıştan önce kurtarın",
+      "title": "Gün bitmeden önce hâlâ kurtarılacak bir şey var",
+      "body": "Mahalledeki fırından restorana, işletmelerin gün sonunda elinde kalan taze ürünler sürpriz paket olarak üçte bir fiyatına satışa çıkar. İçeriği önceden bilinmez, tasarrufu bellidir.",
+      "ctaConsumer": "Uygulamayı indir",
+      "ctaMerchant": "İşletmenizi ekleyin",
+      "receiptTitle": "Örnek sürpriz paket — kafe",
+      "receiptValueLabel": "İçeriğin gerçek değeri",
+      "receiptValue": "₺350,00",
+      "receiptPriceLabel": "Sürpriz paket fiyatı",
+      "receiptPrice": "₺119,00",
+      "receiptSavedLabel": "Kurtardığınız",
+      "receiptSaved": "₺231,00",
+      "receiptNote": "Fiyatlar örnek bir kafe paketi içindir; her işletme kendi paketini kendi fiyatlandırır."
+    },
+    "impact": {
+      "eyebrow": "Birlikte kurtarılan",
+      "title": "Platformdaki toplam etki",
+      "body": "Aşağıdaki sayılar canlıdır ve her sürpriz paket teslim alındığında güncellenir.",
+      "mealsSaved": "Kurtarılan paket",
+      "co2eAvoided": "Önlenen CO2e",
+      "moneySaved": "Tüketicilerin biriktirdiği tasarruf",
+      "unavailableTitle": "Canlı sayaç şu anda görüntülenemiyor",
+      "unavailableBody": "Etki verileri geçici olarak yüklenemedi; bu sayfanın geri kalanı normal şekilde çalışmaya devam eder. Az sonra tekrar deneyin."
+    },
+    "categories": {
+      "eyebrow": "Kim ne kurtarıyor",
+      "title": "Beş farklı işletme türü, beş farklı sürpriz",
+      "body": "Her kategori kendi ritmiyle çalışır — fırının sürprizi akşamüstü ekmek ve simittir, pastanenin günün sonunda kalan pasta dilimidir. Fiyat bandı da buna göre değişir."
+    },
+    "howItWorks": {
+      "eyebrow": "Üç adımda",
+      "title": "Nasıl çalışır",
+      "cta": "Tüm süreci okuyun",
+      "steps": [
+        {
+          "title": "Keşfedin",
+          "body": "Yakınınızdaki fırın, kafe, restoran ve manavların o günkü sürpriz paketlerini uygulamada görün."
+        },
+        {
+          "title": "Rezerve edin",
+          "body": "Paketi anında ödeyerek ayırtın; teslim penceresi başlamadan en geç 2 saat öncesine kadar ücretsiz iptal edebilirsiniz."
+        },
+        {
+          "title": "Gidip alın",
+          "body": "Belirtilen saat aralığında işletmeye gidin, kodunuzu gösterin, paketinizi alın."
+        }
+      ]
+    },
+    "merchantTeaser": {
+      "eyebrow": "İşletmeniz mi var?",
+      "title": "Elinizde kalan, sizin için kayıp; birileri için sürpriz",
+      "body": "kurtar, gün sonunda satamadığınız taze ürünleri gelir haline getirir. Sabit bir paket ücreti ödersiniz, satmazsanız hiç ödemezsiniz.",
+      "bullet1": "Paket başına sabit ücret — cironuzun yüzdesi değil",
+      "bullet2": "Yıllık üyelik peşin alınmaz, kazandığınız paradan mahsup edilir",
+      "bullet3": "Ödemeniz teslimattan itibaren en geç 5 iş günü içinde hesabınızda",
+      "cta": "İşletmeniz için detaylara bakın"
+    },
+    "appDownload": {
+      "eyebrow": "Uygulama",
+      "title": "kurtar uygulamasını indirin",
+      "body": "iOS ve Android uygulamaları yakında mağazalarda. Aşağıdaki bağlantılar yayına alındığında güncel mağaza sayfalarına yönlendirir.",
+      "comingSoonNote": "Uygulama mağaza sayfaları hazırlanıyor."
+    }
+  },
+  "howItWorks": {
+    "meta": {
+      "title": "Nasıl çalışır",
+      "description": "kurtar'da sürpriz paket keşfetmekten teslim almaya kadar tüm süreç: içerik neden önceden bilinmez, iptal ne zamana kadar mümkün, teslim penceresine nasıl yetişirsiniz."
+    },
+    "hero": {
+      "eyebrow": "Baştan sona",
+      "title": "Sürpriz paket almak nasıl işler",
+      "body": "Kısa versiyon: keşfedin, rezerve edin, teslim penceresinde gidip alın. Uzun versiyonu — ve gizlemediğimiz kısıtlamaları — aşağıda."
+    },
+    "steps": {
+      "eyebrow": "Süreç",
+      "title": "Adım adım",
+      "items": [
+        {
+          "title": "1. Yakınınızdaki paketleri keşfedin",
+          "body": "Uygulama konumunuza göre o gün paket yayınlamış fırın, pastane, kafe, restoran ve manavları listeler. Her paketin kategorisi, tahmini değer bandı ve varsa diyet etiketleri (vejetaryen, vegan, glutensiz, laktozsuz) görünür — ama paketin içindeki tam ürün listesi görünmez."
+        },
+        {
+          "title": "2. İçeriğin sürpriz olduğunu bilerek rezerve edin",
+          "body": "Bir sürpriz paketin ne satılacağı, işletmenin o gün elinde kalan taze ürüne bağlıdır — bu yüzden içerik önceden garanti edilmez. Bildiğiniz şey: kategori, yaklaşık değer bandı, alerjen uyarısı ve ödeyeceğiniz fiyat. Rezervasyon anında ödeme alınır."
+        },
+        {
+          "title": "3. Teslim penceresi başlamadan 2 saate kadar ücretsiz iptal edin",
+          "body": "Fikrinizi değiştirirseniz, teslim penceresinin başlangıcından en geç 2 saat öncesine kadar rezervasyonunuzu ücretsiz iptal edebilir, tam iade alabilirsiniz. Bu pencere kapandıktan sonra iptal mümkün değildir — çünkü ürün taze ve bozulabilir gıdadır, kanunen 14 günlük genel cayma hakkı kapsamına girmez (bu istisna Mesafeli Sözleşmeler Yönetmeliği'nde tanımlıdır ve ön bilgilendirme formumuzda ayrıca açıklanır)."
+        },
+        {
+          "title": "4. Teslim penceresinde işletmeye gidin",
+          "body": "Her paketin belirli bir teslim alma saat aralığı vardır. Bu aralığın dışında paketinizi teslim alamazsınız — işletmeler personel ve stoklarını bu pencereye göre planlar."
+        },
+        {
+          "title": "5. Kodunuzu gösterin, paketinizi alın",
+          "body": "Tezgahta uygulamadaki kodunuzu gösterirsiniz, personel teslimi onaylar. İşlem birkaç saniye sürer, ekstra bir cihaz ya da uygulama gerekmez."
+        },
+        {
+          "title": "6. Teslim sonrası değerlendirin",
+          "body": "Paketinizi aldıktan sonra işletmeyi puanlayabilir, etkinizi (kurtardığınız öğün sayısı, önlenen CO2e) profilinizden takip edebilirsiniz."
+        }
+      ]
+    },
+    "receipt": {
+      "title": "Örnek — fırın paketi",
+      "valueLabel": "İçeriğin gerçek değeri",
+      "value": "₺210,00",
+      "priceLabel": "Sürpriz paket fiyatı",
+      "price": "₺69,00",
+      "savedLabel": "Kurtardığınız",
+      "saved": "₺141,00",
+      "note": "Fırın paketleri genellikle ekmek, simit ve diğer günlük fırın ürünlerinden oluşur; kesin içerik işletmeden işletmeye değişir."
+    },
+    "honesty": {
+      "eyebrow": "Gizlemediğimiz kısıtlamalar",
+      "title": "Bilmeniz gereken üç şey",
+      "items": [
+        {
+          "title": "İçerik gerçekten sürpriz",
+          "body": "Hiçbir işletme, paketin içine tam olarak ne koyacağını önceden taahhüt etmez — çünkü gün sonunda elde kalan, günün akışına göre değişir. Kategori ve değer bandını bilirsiniz, ürün listesini bilmezsiniz."
+        },
+        {
+          "title": "Alerjen uyarısı işletmenin sorumluluğunda",
+          "body": "Her paket şablonunda işletmenin girdiği bir alerjen uyarı metni bulunur. Ciddi bir alerjiniz varsa satın almadan önce bu uyarıyı okuyun ve gerekirse işletmeyle doğrudan iletişime geçin."
+        },
+        {
+          "title": "Teslim penceresi kaçırılırsa iade yapılmaz",
+          "body": "No-show durumunda (teslim penceresinde gidip almazsanız) ödemeniz iade edilmez — tıpkı normal bir satın alma gibi işlem görür. Bu kural, işletmelerin sizin için ayırdığı ürünü başka bir müşteriye satamamasının karşılığıdır."
+        }
+      ]
+    },
+    "faqCta": {
+      "title": "İşletme tarafını mı merak ediyorsunuz?",
+      "body": "Bir işletmenin ne kazandığını, ne ödediğini ve ne zaman ödeme aldığını ayrı bir sayfada anlatıyoruz.",
+      "cta": "İşletmeler için kurtar'a bakın"
+    }
+  },
+  "merchants": {
+    "meta": {
+      "title": "İşletmeniz için kurtar — gün sonu fazlasını gelire çevirin",
+      "description": "Satılmazsa ödemezsiniz. Paket başına sabit ücret, yıllık üyelik peşin alınmaz, ödemeniz en geç 5 iş günü içinde hesabınızda. İlk 100 işletmeye kurucu üye avantajı."
+    },
+    "hero": {
+      "eyebrow": "İşletmeniz için kurtar",
+      "title": "Satmazsanız ödemezsiniz",
+      "body": "kurtar, gün sonunda elinizde kalan taze ürünü çöpe gitmeden gelire çevirir. Ne komisyon yüzdesi, ne peşin ücret, ne de karmaşık bir panel — sadece paket başına sabit bir ücret.",
+      "cta": "İşletmenizi ekleyin",
+      "ctaSecondary": "Nasıl çalıştığını okuyun"
+    },
+    "economics": {
+      "eyebrow": "Rakamlar",
+      "title": "Ne kazanır, ne ödersiniz",
+      "body": "Ücretlendirme cironuzun yüzdesi değil, sattığınız paket başına sabit bir tutardır — az satarsanız az, çok satarsanız çok öderisiniz, ama oran hep aynı kalır.",
+      "bagFeeTitle": "Paket başı platform ücreti",
+      "bagFeeValue": "₺25,00 + KDV (%20) = ₺30,00",
+      "bagFeeNote": "Yalnızca satılan paketten kesilir. Yayınladığınız ama satılmayan bir paket için hiçbir ücret ödemezsiniz.",
+      "membershipTitle": "Yıllık üyelik",
+      "membershipValue": "₺1.990,00 + KDV (%20)",
+      "membershipNote": "Peşin tahsil edilmez. İlk hakedişlerinizden otomatik olarak mahsup edilir — \"kazanmadan ödemezsiniz\" ilkesi üyelik ücreti için de geçerlidir.",
+      "payoutTitle": "Ödeme süresi",
+      "payoutValue": "En geç 5 iş günü",
+      "payoutNote": "Bu bir pazarlama vaadi değil, Elektronik Ticaretin Düzenlenmesi Hakkında Kanun kapsamındaki yasal bir yükümlülüktür — teslimattan itibaren en geç 5 iş günü içinde hesabınıza geçer."
+    },
+    "receipt": {
+      "title": "Örnek hakediş — kafe paketi",
+      "grossLabel": "Müşterinin ödediği tutar",
+      "gross": "₺119,00",
+      "feeLabel": "Platform ücreti + KDV",
+      "fee": "− ₺30,00",
+      "withholdingLabel": "Stopaj (%1)",
+      "withholding": "− ₺0,89",
+      "netLabel": "Hesabınıza geçen (en geç 5 iş günü)",
+      "net": "₺88,11",
+      "note": "Örnek hesaplamadır; stopaj oranı ve platform ücreti güncel platform fiyatlandırmasına göre değişebilir. Üyelik mahsubu ve varsa iade kesintisi bu örnekte yoktur."
+    },
+    "founding": {
+      "eyebrow": "İlk 100 işletmeye özel",
+      "title": "Kurucu üye avantajı",
+      "body": "İlk 100 işletme için ilk yıl üyelik ücretsizdir ve paket başı ücretiniz kalıcı olarak daha düşük bir seviyede kilitlenir.",
+      "bullet1": "İlk yıl üyelik ücreti: ₺0",
+      "bullet2": "Paket başı ücret ₺19,00 + KDV olarak kilitlenir (standart ₺25,00 + KDV yerine)",
+      "bullet3": "Sınırlı sayıda yer — başvurular değerlendirme sırasına göre kabul edilir",
+      "cta": "Kurucu üye olarak başvurun"
+    },
+    "howItWorksForMerchants": {
+      "eyebrow": "İşletme tarafında",
+      "title": "Başvurudan ilk satışa",
+      "steps": [
+        {
+          "title": "Başvurun",
+          "body": "Vergi kimlik numaranız ve IBAN'ınızla birkaç dakikada başvuru formunu doldurun."
+        },
+        {
+          "title": "Onay bekleyin",
+          "body": "Başvurunuzu inceleriz; onaylandığında işletme panelinize erişirsiniz."
+        },
+        {
+          "title": "Paket şablonunuzu oluşturun",
+          "body": "Kategori, değer bandı, fiyat ve zorunlu alerjen uyarınızı bir kez tanımlayın; her gün yeniden yazmanıza gerek kalmaz."
+        },
+        {
+          "title": "Günlük paketinizi yayınlayın",
+          "body": "Her gün ne kadar paket, hangi teslim penceresinde satışa çıkacağını belirleyin. Tükendiğinde otomatik olarak kapanır."
+        },
+        {
+          "title": "Tezgahta teslim edin",
+          "body": "Müşteri geldiğinde kodunu okutursunuz, teslim onaylanır. Ekstra donanım gerekmez."
+        }
+      ]
+    },
+    "faq": {
+      "eyebrow": "Sorular",
+      "title": "Bir esnafın soracağı sorular",
+      "items": [
+        {
+          "question": "Bu, tam fiyatlı satışlarımı yiyip bitirir mi?",
+          "answer": "Sürpriz paketler yalnızca o gün için satışa çıkardığınız, aksi halde elinizde kalıp çöpe gidecek fazla ürünü kapsar — ne zaman, ne kadar paket yayınlayacağınızı siz belirlersiniz. Tam fiyatlı ürünlerinizi paket olarak sunmak zorunda değilsiniz; sistem sizi buna zorlamaz."
+        },
+        {
+          "question": "Ne kadar iş yükü getirir?",
+          "answer": "Paket şablonunu bir kez oluşturduktan sonra günlük iş, o günkü miktarı ve teslim saatini girmekten ibarettir. Teslimde yapılan tek işlem, müşterinin kodunu okutmaktır — ekstra donanım veya eğitim gerektirmez."
+        },
+        {
+          "question": "Ne zaman ödeme alırım?",
+          "answer": "Teslimattan itibaren en geç 5 iş günü içinde. Bu, Elektronik Ticaretin Düzenlenmesi Hakkında Kanun kapsamındaki yasal bir yükümlülüktür — bir pazarlama vaadi değil, uyulması zorunlu bir süredir."
+        },
+        {
+          "question": "Paket satılmazsa ne olur?",
+          "answer": "Hiçbir ücret ödemezsiniz. Platform ücreti yalnızca gerçekten satılan ve teslim edilen paketten kesilir."
+        },
+        {
+          "question": "Üyelik ücretini ne zaman ödüyorum?",
+          "answer": "Hiçbir zaman peşin ödemezsiniz. Yıllık üyelik bedeli, sattığınız paketlerden elde ettiğiniz hakedişten otomatik olarak mahsup edilir — kazanmadan ödemezsiniz."
+        },
+        {
+          "question": "Vergi tarafında ne değişir?",
+          "answer": "Müşteriye verilen fişi/faturayı siz kesersiniz (ÖKC veya e-Arşiv), tıpkı bugün yaptığınız gibi. Platform size ayrıca kestiği komisyon hizmet bedeli için e-fatura düzenler; hakedişinizden ayrıca %1 stopaj kesintisi yapılır — bu, aracı hizmet sağlayıcıları üzerinden yapılan ödemeler için 2025'ten beri geçerli yasal bir kesintidir."
+        },
+        {
+          "question": "Süresi geçmiş ürün satabilir miyim?",
+          "answer": "Hayır. Son tüketim tarihi geçmiş ürünlerin satışı kesinlikle yasaktır ve başvuru sırasında bu konuda taahhüt imzalarsınız. kurtar yalnızca gün içinde üretilmiş, hâlâ taze ama o gün satılamayacak fazlayı kapsar."
+        },
+        {
+          "question": "Müşteri şikayet ederse ne olur?",
+          "answer": "Şikayetler işletme panelinizden size iletilir ve yasal olarak en geç 15 gün içinde sonuçlandırılması gerekir; kurtar bu süreci takip eder ve gerekirse müdahale eder."
+        }
+      ]
+    },
+    "finalCta": {
+      "title": "İlk paketinizi yayınlamaya hazır mısınız?",
+      "body": "Başvuru birkaç dakika sürer. Kurucu üye kontenjanı doluncaya kadar avantajlı şartlar geçerlidir.",
+      "cta": "Şimdi başvurun"
+    }
+  },
+  "offerBridge": {
+    "title": "kurtar'da paylaşılan bir paket",
+    "body": "Bu bağlantı kurtar uygulamasındaki bir sürpriz pakete ait. Uygulama telefonunuzda kuruluysa birazdan otomatik olarak açılacak.",
+    "openingApp": "Uygulama açılıyor…",
+    "noApp": "Uygulama açılmadıysa aşağıdan indirebilirsiniz.",
+    "downloadCta": "kurtar'ı indirin",
+    "webCta": "Web'de göz atmaya devam edin"
+  },
+  "blog": {
+    "meta": {
+      "title": "Blog",
+      "description": "Türkiye'de gıda israfı, sürpriz paket ekonomisi ve kurtar'ın perde arkası üzerine yazılar."
+    },
+    "hero": {
+      "title": "Blog",
+      "body": "Gıda israfı, sürpriz paket ekonomisi ve Türkiye'deki durum üzerine yazılar."
+    },
+    "empty": "Henüz yazı yok."
+  },
+  "notFound": {
+    "title": "Bu sayfa bulunamadı",
+    "body": "Aradığınız sayfa taşınmış ya da hiç var olmamış olabilir.",
+    "cta": "Anasayfaya dön"
+  },
+  "legalIndex": {
+    "meta": {
+      "title": "Yasal metinler",
+      "description": "kurtar'ın aracılık sözleşmesi, mesafeli satış sözleşmesi, ön bilgilendirme formu, KVKK aydınlatma metni ve çerez politikası."
+    },
+    "title": "Yasal metinler",
+    "body": "kurtar'ın işletmeler ve tüketicilerle olan ilişkisini düzenleyen sözleşme ve bilgilendirme metinleri."
+  },
+  "programmatic": {
+    "breadcrumbLabel": "İçinde bulunduğunuz konum",
+    "breadcrumbHome": "Anasayfa",
+    "meta": {
+      "titleTemplate": "{category} sürpriz paket — {city}",
+      "descriptionTemplate": "{city} {districts} bölgesinde {categoryLower} sürpriz paketlerini keşfedin, gün sonu fazlasını üçte bir fiyatına kurtarın."
+    },
+    "otherCategoriesTitle": "{city}'de diğer kategoriler",
+    "otherCitiesTitle": "Diğer şehirler",
+    "cta": "kurtar uygulamasında {city} {category} paketlerine bakın"
+  }
+}

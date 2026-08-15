@@ -1,0 +1,344 @@
+{
+  "common": {
+    "skipToContent": "Skip to content",
+    "brand": "kurtar",
+    "backHome": "Back to home",
+    "readMore": "Read more",
+    "minuteRead": "{minutes} min read"
+  },
+  "nav": {
+    "mainLabel": "Main menu",
+    "howItWorks": "How it works",
+    "forMerchants": "Running a business?",
+    "blog": "Blog",
+    "download": "Download the app"
+  },
+  "footer": {
+    "tagline": "From the bakery down the street to the restaurant on the corner — rescue tonight's leftover food at a third of the price.",
+    "productHeading": "Product",
+    "legalHeading": "Legal",
+    "companyHeading": "kurtar",
+    "languageHeading": "Language",
+    "links": {
+      "home": "Home",
+      "howItWorks": "How it works",
+      "forMerchants": "Running a business?",
+      "blog": "Blog"
+    },
+    "legalLinks": {
+      "intermediation": "Intermediation agreement",
+      "distanceSelling": "Distance selling agreement",
+      "preInfo": "Pre-contract information form",
+      "kvkk": "Privacy notice (KVKK)",
+      "cookies": "Cookie policy"
+    },
+    "rights": "All rights reserved."
+  },
+  "localeSwitcher": {
+    "label": "Choose language"
+  },
+  "home": {
+    "meta": {
+      "title": "kurtar — rescue end-of-day surprise bags, cut food waste",
+      "description": "Bakeries, cafés, restaurants, and greengrocers across Istanbul sell today's unsold food as a surprise bag at a third of the price. The contents are a surprise; the savings aren't."
+    },
+    "hero": {
+      "eyebrow": "Rescue it before closing",
+      "title": "There's still something worth rescuing before the day ends",
+      "body": "From the neighbourhood bakery to the restaurant on the corner, businesses sell what's left over at closing time as a surprise bag — at a third of its price. You don't know exactly what's inside; you do know what you're saving.",
+      "ctaConsumer": "Download the app",
+      "ctaMerchant": "List your business",
+      "receiptTitle": "Example surprise bag — café",
+      "receiptValueLabel": "Real value of the contents",
+      "receiptValue": "₺350.00",
+      "receiptPriceLabel": "Surprise bag price",
+      "receiptPrice": "₺119.00",
+      "receiptSavedLabel": "You save",
+      "receiptSaved": "₺231.00",
+      "receiptNote": "Prices are for an example café bag; every business sets its own price."
+    },
+    "impact": {
+      "eyebrow": "Rescued together",
+      "title": "Platform-wide impact",
+      "body": "The numbers below are live and update every time a surprise bag is picked up.",
+      "mealsSaved": "Bags rescued",
+      "co2eAvoided": "CO2e avoided",
+      "moneySaved": "Saved by consumers",
+      "unavailableTitle": "The live counter isn't available right now",
+      "unavailableBody": "Impact data couldn't be loaded at the moment — the rest of this page still works normally. Try again shortly."
+    },
+    "categories": {
+      "eyebrow": "Who rescues what",
+      "title": "Five kinds of businesses, five kinds of surprises",
+      "body": "Every category runs on its own rhythm — a bakery's surprise is late-afternoon bread and simit, a pâtisserie's is whatever cake slice is left at closing. Prices follow accordingly."
+    },
+    "howItWorks": {
+      "eyebrow": "In three steps",
+      "title": "How it works",
+      "cta": "Read the full process",
+      "steps": [
+        {
+          "title": "Discover",
+          "body": "See today's surprise bags from bakeries, cafés, restaurants, and greengrocers near you, right in the app."
+        },
+        {
+          "title": "Reserve",
+          "body": "Pay to reserve the bag on the spot; you can cancel for free up to 2 hours before the pickup window starts."
+        },
+        {
+          "title": "Pick it up",
+          "body": "Show up during the stated time window, show your code, and collect your bag."
+        }
+      ]
+    },
+    "merchantTeaser": {
+      "eyebrow": "Running a business?",
+      "title": "What's a loss for you is a surprise for someone else",
+      "body": "kurtar turns your end-of-day surplus into revenue instead of waste. You pay a fixed fee per bag — and nothing at all if it doesn't sell.",
+      "bullet1": "A fixed fee per bag — never a percentage of your revenue",
+      "bullet2": "Annual membership is never charged upfront; it's offset from what you earn",
+      "bullet3": "Payout lands in your account within 5 business days of pickup, at the latest",
+      "cta": "See the details for your business"
+    },
+    "appDownload": {
+      "eyebrow": "App",
+      "title": "Download the kurtar app",
+      "body": "iOS and Android apps are coming soon to the stores. The links below will point to the live store listings once they're published.",
+      "comingSoonNote": "App store listings are being prepared."
+    }
+  },
+  "howItWorks": {
+    "meta": {
+      "title": "How it works",
+      "description": "The full kurtar flow, from discovering a surprise bag to picking it up: why contents aren't known in advance, how late you can cancel, and how pickup windows work."
+    },
+    "hero": {
+      "eyebrow": "Start to finish",
+      "title": "How buying a surprise bag actually works",
+      "body": "Short version: discover, reserve, pick up during the window. The long version — including the constraints we don't hide — is below."
+    },
+    "steps": {
+      "eyebrow": "Process",
+      "title": "Step by step",
+      "items": [
+        {
+          "title": "1. Discover bags near you",
+          "body": "The app lists bakeries, pâtisseries, cafés, restaurants, and greengrocers near your location that have published a bag today. You'll see each bag's category, estimated value band, and any diet flags (vegetarian, vegan, gluten-free, lactose-free) — but not the exact list of items inside."
+        },
+        {
+          "title": "2. Reserve knowing the contents are a surprise",
+          "body": "What ends up in a surprise bag depends on what a business has left over that day, so the exact contents are never guaranteed in advance. What you do know: the category, an approximate value band, an allergen warning, and the price you'll pay. Payment is taken at the moment you reserve."
+        },
+        {
+          "title": "3. Cancel for free up to 2 hours before pickup",
+          "body": "Changed your mind? You can cancel your reservation for a full refund up to 2 hours before the pickup window starts. After that, cancellation isn't possible — because the product is fresh, perishable food, which by law falls outside the general 14-day right of withdrawal (this exception is defined in Turkey's Distance Contracts Regulation and explained again in our pre-contract information form)."
+        },
+        {
+          "title": "4. Show up during the pickup window",
+          "body": "Every bag has a specific pickup time window. You cannot collect your bag outside that window — businesses plan their staff and stock around it."
+        },
+        {
+          "title": "5. Show your code, collect your bag",
+          "body": "At the counter, you show the code from the app and staff confirm the handover. It takes seconds and needs no extra device or app."
+        },
+        {
+          "title": "6. Rate it afterwards",
+          "body": "Once you've picked up your bag, you can rate the business and track your own impact (bags rescued, CO2e avoided) from your profile."
+        }
+      ]
+    },
+    "receipt": {
+      "title": "Example — bakery bag",
+      "valueLabel": "Real value of the contents",
+      "value": "₺210.00",
+      "priceLabel": "Surprise bag price",
+      "price": "₺69.00",
+      "savedLabel": "You save",
+      "saved": "₺141.00",
+      "note": "Bakery bags typically include bread, simit, and other daily bakery items; exact contents vary by business."
+    },
+    "honesty": {
+      "eyebrow": "The constraints we don't hide",
+      "title": "Three things worth knowing",
+      "items": [
+        {
+          "title": "The contents really are a surprise",
+          "body": "No business commits in advance to exactly what goes into a bag — because what's left at closing time depends on how the day went. You know the category and value band; you don't know the item list."
+        },
+        {
+          "title": "The allergen warning is the business's responsibility",
+          "body": "Every bag template carries an allergen warning the business itself writes. If you have a serious allergy, read it before buying and contact the business directly if you need to."
+        },
+        {
+          "title": "Missing the pickup window means no refund",
+          "body": "If you don't show up during the pickup window (a no-show), your payment isn't refunded — it's treated like any completed purchase. This is what lets a business set that bag aside for you without being able to sell it to someone else."
+        }
+      ]
+    },
+    "faqCta": {
+      "title": "Curious about the business side?",
+      "body": "We cover what a business earns, what it pays, and when it gets paid on a separate page.",
+      "cta": "See kurtar for businesses"
+    }
+  },
+  "merchants": {
+    "meta": {
+      "title": "kurtar for your business — turn end-of-day surplus into revenue",
+      "description": "You pay nothing if it doesn't sell. A fixed fee per bag, annual membership never charged upfront, payout within 5 business days. Founding-member terms for the first 100 businesses."
+    },
+    "hero": {
+      "eyebrow": "kurtar for your business",
+      "title": "If it doesn't sell, you don't pay",
+      "body": "kurtar turns the fresh food you'd otherwise throw away at closing time into revenue. No percentage commission, no upfront fee, no complicated dashboard — just a fixed fee per bag sold.",
+      "cta": "List your business",
+      "ctaSecondary": "Read how it works"
+    },
+    "economics": {
+      "eyebrow": "The numbers",
+      "title": "What you earn, what you pay",
+      "body": "Pricing is a fixed amount per bag sold, not a percentage of your revenue — sell fewer bags and you pay less, sell more and you pay more, but the rate never moves.",
+      "bagFeeTitle": "Platform fee per bag",
+      "bagFeeValue": "₺25.00 + VAT (20%) = ₺30.00",
+      "bagFeeNote": "Charged only on a bag that actually sells. A bag you publish but that doesn't sell costs you nothing.",
+      "membershipTitle": "Annual membership",
+      "membershipValue": "₺1,990.00 + VAT (20%)",
+      "membershipNote": "Never charged upfront. It's offset automatically from your first earnings — \"you don't pay before you earn\" applies to the membership fee too.",
+      "payoutTitle": "Payout time",
+      "payoutValue": "Within 5 business days, at the latest",
+      "payoutNote": "This isn't a marketing promise — it's a legal obligation under Turkey's e-commerce regulation (ETAHS): funds must reach your account within 5 business days of pickup, at the latest."
+    },
+    "receipt": {
+      "title": "Example payout — café bag",
+      "grossLabel": "What the customer paid",
+      "gross": "₺119.00",
+      "feeLabel": "Platform fee + VAT",
+      "fee": "− ₺30.00",
+      "withholdingLabel": "Withholding tax (1%)",
+      "withholding": "− ₺0.89",
+      "netLabel": "You receive (within 5 business days)",
+      "net": "₺88.11",
+      "note": "Worked example only; the withholding rate and platform fee follow current platform pricing. This example excludes any membership offset or refund clawback."
+    },
+    "founding": {
+      "eyebrow": "For the first 100 businesses",
+      "title": "Founding-member terms",
+      "body": "The first 100 businesses get their first year of membership free, and their per-bag fee locked at a lower rate permanently.",
+      "bullet1": "First-year membership fee: ₺0",
+      "bullet2": "Per-bag fee locked at ₺19.00 + VAT (instead of the standard ₺25.00 + VAT)",
+      "bullet3": "Limited spots — applications are accepted in order of review",
+      "cta": "Apply as a founding member"
+    },
+    "howItWorksForMerchants": {
+      "eyebrow": "On the business side",
+      "title": "From application to first sale",
+      "steps": [
+        {
+          "title": "Apply",
+          "body": "Fill out the application form in a few minutes with your tax ID and IBAN."
+        },
+        {
+          "title": "Get reviewed",
+          "body": "We review your application; once approved, you get access to your business panel."
+        },
+        {
+          "title": "Set up your bag template",
+          "body": "Define category, value band, price, and your required allergen warning once — no need to re-enter it every day."
+        },
+        {
+          "title": "Publish today's bag",
+          "body": "Set how many bags and which pickup window go live each day. It closes automatically once sold out."
+        },
+        {
+          "title": "Hand it over at the counter",
+          "body": "When a customer arrives, you scan their code and confirm the handover. No extra hardware needed."
+        }
+      ]
+    },
+    "faq": {
+      "eyebrow": "Questions",
+      "title": "What a shop owner actually asks",
+      "items": [
+        {
+          "question": "Will this cannibalise my full-price sales?",
+          "answer": "Surprise bags only cover the surplus you'd otherwise throw away that day — you decide when and how many bags to publish. You're never required to put full-price items into a bag; the system doesn't force that."
+        },
+        {
+          "question": "How much extra work is it?",
+          "answer": "Once you've set up your bag template, the daily task is just entering that day's quantity and pickup time. At handover, the only step is scanning the customer's code — no extra hardware or training required."
+        },
+        {
+          "question": "When do I get paid?",
+          "answer": "Within 5 business days of pickup, at the latest. This is a legal obligation under Turkey's e-commerce regulation (ETAHS) — not a marketing promise, a mandatory deadline."
+        },
+        {
+          "question": "What happens if a bag doesn't sell?",
+          "answer": "You pay nothing. The platform fee is only charged on a bag that actually sells and gets picked up."
+        },
+        {
+          "question": "When do I pay the membership fee?",
+          "answer": "You never pay it upfront. The annual fee is automatically offset from what you earn selling bags — you don't pay before you earn."
+        },
+        {
+          "question": "What changes on the tax side?",
+          "answer": "You still issue the receipt/invoice to the customer yourself (via your cash register or e-Archive), exactly as you do today. The platform separately issues you a commission e-invoice for its own service fee, and withholds 1% from your payout — a mandatory withholding on payments made through intermediary service providers, in effect since 2025."
+        },
+        {
+          "question": "Can I sell food past its expiry date?",
+          "answer": "No. Selling food past its use-by date is strictly prohibited, and you commit to this explicitly when you apply. kurtar only covers surplus made that day — still fresh, just unsold."
+        },
+        {
+          "question": "What happens if a customer complains?",
+          "answer": "Complaints reach you through your business panel and must be resolved within 15 days by law; kurtar tracks the deadline and steps in if needed."
+        }
+      ]
+    },
+    "finalCta": {
+      "title": "Ready to publish your first bag?",
+      "body": "The application takes a few minutes. Founding-member terms apply until the first 100 spots are filled.",
+      "cta": "Apply now"
+    }
+  },
+  "offerBridge": {
+    "title": "A bag shared from kurtar",
+    "body": "This link points to a surprise bag in the kurtar app. If the app is installed on your phone, it will open automatically in a moment.",
+    "openingApp": "Opening the app…",
+    "noApp": "If the app didn't open, download it below.",
+    "downloadCta": "Get kurtar",
+    "webCta": "Keep browsing on the web"
+  },
+  "blog": {
+    "meta": {
+      "title": "Blog",
+      "description": "Writing on food waste in Turkey, the surplus-bag economy, and what happens behind the scenes at kurtar."
+    },
+    "hero": {
+      "title": "Blog",
+      "body": "Writing on food waste, the surplus-bag economy, and the state of things in Turkey."
+    },
+    "empty": "No posts yet."
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "The page you're looking for may have moved, or never existed.",
+    "cta": "Back to home"
+  },
+  "legalIndex": {
+    "meta": {
+      "title": "Legal",
+      "description": "kurtar's intermediation agreement, distance selling agreement, pre-contract information form, KVKK privacy notice, and cookie policy."
+    },
+    "title": "Legal",
+    "body": "The agreements and disclosures that govern kurtar's relationship with businesses and consumers."
+  },
+  "programmatic": {
+    "breadcrumbLabel": "Breadcrumb",
+    "breadcrumbHome": "Home",
+    "meta": {
+      "titleTemplate": "{category} surprise bags — {city}",
+      "descriptionTemplate": "Discover {categoryLower} surprise bags in {city} {districts} — rescue end-of-day surplus at a third of the price."
+    },
+    "otherCategoriesTitle": "Other categories in {city}",
+    "otherCitiesTitle": "Other cities",
+    "cta": "Browse {city} {category} bags in the kurtar app"
+  }
+}
