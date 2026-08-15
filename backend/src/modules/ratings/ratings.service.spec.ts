@@ -28,6 +28,10 @@ function buildFakeTx(overrides: Record<string, any> = {}) {
     },
     store: { update: jest.fn(), ...overrides.store },
     auditLog: { create: jest.fn(), ...overrides.auditLog },
+    // [Fix round, Critical 2] recomputeStoreAggregate's row lock —
+    // exercised as a tagged-template call, which a plain jest.fn() mock
+    // handles identically to a normal call.
+    $queryRaw: jest.fn().mockResolvedValue([{ id: "s1" }]),
   };
 }
 
@@ -234,6 +238,14 @@ describe("RatingsService moderation", () => {
         entityId: "r1",
       }),
     });
+    // [Fix round, Critical 2] the store row is locked BEFORE the
+    // aggregate is read — order matters (a lock taken after the read
+    // would not serialize anything).
+    expect(tx.$queryRaw).toHaveBeenCalled();
+    const lockOrder = (tx.$queryRaw as jest.Mock).mock.invocationCallOrder[0];
+    const aggregateOrder = (tx.rating.aggregate as jest.Mock).mock
+      .invocationCallOrder[0];
+    expect(lockOrder).toBeLessThan(aggregateOrder);
   });
 
   it("adminDelete removes the row and recomputes the aggregate", async () => {

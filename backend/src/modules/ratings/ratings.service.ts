@@ -110,6 +110,27 @@ export class RatingsService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        // [Fix round, Critical 2 — deadlock found while testing the fix]
+        // When this create will touch the aggregate, the store row MUST
+        // be locked BEFORE the insert, not after. `tx.rating.create`
+        // below inserts a row whose `storeId` FK makes Postgres take a
+        // SHARE lock on the referenced store row as part of the FK
+        // check; recomputeStoreAggregate's own `FOR UPDATE` (EXCLUSIVE)
+        // taken AFTERWARD in the same transaction then races two
+        // concurrent creates for the SAME store into a classic lock-
+        // upgrade deadlock (TX1 holds a SHARE lock from its own insert
+        // and waits to upgrade to EXCLUSIVE; TX2 does the same; neither
+        // can proceed — reproduced live via 8-way concurrent creates in
+        // ratings.realdb.spec.ts before this fix, a real Postgres
+        // `40P01 deadlock detected`). Locking FIRST means only one
+        // transaction ever holds any lock on the row at a time — a
+        // transaction re-acquiring `FOR UPDATE` on a row it already
+        // holds (recomputeStoreAggregate's own internal lock, below) is
+        // an instant no-op against itself.
+        if (moderationStatus === "APPROVED") {
+          await tx.$queryRaw`SELECT "id" FROM "stores" WHERE "id" = ${reservation.storeId} FOR UPDATE`;
+        }
+
         const rating = await tx.rating.create({
           data: {
             reservationId,
@@ -304,11 +325,43 @@ export class RatingsService {
    * columns directly). Called inside the SAME transaction as the write
    * that changed APPROVED membership, so the two can never observably
    * disagree.
+   *
+   * [Fix round, Critical 2] `SELECT ... FOR UPDATE` on the store row is
+   * the FIRST statement here, before the aggregate read — without it,
+   * two concurrent recomputes for the SAME store race under Prisma's
+   * default READ COMMITTED isolation: TX1 creates its rating and
+   * aggregates (sees only its own row, since TX2's insert hasn't
+   * committed yet); TX2 does the same concurrently (sees only ITS OWN
+   * row); whichever commits last overwrites the store with a count that
+   * only ever reflects ONE of the two ratings — a genuine, permanent
+   * undercount (self-healing only the next time this store is next
+   * mutated, which could be weeks later). Locking the store row first
+   * serializes concurrent recomputes for the SAME store: the second
+   * transaction's lock acquisition blocks until the first commits, so
+   * its subsequent aggregate re-reads see the first's now-committed row
+   * too — exactly the "combined with the row lock" requirement
+   * settlement-batch-builder.service.ts's recomputeBatch documents (and
+   * implements via the identical `FOR UPDATE` shape) for the same
+   * recompute-from-scratch pattern. Proven under genuine concurrency in
+   * ratings.realdb.spec.ts's "[Critical 2]" scenario.
+   *
+   * CALLER WARNING: if a caller's OWN transaction also INSERTS a Rating
+   * row referencing this same storeId (create() does — the FK check on
+   * that insert takes a SHARE lock on the store row), that insert MUST
+   * happen AFTER this method's lock is acquired, never before — see
+   * create()'s own comment for the lock-upgrade deadlock this avoids
+   * (reproduced live, a real Postgres 40P01, before that ordering fix).
+   * moderate()/adminDelete() have no such hazard (an UPDATE that leaves
+   * storeId unchanged, and a DELETE of the child, never take a lock on
+   * the parent), so calling this method as their very own first
+   * storeId-touching statement is always safe.
    */
   private async recomputeStoreAggregate(
     tx: Prisma.TransactionClient,
     storeId: string,
   ): Promise<void> {
+    await tx.$queryRaw`SELECT "id" FROM "stores" WHERE "id" = ${storeId} FOR UPDATE`;
+
     const agg = await tx.rating.aggregate({
       where: { storeId, moderationStatus: "APPROVED" },
       _avg: { overallStars: true },

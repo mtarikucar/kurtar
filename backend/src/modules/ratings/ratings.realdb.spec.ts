@@ -312,4 +312,77 @@ d("RatingsService — real DB concurrency + aggregate consistency", () => {
       );
     }
   });
+
+  it("[Critical 2] N genuinely concurrent rating creates for the SAME store converge to the true count/average — the row lock closes the READ COMMITTED race", async () => {
+    const { merchant, store } = await seedStoreChain(prisma);
+    const CONCURRENCY = 8;
+    const users = await Promise.all(
+      Array.from({ length: CONCURRENCY }, () => seedUser(prisma)),
+    );
+    const reservations = await Promise.all(
+      users.map((u) => seedRedeemedReservation(prisma, store.id, u.id)),
+    );
+    const service = new RatingsService(prisma as any);
+
+    // Every rating auto-approves (no comment) — without the row lock in
+    // recomputeStoreAggregate, this is EXACTLY the race the review found:
+    // each of the CONCURRENCY transactions aggregates under READ
+    // COMMITTED before the others' inserts are visible to it, so
+    // whichever commits last silently overwrites the store with an
+    // undercount instead of the true CONCURRENCY.
+    const stars = [5, 4, 3, 5, 2, 4, 5, 3].slice(0, CONCURRENCY);
+    try {
+      const results = await Promise.all(
+        users.map((u, i) =>
+          service.create(u.id, reservations[i].reservation.id, {
+            overallStars: stars[i],
+          }),
+        ),
+      );
+      expect(results).toHaveLength(CONCURRENCY);
+
+      const finalStore = await prisma.store.findUniqueOrThrow({
+        where: { id: store.id },
+      });
+      const expectedAvg = stars.reduce((sum, s) => sum + s, 0) / stars.length;
+      expect(finalStore.ratingCount).toBe(CONCURRENCY);
+      expect(finalStore.avgStars).toBeCloseTo(expectedAvg, 10);
+
+      // Cross-check against a fresh, independent recomputation — the
+      // denormalized value and a from-scratch aggregate must agree.
+      const agg = await prisma.rating.aggregate({
+        where: { storeId: store.id, moderationStatus: "APPROVED" },
+        _avg: { overallStars: true },
+        _count: { _all: true },
+      });
+      expect(finalStore.ratingCount).toBe(agg._count._all);
+      expect(finalStore.avgStars).toBeCloseTo(agg._avg.overallStars ?? 0, 10);
+    } finally {
+      await safeCleanup("critical2: ratings", () =>
+        prisma.rating.deleteMany({ where: { storeId: store.id } }),
+      );
+      await safeCleanup("critical2: reservations", () =>
+        prisma.reservation.deleteMany({
+          where: { id: { in: reservations.map((r) => r.reservation.id) } },
+        }),
+      );
+      await safeCleanup("critical2: offers", () =>
+        prisma.dailyOffer.deleteMany({ where: { storeId: store.id } }),
+      );
+      await safeCleanup("critical2: bagTemplate", () =>
+        prisma.bagTemplate.deleteMany({ where: { storeId: store.id } }),
+      );
+      await safeCleanup("critical2: store", () =>
+        prisma.store.delete({ where: { id: store.id } }),
+      );
+      await safeCleanup("critical2: merchant", () =>
+        prisma.merchant.delete({ where: { id: merchant.id } }),
+      );
+      await safeCleanup("critical2: users", () =>
+        prisma.user.deleteMany({
+          where: { id: { in: users.map((u) => u.id) } },
+        }),
+      );
+    }
+  }, 20_000);
 });
