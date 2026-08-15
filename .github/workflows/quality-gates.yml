@@ -396,6 +396,134 @@ jobs:
           echo "docs/openapi.json matches the current source — no drift."
 
   # -----------------------------------------------------------------
+  # [Task 9.5] The four frontend apps (apps/merchant-web, apps/admin-web,
+  # apps/consumer, landing) + the two shared packages (packages/api-client,
+  # packages/ui-tokens). Needs no database/Redis service — @kurtar/
+  # api-client's generated types come from the committed docs/openapi.json
+  # file, not a live server, so this job stays fast and fully independent
+  # of the backend-realdb job above.
+  #
+  # Build order matters: the two shared packages ship COMPILED dist/
+  # output (see each package.json's `main`/`types` fields) — every app
+  # imports that dist/ output, not their TS source, so both packages must
+  # be built before any app is typechecked or built.
+  # -----------------------------------------------------------------
+  frontend-quality:
+    name: Frontend lint + typecheck + unit tests + builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies (every workspace)
+        run: npm ci --no-audit --no-fund
+
+      - name: api-client generated types <-> docs/openapi.json drift
+        run: |
+          set -euo pipefail
+          cp packages/api-client/src/generated/openapi-types.ts /tmp/openapi-types.committed.ts
+          npm run generate -w @kurtar/api-client
+          if ! diff -u /tmp/openapi-types.committed.ts packages/api-client/src/generated/openapi-types.ts; then
+            echo "::error::packages/api-client/src/generated/openapi-types.ts is out of date — run 'npm run generate -w @kurtar/api-client' and commit the result."
+            exit 1
+          fi
+          echo "Generated types match docs/openapi.json — no drift."
+
+      - name: Build @kurtar/ui-tokens
+        run: npm run build -w @kurtar/ui-tokens
+
+      - name: Build @kurtar/api-client
+        run: npm run build -w @kurtar/api-client
+
+      - name: Lint (every workspace)
+        run: |
+          set -euo pipefail
+          npm run lint -w @kurtar/ui-tokens
+          npm run lint -w @kurtar/api-client
+          npm run lint -w merchant-web
+          npm run lint -w admin-web
+          npm run lint -w landing
+          npm run lint -w consumer
+
+      - name: Typecheck (every workspace)
+        run: |
+          set -euo pipefail
+          npm run typecheck -w @kurtar/ui-tokens
+          npm run typecheck -w @kurtar/api-client
+          npm run typecheck -w merchant-web
+          npm run typecheck -w admin-web
+          npm run typecheck -w landing
+          npm run typecheck -w consumer
+
+      - name: Unit tests (@kurtar/api-client — incl. the single-flight refresh test)
+        run: npm test -w @kurtar/api-client
+
+      - name: Production build — merchant-web (vite build)
+        run: npm run build -w merchant-web
+
+      - name: Production build — admin-web (vite build)
+        run: npm run build -w admin-web
+
+      - name: Production build — landing (next build)
+        run: npm run build -w landing
+
+      # Expo gets expo-doctor + a typecheck (already run above), not a
+      # native build — this job has no Xcode/Android SDK, and a native
+      # build is a separate concern (EAS Build) from source-level quality.
+      #
+      # Mirrors migrations-parity's "one documented, allowed exception"
+      # pattern above: expo-doctor has exactly TWO checks that can never
+      # pass in this monorepo, both structural and both harmless, not
+      # defects —
+      #   1. "Metro config" flags metro.config.js's
+      #      resolver.disableHierarchicalLookup override as risky. It's
+      #      the fix, not a bug: Expo's own documented monorepo setup
+      #      (https://docs.expo.dev/guides/monorepos/) requires exactly
+      #      this override so Metro can find @kurtar/api-client and
+      #      @kurtar/ui-tokens, which npm workspaces hoists/symlinks to
+      #      the repo root's node_modules, not this app's own.
+      #   2. "Duplicate dependencies" flags react/react-dom appearing at
+      #      two versions in the tree — apps/merchant-web and apps/
+      #      admin-web are deliberately pinned to React 18 (brief
+      #      requirement), apps/consumer needs React 19 for its Expo SDK.
+      #      The two never share a bundle or a native build target (npm
+      #      already nests apps/consumer's own React 19 copy precisely
+      #      because of this conflict), so this is a benign cross-
+      #      workspace split, not an actual native-link collision.
+      # Any OTHER finding fails this step loudly — only these two
+      # specific, named checks are ever excused.
+      - name: Expo — expo-doctor (apps/consumer)
+        working-directory: apps/consumer
+        run: |
+          set -euo pipefail
+          set +e
+          output=$(npx expo-doctor 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "expo-doctor: all checks passed."
+            exit 0
+          fi
+          failed_count=$(printf '%s\n' "$output" | grep -c '^✖ ')
+          if [ "$failed_count" -eq 2 ] \
+            && printf '%s\n' "$output" | grep -q 'Check for issues with Metro config' \
+            && printf '%s\n' "$output" | grep -q 'Check that no duplicate dependencies are installed'; then
+            echo "Only the two known, documented, cross-workspace findings are present — treating as pass."
+            exit 0
+          fi
+          echo "::error::expo-doctor reported unexpected issues beyond the two documented exceptions above."
+          exit 1
+
+  # -----------------------------------------------------------------
   # Project hard rule: zero AI/Claude traces in commit messages, ever.
   # Greps the commit range this workflow run covers (PR base..head, or
   # the pushed range on a plain push) rather than any single commit.

@@ -4,6 +4,9 @@ node_modules/
 # Build output
 dist/
 coverage/
+.next/
+.expo/
+*.tsbuildinfo
 
 # Environment variables — never commit real env files, only *.example
 .env

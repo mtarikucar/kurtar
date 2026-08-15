@@ -13,16 +13,30 @@
 # ever need to smoke-test this file locally while the dev stack is also
 # up, stop the dev stack first (`docker compose -f ../ops/docker-compose.
 # yml down`) — they WILL collide on 4754/4755 otherwise):
-#   4750 -> api    (host -> container 4750; reverse-proxied by host nginx
-#                    or a Cloudflare tunnel — not this compose file's job)
-#   4754 -> db     (postgis, localhost-bound)
-#   4755 -> redis  (localhost-bound)
+#   4750 -> api           (host -> container 4750; reverse-proxied by host
+#                           nginx or a Cloudflare tunnel — not this compose
+#                           file's job)
+#   4751-4753 -> reserved  (not currently allocated)
+#   4754 -> db             (postgis, localhost-bound)
+#   4755 -> redis          (localhost-bound)
+#   4756 -> merchant-web   (Task 9.5 — static Vite SPA behind `serve`)
+#   4757 -> admin-web      (Task 9.5 — static Vite SPA behind `serve`)
+#   4758 -> landing        (Task 9.5 — Next.js standalone server)
+#   4759 -> reserved       (not currently allocated)
+# The Expo consumer app is NOT deployed via this compose file — it ships
+# through EAS Build/Submit to the app stores, not a long-running server
+# container.
 #
 # Required in ./.env.production (see backend/.env.example for the full
 # app-level variable list; POSTGRES_PASSWORD is compose-only):
 #   IMAGE_TAG, GHCR_OWNER, POSTGRES_PASSWORD, DATABASE_URL, REDIS_URL,
 #   KURTAR_API_PORT, NODE_ENV=production, JWT_SECRET, WEBHOOK_SECRET,
-#   SMS_PROVIDER (+ its credential set), PAYMENT_PROVIDER.
+#   SMS_PROVIDER (+ its credential set), PAYMENT_PROVIDER,
+#   CORS_ALLOWED_ORIGINS (Task 9.5 — must list the real merchant-web/
+#   admin-web/landing origins; unset means no CORS at all in production).
+#   MERCHANT_WEB_IMAGE_TAG, ADMIN_WEB_IMAGE_TAG, LANDING_IMAGE_TAG default
+#   to IMAGE_TAG when unset, so a single release tag deploys all four
+#   images together unless you deliberately pin one independently.
 #
 # IMAGE_TAG has no default (${IMAGE_TAG:?...}, not ${IMAGE_TAG:-latest}) —
 # it must always be an explicit release version (e.g. v0.3.0), the same
@@ -103,6 +117,63 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    networks:
+      - kurtar_net_prod
+
+  # [Task 9.5] Three of the four frontend surfaces. The Expo consumer app
+  # is NOT here — see this file's header comment. Each is a static/
+  # standalone-server image built from its own app's Dockerfile
+  # (apps/merchant-web/Dockerfile, apps/admin-web/Dockerfile,
+  # landing/Dockerfile), independent of the api image/tag — a frontend-
+  # only change never rebuilds or redeploys the backend, and vice versa.
+  merchant-web:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-merchant-web:${MERCHANT_WEB_IMAGE_TAG:-${IMAGE_TAG:?IMAGE_TAG is required}}
+    container_name: kurtar_merchant_web_prod
+    restart: unless-stopped
+    ports:
+      - "4756:4756"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4756/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - kurtar_net_prod
+
+  admin-web:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-admin-web:${ADMIN_WEB_IMAGE_TAG:-${IMAGE_TAG:?IMAGE_TAG is required}}
+    container_name: kurtar_admin_web_prod
+    restart: unless-stopped
+    ports:
+      - "4757:4757"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4757/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - kurtar_net_prod
+
+  landing:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-landing:${LANDING_IMAGE_TAG:-${IMAGE_TAG:?IMAGE_TAG is required}}
+    container_name: kurtar_landing_prod
+    restart: unless-stopped
+    # NEXT_PUBLIC_API_BASE_URL is baked into the client bundle at BUILD
+    # time (docker build --build-arg), not readable from this env_file —
+    # this only supplies server-only runtime env vars for whatever Task 13
+    # adds later (SSR/server actions reading a non-public var).
+    env_file:
+      - .env.production
+    ports:
+      - "4758:4758"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4758/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     networks:
       - kurtar_net_prod
 

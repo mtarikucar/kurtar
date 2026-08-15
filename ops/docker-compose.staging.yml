@@ -5,8 +5,16 @@
 #
 # Port map:
 #   4760 -> api
-#   4764 -> db     (postgis, localhost-bound)
-#   4765 -> redis  (localhost-bound)
+#   4761-4763 -> reserved
+#   4764 -> db             (postgis, localhost-bound)
+#   4765 -> redis          (localhost-bound)
+#   4766 -> merchant-web   (Task 9.5)
+#   4767 -> admin-web      (Task 9.5)
+#   4768 -> landing        (Task 9.5)
+#   4769 -> reserved
+# The Expo consumer app is NOT deployed via this compose file — see
+# ops/docker-compose.prod.yml's header comment (same reasoning: EAS, not
+# a long-running server container).
 #
 # Required in ./.env.staging (see backend/.env.example for the full
 # app-level variable list; POSTGRES_PASSWORD is compose-only). Retention
@@ -77,6 +85,57 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    networks:
+      - kurtar_net_staging
+
+  # [Task 9.5] Same three images as ops/docker-compose.prod.yml, same
+  # container-internal ports (4756/4757/4758 — each Dockerfile's own
+  # EXPOSE), remapped to the staging host-port block. See that file's
+  # comment on these services for the full rationale.
+  merchant-web:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-merchant-web:${MERCHANT_WEB_IMAGE_TAG:-${IMAGE_TAG:?IMAGE_TAG is required}}
+    container_name: kurtar_merchant_web_staging
+    restart: unless-stopped
+    ports:
+      - "4766:4756"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4756/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - kurtar_net_staging
+
+  admin-web:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-admin-web:${ADMIN_WEB_IMAGE_TAG:-${IMAGE_TAG:?IMAGE_TAG is required}}
+    container_name: kurtar_admin_web_staging
+    restart: unless-stopped
+    ports:
+      - "4767:4757"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4757/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - kurtar_net_staging
+
+  landing:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/kurtar-landing:${LANDING_IMAGE_TAG:-${IMAGE_TAG:?IMAGE_TAG is required}}
+    container_name: kurtar_landing_staging
+    restart: unless-stopped
+    env_file:
+      - .env.staging
+    ports:
+      - "4768:4758"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4758/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     networks:
       - kurtar_net_staging
 
