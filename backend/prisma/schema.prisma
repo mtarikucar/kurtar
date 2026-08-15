@@ -496,7 +496,7 @@ model MembershipSubscription {
   // off THIS merchant, ever" without joining AuditLog (AuditLog is what
   // answers a time-scoped "how much did we write off LAST YEAR" query).
   // COMBINED net+KDV, same convention as outstandingCents.
-  writtenOffCents Int @default(0)
+  writtenOffCents    Int @default(0)
   // [Fix round #2, P1-minor] The VAT-only portion of writtenOffCents — post
   // P2, outstandingCents (and therefore a write-off of it) is net+KDV
   // combined, so writtenOffCents ALONE overstates "how much membership
@@ -751,29 +751,29 @@ model SettlementBatch {
   periodEnd   DateTime
   status      SettlementStatus @default(PENDING)
 
-  grossCents                 Int       @default(0)
-  bagFeeCents                Int       @default(0)
+  grossCents                   Int       @default(0)
+  bagFeeCents                  Int       @default(0)
   // [Task 8] KDV %20 on bagFeeCents, tracked separately — the bag fee
   // itself is never a taxable-inclusive blend; see settlement-math.ts.
-  bagFeeVatCents             Int       @default(0)
-  withholdingCents           Int       @default(0)
-  membershipOffsetCents      Int       @default(0)
+  bagFeeVatCents               Int       @default(0)
+  withholdingCents             Int       @default(0)
+  membershipOffsetCents        Int       @default(0)
   // [Fix round, P2] The portion of membershipOffsetCents that is VAT
   // specifically (membershipOffsetCents - membershipOffsetVatCents is the
   // net portion) — mirrors bagFeeCents/bagFeeVatCents. Also what a repeat
   // recompute of THIS batch "adds back" (alongside membershipOffsetCents
   // itself) to the subscription's outstandingVatCents before re-deriving,
   // the same idempotency trick membershipOffsetCents already uses.
-  membershipOffsetVatCents   Int       @default(0)
-  refundClawbackCents        Int       @default(0)
-  netPayoutCents             Int       @default(0)
+  membershipOffsetVatCents     Int       @default(0)
+  refundClawbackCents          Int       @default(0)
+  netPayoutCents               Int       @default(0)
   // [Task 8] Set only when this batch went HELD because fees + withholding
   // + membershipOffset + clawback exceeded grossCents (settlement-math.ts's
   // never-negative-net invariant). The exact deficit — what still needs to
   // be recovered — becomes an input to computing the merchant's NEXT batch
   // (settlements.service.ts folds it into that batch's priorClawbackCents).
   // Zero on every non-HELD batch.
-  carriedShortfallCents      Int       @default(0)
+  carriedShortfallCents        Int       @default(0)
   // [Fix round, C2] The portion of carriedShortfallCents that is
   // externally-caused (inherited from a predecessor batch, or an unmet
   // refund-clawback demand) — DELIBERATELY NOT the same number as
@@ -791,7 +791,7 @@ model SettlementBatch {
   // absorb" (the same absorb-the-oldest-debt-first arithmetic
   // recomputeBatch already applies when allocating clawback across
   // lines), fully decoupled from whatever the batch's own lines do.
-  carriedExternalDemandCents Int       @default(0)
+  carriedExternalDemandCents   Int       @default(0)
   // [Fix round #3, C2-residual] The IMMUTABLE original amount this batch
   // inherited from a predecessor on its first-ever recompute pass — set
   // ONCE (by resolveCarriedShortfall) and never changed again by any LATER
@@ -826,7 +826,7 @@ model SettlementBatch {
   // left after my own last pass" — exactly mirroring why a settlement_line
   // this batch previously fully absorbed must have its FULL original
   // demand (not 0) fed back in as the baseline on a repeat pass.
-  inheritedExternalDemandCents Int     @default(0)
+  inheritedExternalDemandCents Int       @default(0)
   // [Fix round, C2] Stamped the FIRST time this batch is ever recomputed
   // (settlement-batch-builder.service.ts's recomputeBatch), whether or not
   // it actually inherited anything. Before this is set, a recompute is
@@ -842,18 +842,18 @@ model SettlementBatch {
   // predecessor is itself untouched, as it usually is) simply re-fetch
   // the same starting value while ignoring any partial recovery already
   // achieved. NULL means "never recomputed yet".
-  shortfallResolvedAt        DateTime?
+  shortfallResolvedAt          DateTime?
   // [Fix round, C3] Stamped BEFORE the payout provider is ever called for
   // this batch (settlement-payout.service.ts's executeOne) — freezes
   // netPayoutCents from that instant on: hold()/recomputeBatch() both
   // refuse to touch a batch with this set, so the amount a provider was
   // told to transfer can never drift out from under an in-flight or
   // already-attempted payout. NULL until the first attempt.
-  payoutAttemptedAt          DateTime?
+  payoutAttemptedAt            DateTime?
   // [Task 8] Why this batch is HELD — "negative net, ₺X carried" for the
   // automatic path, or the admin's note for a manual POST .../:id/hold.
   // NULL for every batch that has never been HELD.
-  holdReason                 String?
+  holdReason                   String?
 
   dueAt          DateTime?
   pspTransferRef String?
@@ -862,13 +862,18 @@ model SettlementBatch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  settlementLines    SettlementLine[]
-  commissionInvoices CommissionInvoice[]
+  settlementLines     SettlementLine[]
+  commissionInvoices  CommissionInvoice[]
   // [Task 8] The settled lines whose reservation was refunded AFTER this
   // batch sent — the clawback lands on the NEXT batch, but this relation
   // still points back at the batch that ORIGINALLY paid the line out, for
   // audit ("what got clawed back, and why"). See SettlementLine.clawbackBatchId.
-  clawedBackLines    SettlementLine[]    @relation("SettlementLineClawback")
+  clawedBackLines     SettlementLine[]               @relation("SettlementLineClawback")
+  // [Fix round #4] This batch's OWN per-line clawback contributions — the
+  // authoritative ledger every recompute rebuilds from scratch and checks
+  // `refundClawbackCents` against before committing. See
+  // SettlementClawbackAllocation's own doc comment.
+  clawbackAllocations SettlementClawbackAllocation[]
 
   @@index([merchantId, status])
   @@map("settlement_batches")
@@ -889,13 +894,25 @@ model SettlementLine {
   bagFeeVatCents   Int      @default(0)
   withholdingCents Int
 
-  // [Task 8] Populated exactly once, the first time a DONE refund is
-  // observed against this (already-settled) line's reservation — never
-  // again after that (clawbackAppliedAt IS NULL is the eligibility guard
-  // settlements.service.ts's clawback sweep queries on, so re-running the
-  // sweep can never double-claw the same line). clawbackBatchId points at
-  // the batch that actually absorbed the negative adjustment (a LATER
-  // batch than `batchId`, which stays the original payout's record).
+  // [Task 8 / Fix round #4] DENORMALIZED PROJECTIONS of
+  // settlement_clawback_allocations — NEVER an independent source of
+  // truth, and never written by anything except
+  // settlement-batch-builder.service.ts's `projectLinesFromLedger`, which
+  // recomputes all three from that table's rows for the line:
+  //   clawbackCents     = SUM(allocations.amountCents) for this line
+  //   clawbackAppliedAt = non-null iff that sum covers the line's FULL
+  //                       demand (gross - bagFee - VAT - withholding);
+  //                       explicitly NULLed again the moment it does not,
+  //                       so an under-recovered line always stays visible
+  //                       to the recovery queries (the "no orphaned
+  //                       demand" invariant — see the service's class doc
+  //                       comment).
+  //   clawbackBatchId   = the most recent allocating batch (audit
+  //                       pointer only; per-batch attribution lives in
+  //                       the allocation rows, NOT here — inferring it
+  //                       from this single pointer is what made a
+  //                       partially-absorbed line unattributable and is
+  //                       the defect class fix round #4 closed).
   clawbackCents     Int              @default(0)
   clawbackAppliedAt DateTime?
   clawbackBatchId   String?
@@ -904,7 +921,66 @@ model SettlementLine {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  clawbackAllocations SettlementClawbackAllocation[]
+
   @@map("settlement_lines")
+}
+
+/**
+ * [Fix round #4] The refund-clawback ledger: ONE row per (batch, line)
+ * saying "batch B withheld `amountCents` of line L's clawback demand."
+ * WHY A TABLE AND NOT A COLUMN. Four consecutive audits found the same
+ * defect four times, each one column over from the last: a recompute read
+ * back a value its OWN earlier pass had written and treated it as an
+ * untouched input, silently forgiving (or, in the multi-batch case,
+ * double-charging) the difference. Every one of those was possible because
+ * per-batch attribution was INFERRED from a single mutable owner pointer
+ * (SettlementLine.clawbackBatchId + its cumulative clawbackCents) rather
+ * than RECORDED. Inference has no inverse: once a second batch touched the
+ * line, the first batch's own contribution was unrecoverable, so its next
+ * recompute could not correctly undo it.
+ * With this table the undo is structural instead of arithmetic:
+ * recomputeBatch DELETEs every row it owns before it reads anything, so
+ * what it then reads is by construction "what OTHER batches have
+ * recovered" — a recompute is incapable of seeing its own prior output as
+ * an input. It then re-derives from scratch and re-inserts. Any number of
+ * open batches may hold partial claims on the same line simultaneously and
+ * each can re-derive independently without corrupting the others.
+ * INVARIANTS (the first is asserted against the persisted rows inside the
+ * recompute transaction, before commit — see assertLedgerIdentity):
+ * 1. batch.refundClawbackCents
+ * === (batch.inheritedExternalDemandCents - batch.carriedExternalDemandCents)
+ * + SUM(allocations.amountCents WHERE batchId = batch.id)
+ * 2. line.clawbackCents === SUM(allocations.amountCents WHERE reservationId = line.reservationId)
+ * 3. SUM(allocations for a line) <= that line's full demand
+ * 4. amountCents > 0 — a zero contribution is the ABSENCE of a row, so
+ * "allocate nothing" and "delete my claim" are the same operation and
+ * cannot be skipped by any branch.
+ */
+model SettlementClawbackAllocation {
+  batchId String
+  batch   SettlementBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  // References SettlementLine.reservationId (unique) rather than its id —
+  // the whole settlement path keys lines by reservation, and it makes the
+  // ledger readable without a join.
+  reservationId String
+  line          SettlementLine @relation(fields: [reservationId], references: [reservationId], onDelete: Cascade)
+
+  /**
+   * Always > 0 (invariant 4 above). Kuruş, Int, never a rate.
+   */
+  amountCents Int
+
+  // No `updatedAt`: an allocation row is never UPDATEd. A recompute
+  // deletes every row it owns and re-inserts the ones it still wants, so
+  // "changed my mind about this line" and "never claimed it" are the same
+  // write — there is no partial-update path a branch could skip.
+  createdAt DateTime @default(now())
+
+  @@id([batchId, reservationId])
+  @@index([reservationId])
+  @@map("settlement_clawback_allocations")
 }
 
 model CommissionInvoice {
