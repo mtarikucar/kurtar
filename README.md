@@ -1,27 +1,165 @@
 # Kurtar
 
-Türkiye için Too Good To Go usulü gün-sonu sürpriz paket pazaryeri. İşletmeler günün fazlasını uygun fiyata paketler, müşteriler uygulamadan satın alıp mağazadan gel-al yapar.
+Kurtar is a Turkish end-of-day surplus-food marketplace, in the style of Too Good To Go: participating bakeries, cafés, restaurants, patisseries and greengrocers ("fırın", "kafe", "restoran", "pastane", "manav") publish a limited number of "surprise bags" of unsold food at a fixed discounted price each evening. Consumers discover nearby bags, reserve and pay in the app, then pick them up in person during a short pickup window with an in-app swipe (no merchant hardware required). The platform earns a small fixed fee per bag plus an annual merchant membership, settles each merchant's earnings on a 5-Turkish-business-day cycle (with a 1% withholding tax deduction), and issues e-documents for both.
 
-## Geliştirme ortamını ayağa kaldırma
+## Architecture
 
-1. Yerel altyapıyı başlat (PostgreSQL/PostGIS + Redis):
+```mermaid
+flowchart LR
+    subgraph Surfaces
+        merchant["merchant-web<br/>(React + Vite)<br/>:5173"]
+        admin["admin-web<br/>(React + Vite)<br/>:5174"]
+        landing["landing<br/>(Next.js)<br/>:3000"]
+        consumer["consumer<br/>(Expo / React Native)"]
+    end
 
-   ```bash
-   docker compose -f ops/docker-compose.yml up -d
-   ```
+    subgraph Shared["packages/*"]
+        apiclient["@kurtar/api-client<br/>(generated from docs/openapi.json)"]
+        tokens["@kurtar/ui-tokens"]
+    end
 
-2. Bağımlılıkları kur:
+    merchant --> apiclient
+    admin --> apiclient
+    landing --> apiclient
+    consumer --> apiclient
 
-   ```bash
-   npm i
-   ```
+    apiclient -->|HTTPS + JWT| backend["backend<br/>(NestJS)<br/>:4750"]
 
-3. Backend'i geliştirme modunda çalıştır:
+    backend --> pg[("PostgreSQL + PostGIS")]
+    backend --> redis[("Redis")]
+    backend --> outbox["Outbox worker<br/>(cron-driven)"]
+    outbox -->|push / SMS / email| ext(["Expo push · NetGSM/Twilio · SMTP"])
+    backend -->|mock in dev, PSP in prod| psp(["Payment provider"])
+    backend -->|mock in dev, Nilvera in prod| edoc(["E-document provider"])
+```
 
-   ```bash
-   npm run dev -w backend
-   ```
+Every write path funnels through the backend's typed REST API (`/api/...`); no surface talks to Postgres/Redis directly. `packages/api-client` is generated from the committed OpenAPI contract (`docs/openapi.json`) so all four surfaces share one source of truth for request/response shapes — see [`docs/frontend-contract.md`](docs/frontend-contract.md) for the client's usage contract and [`docs/architecture/decisions/`](docs/architecture/decisions/) for the design decisions behind the backend (outbox pattern, PostGIS, settlement ledger, etc).
 
-API varsayılan olarak `http://localhost:4750/api` altında ayağa kalkar; sağlık kontrolü için `GET /api/health`.
+## Prerequisites
 
-Ortam değişkenleri için `.env.example` dosyasına bakın.
+- Node.js 20+ (see `.nvmrc`) and npm 10+
+- Docker + Docker Compose v2 (`docker compose version` should print `v2.x`)
+- Nothing else — every external integration (SMS, payment, push, e-document) defaults to an in-process mock in development; see `.env.example`.
+
+## One-command bring-up
+
+```bash
+./scripts/dev-up.sh
+```
+
+This single command, from a clean clone, does everything:
+
+1. creates `.env`/`landing/.env.local` from their `.env.example` files if missing (dev-safe defaults, mock providers — never use these values in production);
+2. starts PostGIS + Redis (`docker compose -f ops/docker-compose.yml up -d --wait`);
+3. installs dependencies (`npm ci`) if `node_modules` is missing;
+4. generates the Prisma client and **applies every pending migration** (`prisma migrate deploy`) — this step is never optional and never skippable; a merged tree with an unapplied migration is exactly what broke the backend suite once already (see `.superpowers/sdd/.../task-14-report.md`);
+5. seeds the reversible demo dataset (`npm run seed:demo -w backend` — see below; pass `--no-seed` to skip);
+6. starts the backend and the three web surfaces concurrently, with prefixed, interleaved logs.
+
+Press Ctrl+C to stop every server it started (the infra containers keep running — `./scripts/dev-up.sh --down` stops those too, without touching the seeded data in the volume).
+
+Each surface then runs at:
+
+| Surface | URL | Notes |
+|---|---|---|
+| Backend API | http://localhost:4750/api | Health check: `GET /api/health` |
+| merchant-web | http://localhost:5173 | Merchant panel — onboarding, today's offers, pickup list, earnings |
+| admin-web | http://localhost:5174 | Admin panel — merchant approvals, complaints, moderation, finance |
+| landing | http://localhost:3000 | Public marketing site + merchant signup funnel |
+| consumer (Expo) | run separately | `npm run web -w consumer` (or `npm run ios`/`android` with a simulator) — not started by `dev-up.sh`, see below |
+
+The Expo consumer app isn't part of the one-command bring-up because it has no meaningful "just serve it" mode outside its own device/simulator tooling. Once the backend is up, run:
+
+```bash
+npm run web -w consumer      # browser preview at http://localhost:8081
+# or
+npm run ios -w consumer      # requires Xcode / iOS Simulator
+npm run android -w consumer  # requires Android Studio / an emulator
+```
+
+### Prove it from scratch
+
+To convince yourself this genuinely works from nothing (not just "works on this machine"):
+
+```bash
+docker compose -f ops/docker-compose.yml down -v   # destroy the dev DB volume entirely
+./scripts/dev-up.sh                                 # migrations + seed + all four servers, from zero
+```
+
+## Demo credentials
+
+**These are demo-only accounts, seeded by `backend/prisma/seed-demo.ts` (`npm run seed:demo -w backend`, already run by `dev-up.sh`). Never use this password anywhere real.**
+
+All demo accounts share the password **`KurtarDemo123!`**.
+
+| Role | Login | Notes |
+|---|---|---|
+| Admin | `demo.admin@kurtar.app` | admin-web |
+| Merchant (APPROVED) | `hakan@modafirin.demo.kurtar.app` | Moda Fırın, Kadıköy — has a live, redeemable offer right after seeding |
+| Merchant (APPROVED) | `sibel@yeldegirmenipastanesi.demo.kurtar.app` | Yeldeğirmeni Pastanesi, Kadıköy — has a **SETTLED** settlement batch |
+| Merchant (APPROVED) | `onur@caferagakahve.demo.kurtar.app` | Caferağa Kahve Evi, Kadıköy — has a **CALCULATED** (pending admin approval) batch |
+| Merchant (DRAFT) | `pelin@nisantasikahve.demo.kurtar.app` | Nişantaşı Kahve Durağı, Şişli — never submitted for review |
+| Merchant (SUSPENDED) | `tolga@mecidiyekoyocakbasi.demo.kurtar.app` | Mecidiyeköy Ocakbaşı, Şişli — kill-switch demo case |
+| Consumer | phone `+905551110002` (Elif Demir) | has a **CONFIRMED** reservation in a live pickup window right after seeding — open the redeem screen to see it |
+
+Every other seeded merchant/consumer is listed in `backend/prisma/seed-demo.ts`'s own doc comment. Consumer accounts sign in via phone-OTP; the mock SMS provider never sends a real SMS — the 6-digit code is logged to the backend's own console (`kurtar dogrulama kodunuz: XXXXXX`), never echoed in the HTTP response (a deliberate anti-account-takeover choice — see `backend/src/modules/otp/otp.service.ts`).
+
+The seed is **idempotent and reversible**: re-running `npm run seed:demo -w backend` tears down and recreates the exact same dataset (never duplicates rows); `npm run seed:demo:down -w backend` removes every row it created — by fixed `kd-demo-*` ids — and touches nothing else (never an operator's real merchants/consumers/settlements).
+
+## Running tests
+
+| Workspace | Command | What it covers |
+|---|---|---|
+| Backend | `cd backend && npx jest --runInBand` | 107 suites / 914 tests — unit + real-Postgres/PostGIS integration specs |
+| merchant-web | `npm run test:run -w apps/merchant-web` | Vitest + Testing Library |
+| admin-web | `npm run test -w apps/admin-web` | Vitest + Testing Library |
+| landing | `npm run test -w landing` | Vitest |
+| consumer | `npm run test -w consumer` | Jest + React Native Testing Library (the Expo app has no browser E2E surface — see below) |
+| Cross-surface E2E | see [`docs/operations.md`](docs/operations.md#end-to-end-test) | Playwright, against the real backend + built merchant-web/admin-web — proves the whole money loop |
+
+Backend tests need `TEST_DATABASE_URL`/`DATABASE_URL`/`REDIS_URL` pointed at the dev stack (`ops/docker-compose.yml`'s ports — see `.env.example`); a plain `npm test -w backend` also works once those are exported.
+
+## Regenerating the API contract
+
+The backend is the single source of truth. After changing a controller/DTO:
+
+```bash
+cd backend
+npm run openapi:generate          # regenerates docs/openapi.json from the live route/DTO metadata
+npm run openapi:check-response-types  # fails loud if any operation lost its typed 2xx response
+
+cd ..
+npm run generate:api-client       # regenerates packages/api-client/src/generated/openapi-types.ts from docs/openapi.json
+```
+
+Both regeneration steps are enforced as CI drift gates (`.github/workflows/quality-gates.yml`'s `openapi-contract-drift` and `frontend-quality` jobs) — a controller change that forgets to regenerate fails the build, not silently ships a stale contract to four frontends.
+
+## Repository layout
+
+```
+backend/            NestJS API — the single source of truth for the data model and business rules
+apps/
+  merchant-web/      Merchant panel (React + Vite)
+  admin-web/         Admin panel (React + Vite)
+  consumer/          Consumer app (Expo / React Native)
+packages/
+  api-client/        @kurtar/api-client — generated + hand-written typed HTTP client, shared by all four surfaces
+  ui-tokens/         @kurtar/ui-tokens — shared design tokens (web + React Native)
+landing/             Public marketing site + merchant signup funnel (Next.js)
+e2e/                 Cross-surface Playwright test (the money loop, end to end)
+ops/                 docker-compose files (dev / staging / prod) + deploy topology
+scripts/             dev-up.sh, db-migration-doctor.sh, backup-database.sh
+docs/
+  openapi.json               committed API contract
+  frontend-contract.md       how the four surfaces use @kurtar/api-client
+  operations.md              deploy / migrations / backups / crons / incident runbook
+  launch-checklist.md        everything that must be true before real money flows
+  architecture/decisions/    ADRs for decisions a future engineer would otherwise re-litigate
+```
+
+## Further reading
+
+- [`docs/operations.md`](docs/operations.md) — the operator's runbook: deploying, the migration doctor, backups, the cron inventory, reading a settlement batch, responding to a failed payout or an SLA alert, and the merchant kill-switch.
+- [`docs/launch-checklist.md`](docs/launch-checklist.md) — what must be true before this handles real money, and who owns each item.
+- [`docs/architecture/decisions/`](docs/architecture/decisions/) — ADRs.
+- [`docs/frontend-contract.md`](docs/frontend-contract.md) — the contract every frontend surface builds against.
