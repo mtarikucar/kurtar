@@ -1,0 +1,35 @@
+{
+  "title": "Fiyatlandırma",
+  "subtitle": "Platform ücretlerini görüntüleyin ve gelecekteki bir değişikliği planlayın.",
+  "current": {
+    "title": "Yürürlükteki fiyatlandırma",
+    "none": "Yürürlükte fiyatlandırma kaydı bulunamadı.",
+    "bagFee": "Paket komisyonu",
+    "membershipAnnual": "Yıllık üyelik ücreti",
+    "effectiveFrom": "Yürürlük tarihi: {{date}}"
+  },
+  "upcoming": {
+    "title": "Planlanan gelecekteki değişiklikler",
+    "empty": "Planlanmış bir değişiklik yok."
+  },
+  "history": {
+    "title": "Fiyatlandırma geçmişi",
+    "bagFee": "Paket komisyonu",
+    "membershipAnnual": "Yıllık üyelik ücreti",
+    "effectiveFrom": "Yürürlük tarihi"
+  },
+  "form": {
+    "title": "Yeni fiyatlandırma planla",
+    "notice": "Bu değişiklik yalnızca gelecekteki dönemleri etkiler — geçmişte hesaplanmış ödeme kayıtları (settlement batch) bu değişiklikten ETKİLENMEZ, her zaman hesaplandıkları andaki fiyatı kullanır.",
+    "bagFeeLabel": "Paket komisyonu (₺)",
+    "membershipAnnualLabel": "Yıllık üyelik ücreti (₺)",
+    "effectiveFromLabel": "Yürürlük tarihi (gelecekte olmalı)",
+    "submit": "Planla",
+    "submitting": "Kaydediliyor…",
+    "success": "Yeni fiyatlandırma planlandı: {{date}} itibarıyla yürürlüğe girecek."
+  },
+  "errors": {
+    "notFuture": "Yürürlük tarihi gelecekte bir tarih olmalıdır — geçmiş fiyatlandırmayı asla değiştirmez.",
+    "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin."
+  }
+}
