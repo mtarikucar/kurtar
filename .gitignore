@@ -8,6 +8,11 @@ coverage/
 .expo/
 *.tsbuildinfo
 
+# Playwright (e2e/) run artifacts — reports/traces/videos, never source
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
+
 # Environment variables — never commit real env files, only *.example
 .env
 .env.*
