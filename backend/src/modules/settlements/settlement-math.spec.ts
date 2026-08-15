@@ -1,7 +1,10 @@
 import {
+  allocateClawback,
   applyRateCents,
+  ClawbackCandidate,
   computeSettlement,
   roundKurus,
+  totalClawbackDemandCents,
 } from "./settlement-math";
 
 describe("roundKurus", () => {
@@ -306,5 +309,201 @@ describe("computeSettlement", () => {
     expect(result.held).toBe(true);
     expect(result.perLine).toEqual([]);
     expectFullyAccountedFor(result, 3000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [Fix round #4] allocateClawback — the invariant tests, not example tests.
+//
+// Four audits found four instances of "the batch row was rewritten and a
+// line row was not". These assert the two properties that make that
+// unrepresentable rather than merely absent in the cases anyone thought
+// of: (1) EXACTLY one result per candidate, always; (2) the results sum
+// back to exactly what was allocated, always.
+// ---------------------------------------------------------------------------
+
+function candidate(
+  reservationId: string,
+  fullDemandCents: number,
+  otherBatchesRecoveredCents = 0,
+) {
+  return { reservationId, fullDemandCents, otherBatchesRecoveredCents };
+}
+
+/** The two structural invariants, asserted on every result in this block. */
+function expectAllocationInvariants(
+  candidates: ClawbackCandidate[],
+  applied: number,
+  external: number,
+  result: ReturnType<typeof allocateClawback>,
+) {
+  // (1) One entry per candidate, in input order — no candidate can be
+  // silently dropped, so the caller's write loop cannot silently skip one.
+  expect(result.perCandidate).toHaveLength(candidates.length);
+  expect(result.perCandidate.map((a) => a.reservationId)).toEqual(
+    candidates.map((c) => c.reservationId),
+  );
+  // (2) Every kuruş applied is attributed to exactly one place.
+  const toLines = result.perCandidate.reduce((s, a) => s + a.absorbedCents, 0);
+  expect(result.externalAbsorbedCents + toLines).toBe(applied);
+  expect(result.externalAbsorbedCents).toBeLessThanOrEqual(external);
+  // (3) Nothing is ever over-recovered, and cumulative/flag agree.
+  for (let i = 0; i < candidates.length; i++) {
+    const a = result.perCandidate[i];
+    const c = candidates[i];
+    expect(a.absorbedCents).toBeGreaterThanOrEqual(0);
+    expect(a.cumulativeCents).toBe(
+      c.otherBatchesRecoveredCents + a.absorbedCents,
+    );
+    expect(a.cumulativeCents).toBeLessThanOrEqual(
+      Math.max(c.fullDemandCents, c.otherBatchesRecoveredCents),
+    );
+    expect(a.fullyResolved).toBe(
+      c.fullDemandCents > 0 && a.cumulativeCents >= c.fullDemandCents,
+    );
+  }
+}
+
+describe("allocateClawback — structural invariants", () => {
+  it("emits a result for EVERY candidate even when nothing is left to allocate (the starved-candidate case that used to `break` before the write)", () => {
+    const candidates = [candidate("A", 1000), candidate("B", 2000)];
+    const result = allocateClawback({
+      appliedClawbackCents: 500,
+      externalDemandCents: 0,
+      candidates,
+    });
+    expect(result.perCandidate).toEqual([
+      {
+        reservationId: "A",
+        absorbedCents: 500,
+        cumulativeCents: 500,
+        fullyResolved: false,
+      },
+      {
+        reservationId: "B",
+        absorbedCents: 0,
+        cumulativeCents: 0,
+        fullyResolved: false,
+      },
+    ]);
+    expectAllocationInvariants(candidates, 500, 0, result);
+  });
+
+  it("emits a zero result for EVERY candidate when the batch could absorb nothing at all (the `refundClawbackCents === 0` case that used to `break` on the first iteration)", () => {
+    const candidates = [candidate("A", 14850), candidate("B", 2000)];
+    const result = allocateClawback({
+      appliedClawbackCents: 0,
+      externalDemandCents: 18850,
+      candidates,
+    });
+    expect(result.externalAbsorbedCents).toBe(0);
+    expect(result.perCandidate.every((a) => a.absorbedCents === 0)).toBe(true);
+    expect(result.perCandidate.every((a) => a.fullyResolved === false)).toBe(
+      true,
+    );
+    expectAllocationInvariants(candidates, 0, 18850, result);
+  });
+
+  it("emits a zero result for a candidate other batches already fully recovered (the `continue` case that used to skip the write)", () => {
+    const candidates = [candidate("A", 1000, 1000), candidate("B", 500)];
+    const result = allocateClawback({
+      appliedClawbackCents: 500,
+      externalDemandCents: 0,
+      candidates,
+    });
+    expect(result.perCandidate[0]).toEqual({
+      reservationId: "A",
+      absorbedCents: 0,
+      cumulativeCents: 1000,
+      fullyResolved: true,
+    });
+    expect(result.perCandidate[1].absorbedCents).toBe(500);
+    expectAllocationInvariants(candidates, 500, 0, result);
+  });
+
+  it("absorbs the inherited external demand FIRST, then per-line demand in the given (FIFO) order", () => {
+    const candidates = [candidate("A", 1000), candidate("B", 1000)];
+    const result = allocateClawback({
+      appliedClawbackCents: 1500,
+      externalDemandCents: 800,
+      candidates,
+    });
+    expect(result.externalAbsorbedCents).toBe(800);
+    expect(result.perCandidate.map((a) => a.absorbedCents)).toEqual([700, 0]);
+    expectAllocationInvariants(candidates, 1500, 800, result);
+  });
+
+  it("tops a partially-recovered line up to exactly its full demand and marks it resolved — never past it", () => {
+    const candidates = [candidate("A", 1000, 400)];
+    const result = allocateClawback({
+      appliedClawbackCents: 900,
+      externalDemandCents: 300,
+      candidates,
+    });
+    expect(result.externalAbsorbedCents).toBe(300);
+    expect(result.perCandidate[0]).toEqual({
+      reservationId: "A",
+      absorbedCents: 600,
+      cumulativeCents: 1000,
+      fullyResolved: true,
+    });
+    expectAllocationInvariants(candidates, 900, 300, result);
+  });
+
+  it("holds the invariants across an exhaustive sweep of applied amounts, external demands and prior-recovery mixes", () => {
+    const shapes: ClawbackCandidate[][] = [
+      [],
+      [candidate("A", 0)],
+      [candidate("A", 1000)],
+      [candidate("A", 1000, 1000)],
+      [candidate("A", 1000, 250), candidate("B", 2000)],
+      [candidate("A", 1), candidate("B", 1), candidate("C", 1)],
+      [candidate("A", 3000, 2999), candidate("B", 7), candidate("C", 0)],
+    ];
+    for (const candidates of shapes) {
+      const lineDemand = totalClawbackDemandCents(candidates);
+      for (const external of [0, 1, 750, 100000]) {
+        // The only supported usage: the demand the caller charges is the
+        // demand the caller allocates. Every reachable `applied` is a
+        // clamp of that total (computeSettlement can only ever reduce it).
+        const total = lineDemand + external;
+        for (const applied of [0, 1, Math.floor(total / 2), total]) {
+          if (applied > total) continue;
+          const result = allocateClawback({
+            appliedClawbackCents: applied,
+            externalDemandCents: external,
+            candidates,
+          });
+          expectAllocationInvariants(candidates, applied, external, result);
+        }
+      }
+    }
+  });
+
+  it("throws rather than silently leaving kuruş unattributed when the caller allocates more than it charged", () => {
+    expect(() =>
+      allocateClawback({
+        appliedClawbackCents: 5000,
+        externalDemandCents: 0,
+        candidates: [candidate("A", 1000)],
+      }),
+    ).toThrow(/could not be attributed/);
+  });
+
+  it("rejects non-integer / negative money", () => {
+    expect(() =>
+      allocateClawback({
+        appliedClawbackCents: 10.5,
+        externalDemandCents: 0,
+        candidates: [],
+      }),
+    ).toThrow();
+    expect(() =>
+      allocateClawback({
+        appliedClawbackCents: 0,
+        externalDemandCents: -1,
+        candidates: [],
+      }),
+    ).toThrow();
   });
 });

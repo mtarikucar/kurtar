@@ -294,3 +294,143 @@ export function computeSettlement(
 function sum(values: number[]): number {
   return values.reduce((acc, v) => acc + v, 0);
 }
+
+// ---------------------------------------------------------------------------
+// [Fix round #4] Clawback ALLOCATION — deciding which line each kuruş of
+// `computeSettlement`'s `refundClawbackCents` output was withheld against.
+//
+// This used to be an imperative loop inside
+// settlement-batch-builder.service.ts that wrote a database row per
+// iteration, guarded by `break` and `continue`. Both guards skipped the
+// write, so a candidate the loop declined to fund kept whatever the
+// PREVIOUS pass had written on it while the batch row was rewritten
+// without it — the batch ledger and the line ledger diverged, and the
+// difference was money that matched no recovery query afterwards.
+//
+// Splitting the DECISION (here, pure, no I/O) from the WRITE (there,
+// exhaustive, one persisted row per element of `perCandidate`) is what
+// makes that impossible rather than merely fixed: this function's contract
+// is that `perCandidate` has EXACTLY ONE entry per input candidate, in
+// input order, with `absorbedCents: 0` spelled out for every candidate it
+// funds nothing — there is no "skipped" outcome for a caller to forget to
+// persist, and the caller's write path has no branch to skip it with.
+// ---------------------------------------------------------------------------
+
+export interface ClawbackCandidate {
+  reservationId: string;
+  /** The line's full theoretical demand: grossCents - bagFeeCents -
+   * bagFeeVatCents - withholdingCents, floored at 0 by the caller. */
+  fullDemandCents: number;
+  /** How much of that demand has already been recovered by batches OTHER
+   * than the one now allocating. The caller establishes this structurally
+   * — it deletes its own allocation rows BEFORE reading the ledger — never
+   * by subtracting its own remembered contribution back out. */
+  otherBatchesRecoveredCents: number;
+}
+
+export interface ClawbackAllocationLine {
+  reservationId: string;
+  /** What the allocating batch withholds against this line THIS pass. 0 is
+   * a real, persisted outcome (it means "delete my claim"), not a skip. */
+  absorbedCents: number;
+  /** otherBatchesRecoveredCents + absorbedCents — the line's new total
+   * recovered across all batches. */
+  cumulativeCents: number;
+  /** cumulativeCents covers the line's full demand. The caller stamps
+   * `clawbackAppliedAt` from exactly this, in both directions — a line
+   * that stops being fully resolved must have the flag CLEARED, or its
+   * unrecovered residual becomes invisible to every recovery query. */
+  fullyResolved: boolean;
+}
+
+export interface ClawbackAllocationResult {
+  /** Applied to the batch's inherited (non-line-attributable) external
+   * demand — oldest debt first, ahead of any per-line demand. */
+  externalAbsorbedCents: number;
+  /** EXACTLY ONE entry per input candidate, in input order. Always. */
+  perCandidate: ClawbackAllocationLine[];
+}
+
+/** What is still outstanding against a single line, as of everything the
+ * OTHER batches have recovered. The one definition — `totalClawbackDemandCents`
+ * (which feeds `computeSettlement`'s `priorClawbackCents`) and
+ * `allocateClawback` (which spends its output) both go through it, so the
+ * demand that is charged and the demand that is attributable can never be
+ * two different numbers. */
+export function remainingClawbackDemandCents(c: ClawbackCandidate): number {
+  return Math.max(0, c.fullDemandCents - c.otherBatchesRecoveredCents);
+}
+
+export function totalClawbackDemandCents(
+  candidates: ClawbackCandidate[],
+): number {
+  return sum(candidates.map(remainingClawbackDemandCents));
+}
+
+/**
+ * Splits `appliedClawbackCents` (what `computeSettlement` decided this
+ * batch could actually absorb) across the inherited external demand first,
+ * then the per-line candidates in the order given (the caller supplies
+ * oldest-redemption-first, so recovery is FIFO).
+ *
+ * Throws if the split does not exhaust `appliedClawbackCents` exactly.
+ * That is unreachable when the caller derives `priorClawbackCents` as
+ * `externalDemandCents + totalClawbackDemandCents(candidates)` — which is
+ * the only supported usage — so the throw is a tripwire for a future
+ * caller that computes the demand one way and allocates it another. It is
+ * deliberately loud: silently leaving kuruş unattributed is precisely the
+ * bug class this function exists to make impossible.
+ */
+export function allocateClawback(params: {
+  appliedClawbackCents: number;
+  externalDemandCents: number;
+  candidates: ClawbackCandidate[];
+}): ClawbackAllocationResult {
+  const { appliedClawbackCents, externalDemandCents, candidates } = params;
+
+  if (!Number.isInteger(appliedClawbackCents) || appliedClawbackCents < 0) {
+    throw new Error(
+      `allocateClawback: invalid appliedClawbackCents=${appliedClawbackCents}`,
+    );
+  }
+  if (!Number.isInteger(externalDemandCents) || externalDemandCents < 0) {
+    throw new Error(
+      `allocateClawback: invalid externalDemandCents=${externalDemandCents}`,
+    );
+  }
+
+  const externalAbsorbedCents = Math.min(
+    externalDemandCents,
+    appliedClawbackCents,
+  );
+  let remaining = appliedClawbackCents - externalAbsorbedCents;
+
+  // `.map` — not a `for` loop with guards. Every candidate produces an
+  // entry no matter what is left to allocate; "nothing left" shows up as
+  // `absorbedCents: 0`, never as a missing entry.
+  const perCandidate = candidates.map((candidate) => {
+    const absorbedCents = Math.min(
+      remaining,
+      remainingClawbackDemandCents(candidate),
+    );
+    remaining -= absorbedCents;
+    const cumulativeCents =
+      candidate.otherBatchesRecoveredCents + absorbedCents;
+    return {
+      reservationId: candidate.reservationId,
+      absorbedCents,
+      cumulativeCents,
+      fullyResolved:
+        candidate.fullDemandCents > 0 &&
+        cumulativeCents >= candidate.fullDemandCents,
+    };
+  });
+
+  if (remaining !== 0) {
+    throw new Error(
+      `allocateClawback: ${remaining} kuruş of applied clawback could not be attributed to any candidate — appliedClawbackCents=${appliedClawbackCents} exceeds externalDemandCents=${externalDemandCents} plus the candidates' remaining demand`,
+    );
+  }
+
+  return { externalAbsorbedCents, perCandidate };
+}

@@ -55,6 +55,18 @@ export interface MembershipDueForRecompute {
    * gross while exempt can't grow the offset) and never LESS (a later
    * pass can't silently drop it either). */
   exempt: boolean;
+  /** [Fix round #4] The subscription's stored balances as they were read
+   * under the lock, and THIS batch's own already-committed contribution,
+   * kept separate. `persistOffset` writes `stored + batchPrior - applied`
+   * — ONE formula, no exempt/non-exempt branch — so the difference between
+   * what this batch previously committed and what it commits now always
+   * returns to the balance instead of being dropped on the exempt path.
+   * (`dueCents` above is only the CAP fed to computeSettlement, and that
+   * is the only thing exemption changes.) */
+  storedOutstandingCents: number;
+  storedOutstandingVatCents: number;
+  batchPriorOffsetCents: number;
+  batchPriorOffsetVatCents: number;
 }
 
 /**
@@ -142,6 +154,10 @@ export class MembershipOffsetService {
       alreadyMarkedPaid: sub.periodPaidAt != null,
       needsActivation: sub.status === "TRIAL" || sub.status === "PAST_DUE",
       exempt,
+      storedOutstandingCents: sub.outstandingCents,
+      storedOutstandingVatCents: sub.outstandingVatCents,
+      batchPriorOffsetCents,
+      batchPriorOffsetVatCents,
     };
   }
 
@@ -156,14 +172,36 @@ export class MembershipOffsetService {
    * TRIAL/PAST_DUE -> ACTIVE the first time a subscription is actually
    * touched by a real batch.
    *
-   * [Fix round #2, I6 — second-order fix, corrected] Writes NOTHING to
-   * the subscription when `due.exempt` is true — `dueCentsBase` here is
-   * ONLY this batch's own restored prior contribution (see
-   * lockAndResolveDue), not the subscription's true full balance, so the
-   * normal `dueCentsBase - appliedOffsetCents` formula is not a valid
-   * basis for a subscription-side write while exempt (it would only ever
-   * see this batch's own slice, never whatever else the subscription may
-   * separately still owe).
+   * [Fix round #4 — the membership half of the same defect class] The
+   * subscription-side money write is now ONE formula with NO exempt
+   * branch:
+   *
+   *     outstanding := storedOutstanding + batchPriorOffset - applied
+   *
+   * i.e. "put back everything this batch previously took, then take what
+   * it takes now." For the non-exempt path that is algebraically identical
+   * to the old `dueCentsBase - applied` (since `dueCentsBase = stored +
+   * batchPrior` there) — nothing changes. For the EXEMPT path it closes a
+   * real leak: rounds #2/#3 made the exempt branch write nothing at all,
+   * which is correct only while the batch reproduces its prior offset
+   * EXACTLY. When the restored offset gets CLAMPED (this batch's own
+   * availability shrank — a bagFeeCentsOverride edit, a shrinking gross),
+   * the batch releases `batchPrior - applied` kuruş it had previously
+   * collected, and writing nothing meant those kuruş were neither
+   * collected by the batch nor returned to the balance: silently forgiven
+   * membership revenue. Round #3 fixed the VAT half of exactly this
+   * (`splitMembershipOffsetVat` instead of a hardcoded full share) and
+   * left the NET half open — the same "one column over" pattern the
+   * settlement clawback ledger was restructured to make unreachable. The
+   * membership balance is a ledger too, so it gets the same treatment:
+   * one write, no branch, nothing to skip.
+   *
+   * What exemption still controls — and all it controls — is the CAP fed
+   * to computeSettlement (`lockAndResolveDue`'s `dueCents`: this batch's
+   * own prior contribution, never the full balance, so an exempt period
+   * can never collect anything NEW) and the lifecycle flags below
+   * (`periodPaidAt`/activation), which stay off while exempt because an
+   * exempt period is paused, not being paid.
    *
    * [Fix round #3, I6-residual] The VAT returned while exempt is now
    * `splitMembershipOffsetVat(dueCentsBase, dueVatCentsBase,
@@ -197,34 +235,45 @@ export class MembershipOffsetService {
     dueVatCentsBase: number,
     appliedOffsetCents: number,
   ): Promise<{ appliedOffsetVatCents: number }> {
-    if (due.exempt) {
-      return {
-        appliedOffsetVatCents: splitMembershipOffsetVat(
-          dueCentsBase,
-          dueVatCentsBase,
-          appliedOffsetCents,
-        ),
-      };
-    }
     const appliedOffsetVatCents = splitMembershipOffsetVat(
       dueCentsBase,
       dueVatCentsBase,
       appliedOffsetCents,
     );
-    const newOutstanding = Math.max(0, dueCentsBase - appliedOffsetCents);
+
+    // The one money formula, both branches. `storedOutstanding*` excludes
+    // this batch's own prior contribution (it was subtracted when that
+    // contribution was committed), so adding it back before subtracting
+    // what is applied NOW is exactly "undo my own last pass, then
+    // re-derive" — the same shape the clawback ledger achieves by deleting
+    // its own rows.
+    const newOutstanding = Math.max(
+      0,
+      due.storedOutstandingCents +
+        due.batchPriorOffsetCents -
+        appliedOffsetCents,
+    );
     const newOutstandingVat = Math.max(
       0,
-      dueVatCentsBase - appliedOffsetVatCents,
+      due.storedOutstandingVatCents +
+        due.batchPriorOffsetVatCents -
+        appliedOffsetVatCents,
     );
     const data: Prisma.MembershipSubscriptionUpdateInput = {
       outstandingCents: newOutstanding,
       outstandingVatCents: newOutstandingVat,
     };
-    if (newOutstanding === 0 && !due.alreadyMarkedPaid) {
-      data.periodPaidAt = new Date();
-    }
-    if (due.needsActivation) {
-      data.status = "ACTIVE";
+    // Lifecycle flags only on a period that is actually being collected.
+    // An exempt period is PAUSED — it must not be marked paid, and a
+    // TRIAL/PAST_DUE subscription must not be "activated" by a pass that
+    // collected nothing.
+    if (!due.exempt) {
+      if (newOutstanding === 0 && !due.alreadyMarkedPaid) {
+        data.periodPaidAt = new Date();
+      }
+      if (due.needsActivation) {
+        data.status = "ACTIVE";
+      }
     }
     await tx.membershipSubscription.update({
       where: { id: due.subscriptionId },

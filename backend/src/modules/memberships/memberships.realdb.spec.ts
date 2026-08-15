@@ -721,14 +721,56 @@ d(
       );
       expect(exemptClamped.netPayoutCents).toBe(0); // 248 available, all 248 offset
 
-      // Still a true no-op for the subscription side — exempt never
-      // writes it, clamped or not.
+      // [Fix round #4 — the NET half of the same defect] Round #3 fixed
+      // the VAT proportion above and left the net residual behind: the
+      // batch RELEASED 5000-248=4752 kuruş it had previously collected,
+      // and the exempt branch's "write nothing" meant those 4752 were
+      // neither withheld by the batch nor returned to the balance —
+      // silently forgiven membership revenue. (This assertion used to
+      // read `toBe(1000)`; that 1000 WAS the leak.) persistOffset now
+      // writes one formula in both branches — stored + batchPrior -
+      // applied — so the released amount lands back where it is still
+      // owed: 1000 + 5000 - 248 = 5752 net, 167 + 833 - 41 = 959 VAT.
+      // Exemption still pauses COLLECTION (the cap fed to
+      // computeSettlement is this batch's own prior contribution, never
+      // the full balance) and still leaves the lifecycle flags alone.
       const subAfterClamp =
         await prisma.membershipSubscription.findUniqueOrThrow({
           where: { id: sub.id },
         });
-      expect(subAfterClamp.outstandingCents).toBe(1000);
-      expect(subAfterClamp.outstandingVatCents).toBe(167);
+      expect(subAfterClamp.outstandingCents).toBe(5752);
+      expect(subAfterClamp.outstandingVatCents).toBe(959);
+      // Ledger identity for the membership balance: what the subscription
+      // still owes plus what every batch has actually collected against
+      // it equals the original 6000/1000 — nothing forgiven, nothing
+      // double-counted.
+      expect(
+        subAfterClamp.outstandingCents + exemptClamped.membershipOffsetCents,
+      ).toBe(6000);
+      expect(
+        subAfterClamp.outstandingVatCents +
+          exemptClamped.membershipOffsetVatCents,
+      ).toBe(1000);
+      // Still paused, not collected: the exempt pass must not mark the
+      // period paid or promote the subscription's status.
+      expect(subAfterClamp.periodPaidAt).toBeNull();
+      expect(subAfterClamp.status).toBe("ACTIVE");
+
+      // And it CONVERGES: a further recompute with unchanged inputs is a
+      // true no-op on both the batch and the subscription (the released
+      // amount is not released a second time).
+      const exemptAgain = await batchBuilder.recomputeBatch(
+        batch.id,
+        new Date("2026-08-05T02:00:00.000Z"),
+      );
+      expect(exemptAgain.membershipOffsetCents).toBe(248);
+      expect(exemptAgain.membershipOffsetVatCents).toBe(41);
+      const subAfterSecondClamp =
+        await prisma.membershipSubscription.findUniqueOrThrow({
+          where: { id: sub.id },
+        });
+      expect(subAfterSecondClamp.outstandingCents).toBe(5752);
+      expect(subAfterSecondClamp.outstandingVatCents).toBe(959);
     }, 30000);
   },
 );

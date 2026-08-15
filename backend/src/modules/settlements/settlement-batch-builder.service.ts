@@ -7,7 +7,13 @@ import {
   offerDateToDbDate,
 } from "../../common/utils/istanbul-date.util";
 import { addBusinessDays } from "./business-days";
-import { computeSettlement, SettlementInputLine } from "./settlement-math";
+import {
+  allocateClawback,
+  ClawbackCandidate,
+  computeSettlement,
+  SettlementInputLine,
+  totalClawbackDemandCents,
+} from "./settlement-math";
 import { PublicHolidayService } from "./public-holiday.service";
 import { PricingService } from "./pricing.service";
 import { MembershipOffsetService } from "../memberships/membership-offset.service";
@@ -15,24 +21,42 @@ import { RECOMPUTABLE_SETTLEMENT_STATUSES } from "./settlement-transitions";
 
 const PAYOUT_DUE_BUSINESS_DAYS = 5;
 
-interface ClawbackCandidate {
+/** One settlement line this recompute has LOCKED and is responsible for
+ * re-projecting from the allocation ledger — whether or not it ends up
+ * funding it. The set is the union of "still has outstanding clawback
+ * demand" and "this batch currently holds an allocation against it", so
+ * releasing a claim is covered by the same exhaustive write as taking
+ * one. */
+interface LockedClawbackLine {
   reservationId: string;
-  /** [Fix round #2, C2-residual] The line's recovered amount EXCLUDING
-   * whatever THIS recomputing batch itself contributed on a prior pass —
-   * i.e. clawbackCents minus (clawbackCents if clawbackBatchId === this
-   * batch's id, else 0). This is the "undo my own prior contribution,
-   * then re-derive" baseline lockPendingClawback now computes, mirroring
-   * membership-offset.service.ts's lockAndResolveDue (which does exactly
-   * this for `batchPriorOffsetCents`) — see that method's fix-round doc
-   * comment for the identical reasoning applied to a single subscription
-   * balance instead of a per-line one. */
-  priorClawbackCents: number;
-  /** The line's full theoretical demand: grossCents - bagFeeCents -
-   * bagFeeVatCents - withholdingCents, floored at 0. */
+  /** grossCents - bagFeeCents - bagFeeVatCents - withholdingCents, floored
+   * at 0. Immutable for the lifetime of a clawback candidate: the line
+   * belongs to a SENT/SETTLED batch, which no recompute may touch. */
   fullDemandCents: number;
-  /** fullDemandCents - priorClawbackCents, floored at 0 — what's still
-   * outstanding for THIS line specifically, as of the baseline above. */
-  remainingCents: number;
+  /** Recovered by batches OTHER than the one recomputing. Read AFTER this
+   * recompute deleted its own allocation rows, so it is "everyone else's"
+   * by construction rather than by subtracting a remembered figure. */
+  otherBatchesRecoveredCents: number;
+}
+
+/** A settled line's FULL clawback demand — the merchant's own share of it,
+ * i.e. everything the platform actually paid out for that line. The single
+ * definition: `lockAndResetOwnClawbackLedger`, `projectLinesFromLedger`
+ * and `assertLedgerIdentity` all call it rather than re-spelling the
+ * subtraction, and `findMerchantsWithPendingClawback`'s SQL mirrors it. */
+function fullClawbackDemandCents(line: {
+  grossCents: number;
+  bagFeeCents: number;
+  bagFeeVatCents: number;
+  withholdingCents: number;
+}): number {
+  return Math.max(
+    0,
+    line.grossCents -
+      line.bagFeeCents -
+      line.bagFeeVatCents -
+      line.withholdingCents,
+  );
 }
 
 /**
@@ -58,6 +82,70 @@ interface ClawbackCandidate {
  * [Fix round] `runNightlyCycle` is now actually scheduled — the original
  * ship left it callable but undecorated (a real bug: deployed, this
  * engine would never have run on its own; see `runNightlyCycleCron`).
+ *
+ * ===================================================================
+ * [Fix round #4] THE RECOMPUTE INVARIANTS — read this before changing
+ * anything in `recomputeBatch`.
+ * ===================================================================
+ *
+ * Four consecutive audits found FOUR instances of one defect, each a
+ * column or a branch over from the last fix:
+ *   1. `resolveCarriedShortfall` excluded the batch being recomputed, so a
+ *      recompute forgave the shortfall it had itself inherited.
+ *   2. `lockPendingClawback` filtered out lines this batch had already
+ *      absorbed, so every `adminApprove` recompute forgave them.
+ *   3. `carriedExternalDemandCents` was zeroed once absorbed, and the next
+ *      pass read that zero as its own starting point.
+ *   4. The allocation loop's `break`/`continue` skipped the per-line write
+ *      while the batch row was rewritten without it, so the line ledger
+ *      and the batch ledger diverged.
+ *
+ * They are all the same bug: A RECOMPUTE READ BACK A VALUE ITS OWN EARLIER
+ * PASS HAD WRITTEN AND TREATED IT AS AN UNTOUCHED INPUT — or wrote one
+ * half of a two-place fact and not the other. Patching them one at a time
+ * did not converge, because each patch left the representation that makes
+ * them expressible in place. So the representation changed. Three rules
+ * now hold structurally, not by care:
+ *
+ * R1. NO INPUT OF A RECOMPUTE IS EVER AN OUTPUT OF THE SAME BATCH'S
+ *     EARLIER PASS. Per-line clawback demand is read from
+ *     `settlement_clawback_allocations` AFTER this batch has DELETEd every
+ *     row it owns, so what it reads is other batches' recoveries by
+ *     construction — there is no "subtract my own contribution back out"
+ *     arithmetic left to get wrong, and no owner-pointer to misattribute
+ *     (which is bugs 1, 2 and, in the multi-open-batch case the pointer
+ *     could not represent at all, a fifth latent instance). The inherited
+ *     external demand is read from `inheritedExternalDemandCents`, which
+ *     is written ONCE on the first pass and never included in a later
+ *     pass's UPDATE payload at all (bug 3). The membership balance is
+ *     restored the same way (membership-offset.service.ts).
+ *
+ * R2. EVERY DECISION IS PROJECTED ONTO STORAGE EXHAUSTIVELY, WITH NO
+ *     BRANCH ABLE TO SKIP A ROW. `allocateClawback` (pure, in
+ *     settlement-math.ts) returns exactly one entry per candidate — a
+ *     starved candidate is `absorbedCents: 0`, not a missing entry — and
+ *     the write path is "delete all my allocation rows, insert the
+ *     positive ones", so "fund nothing" and "release my claim" are the
+ *     same write. Then EVERY locked line is re-projected from the ledger
+ *     (`projectLinesFromLedger`) with `clawbackAppliedAt` written in both
+ *     directions. There is no `break` and no `continue` on any write path
+ *     (bug 4).
+ *
+ * R3. THE LEDGERS ARE RECONCILED AGAINST STORAGE BEFORE COMMIT.
+ *     `assertLedgerIdentity` re-reads the persisted allocation rows and
+ *     refuses to commit unless
+ *       refundClawbackCents === externalAbsorbed + SUM(my allocations)
+ *     and every touched line's `clawbackCents` equals the sum of ITS
+ *     allocations. A future refactor that reintroduces any of the four
+ *     bugs aborts the transaction instead of quietly paying the wrong
+ *     amount.
+ *
+ * The invariant those three deliver, the one that actually matters: every
+ * kuruş of clawback demand is, at all times, either recorded as withheld
+ * against a specific batch (an allocation row) or visible to a future
+ * batch's recovery query (`clawbackAppliedAt IS NULL` with a positive
+ * remainder, which R2 guarantees is exactly the complement) — never
+ * neither.
  */
 @Injectable()
 export class SettlementBatchBuilderService {
@@ -376,10 +464,17 @@ export class SettlementBatchBuilderService {
       );
       const membershipDueCents = due?.dueCents ?? 0;
 
-      const clawback = await this.lockPendingClawback(
+      // [Fix round #4, R1] Locks every line this recompute is responsible
+      // for AND drops this batch's own allocation rows before reading the
+      // ledger — so `otherBatchesRecoveredCents` below is other batches'
+      // recoveries by construction. See the class doc comment.
+      const lockedLines = await this.lockAndResetOwnClawbackLedger(
         tx,
         batch.merchantId,
         batchId,
+      );
+      const candidates: ClawbackCandidate[] = lockedLines.filter(
+        (l) => l.fullDemandCents - l.otherBatchesRecoveredCents > 0,
       );
 
       // [Fix round, C2] Cross-batch shortfall inheritance happens EXACTLY
@@ -421,9 +516,9 @@ export class SettlementBatchBuilderService {
       const carriedFromPrior = isFirstPass
         ? await this.resolveCarriedShortfall(tx, batch.merchantId, batchId)
         : batch.inheritedExternalDemandCents;
-      const inheritedExternalDemandCents = carriedFromPrior;
 
-      const priorClawbackCents = clawback.totalCents + carriedFromPrior;
+      const priorClawbackCents =
+        totalClawbackDemandCents(candidates) + carriedFromPrior;
 
       const result = computeSettlement({
         lines,
@@ -444,18 +539,18 @@ export class SettlementBatchBuilderService {
         membershipOffsetVatCents = offsetResult.appliedOffsetVatCents;
       }
 
-      // [Fix round, C2] The carried-external demand is absorbed FIRST
-      // (oldest debt), ahead of any freshly-detected per-line clawback —
-      // see the allocation block below, which relies on this same
-      // "absorb-external-first" split for `remainingToAllocate`. Whatever
-      // of `carriedFromPrior` is NOT absorbed this pass is exactly what
-      // `carriedExternalDemandCents` carries into the NEXT pass.
-      const externalAbsorbedThisPass = Math.min(
-        carriedFromPrior,
-        result.refundClawbackCents,
-      );
+      // [Fix round #4, R2] ONE pure decision, then an exhaustive write.
+      // The carried-external demand is absorbed FIRST (oldest debt),
+      // then per-line demand oldest-redemption-first — and
+      // `allocation.perCandidate` carries exactly one entry per candidate,
+      // starved ones included, so the write loops below cannot skip a row.
+      const allocation = allocateClawback({
+        appliedClawbackCents: result.refundClawbackCents,
+        externalDemandCents: carriedFromPrior,
+        candidates,
+      });
       const newCarriedExternalDemandCents =
-        carriedFromPrior - externalAbsorbedThisPass;
+        carriedFromPrior - allocation.externalAbsorbedCents;
 
       const updated = await tx.settlementBatch.update({
         where: { id: batchId },
@@ -470,12 +565,14 @@ export class SettlementBatchBuilderService {
           netPayoutCents: result.netPayoutCents,
           carriedShortfallCents: result.carriedShortfallCents,
           carriedExternalDemandCents: newCarriedExternalDemandCents,
-          // [Fix round #3] Idempotent regardless of pass: on the first
-          // pass this WRITES the newly-resolved inherited amount; on
-          // every later pass it re-writes the SAME value it just READ
-          // above as `carriedFromPrior` — a no-op, keeping the immutable
-          // column genuinely immutable after its first write.
-          inheritedExternalDemandCents,
+          // [Fix round #4, R1] WRITE-ONCE, structurally: the immutable
+          // inherited amount is in this payload on the first pass ONLY.
+          // Round #3 wrote the same value back on every pass and relied on
+          // it being identical; not offering the column to a later pass at
+          // all is the same guarantee with nothing left to get wrong.
+          ...(isFirstPass
+            ? { inheritedExternalDemandCents: carriedFromPrior }
+            : {}),
           shortfallResolvedAt: batch.shortfallResolvedAt ?? now,
           status: result.held ? "HELD" : "CALCULATED",
           holdReason: result.held
@@ -495,124 +592,268 @@ export class SettlementBatchBuilderService {
         });
       }
 
-      // [Fix round, I4] Allocate result.refundClawbackCents in priority
-      // order: the inherited (non-line-attributable) carried external
-      // demand first — older debt, `externalAbsorbedThisPass` above —
-      // then fresh per-line demand, oldest reservation first
-      // (lockPendingClawback's ORDER BY redeemedAt ASC). Each candidate's
-      // clawbackCents is now a CUMULATIVE running total (a line can be
-      // topped up across several batches); clawbackAppliedAt is only
-      // stamped once a line's cumulative recovery reaches its full
-      // theoretical demand — a partially-absorbed line stays eligible for
-      // the NEXT sweep instead of being incorrectly marked fully resolved.
-      //
-      // [Fix round #3] clawbackAppliedAt is now written UNCONDITIONALLY —
-      // `fullyResolved ? now : null`, never a conditional spread that
-      // writes it only when true. The C2-residual fix above (lines
-      // 12.1-worthy — clawbackBatchId===batchId now stays in the
-      // candidate set even once clawbackAppliedAt was previously set)
-      // made a DOWNWARD re-derivation reachable for the first time: a
-      // line THIS batch fully resolved on an earlier pass is correctly
-      // re-included with a baseline of 0 (full original demand) on a
-      // later pass, but if this batch's OWN available amount SHRANK since
-      // then (a bagFeeCentsOverride edit, a membership offset that grew
-      // after a retroactive change, a pricing row now effective as-of
-      // this period), `newCumulative` can land BELOW `fullDemandCents`
-      // even though clawbackAppliedAt was already sitting at a stale
-      // non-null timestamp from the earlier, larger-absorption pass. The
-      // old conditional spread left that stale timestamp in place — the
-      // line then looked resolved (appliedAt set) while genuinely being
-      // under-recovered (cents < demand), and matched NEITHER
-      // findMerchantsWithPendingClawback's NOR any other batch's
-      // lockPendingClawback's `clawbackAppliedAt IS NULL` filter —
-      // silently unrecoverable the moment this batch itself reaches SENT
-      // and stops recomputing. Explicitly clearing it back to null
-      // re-opens the line for the next sweep, symmetric with how it gets
-      // set.
-      let remainingToAllocate =
-        result.refundClawbackCents - externalAbsorbedThisPass;
-      for (const candidate of clawback.candidates) {
-        if (remainingToAllocate <= 0) break;
-        const absorbed = Math.min(
-          remainingToAllocate,
-          candidate.remainingCents,
-        );
-        if (absorbed <= 0) continue;
-        remainingToAllocate -= absorbed;
-        const newCumulative = candidate.priorClawbackCents + absorbed;
-        const fullyResolved = newCumulative >= candidate.fullDemandCents;
-        await tx.settlementLine.update({
-          where: { reservationId: candidate.reservationId },
-          data: {
-            clawbackCents: newCumulative,
-            clawbackBatchId: batchId,
-            clawbackAppliedAt: fullyResolved ? now : null,
-          },
+      // [Fix round #4, R2] Persist the allocation ledger. This batch's own
+      // rows were already DELETEd by lockAndResetOwnClawbackLedger, so the
+      // only write left is inserting the positive ones — a candidate the
+      // allocator funded nothing simply has no row, which is the same
+      // storage state as "released the claim I used to hold." There is no
+      // per-candidate branch here at all.
+      const funded = allocation.perCandidate.filter((a) => a.absorbedCents > 0);
+      if (funded.length > 0) {
+        await tx.settlementClawbackAllocation.createMany({
+          data: funded.map((a) => ({
+            batchId,
+            reservationId: a.reservationId,
+            amountCents: a.absorbedCents,
+          })),
         });
       }
+
+      // [Fix round #4, R2] Re-project EVERY locked line's denormalized
+      // clawback columns from the ledger as it now stands on disk —
+      // candidates and released ones alike, funded or starved. Reading
+      // back rather than reusing the in-memory plan is deliberate: the
+      // projection is then literally "what the ledger says", which is also
+      // what makes the assertion below a real check instead of a restated
+      // assumption.
+      await this.projectLinesFromLedger(
+        tx,
+        lockedLines.map((l) => l.reservationId),
+        now,
+      );
+
+      // [Fix round #4, R3] Refuse to commit a divergence.
+      await this.assertLedgerIdentity(
+        tx,
+        batchId,
+        updated,
+        lockedLines.map((l) => l.reservationId),
+      );
 
       return updated;
     });
   }
 
   /**
-   * Locks (FOR UPDATE OF sl) every settlement_line with an outstanding
-   * refund clawback for this merchant, BEFORE this transaction's
-   * computeSettlement() call uses their sum. Without this lock, two
-   * concurrent recomputeBatch calls for the same merchant (a fresh
-   * today's batch and, say, an older still-open one, processed by two
-   * overlapping cron ticks) could both read the SAME unclaimed clawback
-   * total, both bake it into their own batch's aggregate, and only
-   * discover the conflict at the final line update — by which point one
-   * batch's ALREADY-COMMITTED totals would be wrong (double-counted
-   * clawback), even though the underlying lines were only ever claimed
-   * once. Locking here means the second transaction BLOCKS until the
-   * first commits, then re-reads and correctly sees these rows' updated
-   * (possibly now-fully-resolved) clawbackCents.
+   * [Fix round #4, R2] Rewrites `clawbackCents`, `clawbackAppliedAt` and
+   * `clawbackBatchId` on each given line from `settlement_clawback_
+   * allocations` — the ONLY place those three are ever written. Every one
+   * of them is written on every call, in both directions:
    *
-   * [Fix round, I4] `clawbackCents` is a CUMULATIVE running total per line
-   * now (see the class doc comment) — `remainingCents` (this line's full
-   * demand minus what's already been recovered across any prior batches)
-   * is what's actually available to allocate this pass, not the line's
-   * full original demand.
+   *  - `clawbackCents` = SUM of the line's allocations (0 when none).
+   *  - `clawbackAppliedAt` = the moment the line BECAME fully resolved,
+   *    and explicitly NULL whenever it is not. Clearing it is as
+   *    important as setting it: an under-recovered line whose flag stayed
+   *    set would match neither `findMerchantsWithPendingClawback` nor any
+   *    batch's candidate query, and its residual would be owed by nobody
+   *    and visible to no one. An ALREADY-resolved line that is still
+   *    resolved keeps its original timestamp rather than being re-stamped
+   *    with this pass's `now` — otherwise a repeat recompute with
+   *    identical inputs would produce a different row, which is the
+   *    idempotence half of this class of bug rather than the money half.
+   *    (This test caught exactly that in review: `[m]`'s convergence
+   *    assertion failed on a moving timestamp before the `??` below.)
+   *  - `clawbackBatchId` = the most recent allocating batch, or NULL. It
+   *    is an AUDIT POINTER ONLY. Per-batch attribution lives in the
+   *    allocation rows; treating this single pointer as attribution is
+   *    what made a line touched by two batches unattributable, and is the
+   *    representation fix round #4 removed.
    *
-   * [Fix round #2, C2-residual — CRITICAL, this was still half-open]
-   * A line this SAME batch already fully recovered on an earlier pass
-   * (clawbackAppliedAt set, clawbackBatchId = this batch) used to be
-   * excluded entirely by the `clawbackAppliedAt IS NULL` filter — meaning
-   * every recompute of an APPROVED-bound or retried batch (adminApprove
-   * recomputes once more before locking in; adminRetry on a HELD batch
-   * recomputes explicitly) silently REWROTE refundClawbackCents back
-   * towards 0, forgiving money the batch had already, correctly,
-   * recovered. Concretely: batch2 absorbs a 16830 clawback in its first
-   * pass (line fully resolved) -> adminApprove's pre-lock recompute used
-   * to find NO candidates at all (the line no longer matched), rederive
-   * refundClawbackCents=0, and approve/pay the FULL, un-clawed-back gross.
-   *
-   * Fixed the same way membership-offset.service.ts's lockAndResolveDue
-   * already handles the identical problem for a subscription balance:
-   * "undo THIS BATCH's own prior contribution, then re-derive fresh."
-   * The WHERE clause now ALSO matches a line whose clawbackBatchId is
-   * this batch (regardless of clawbackAppliedAt), and for those rows
-   * `priorClawbackCents` (the baseline this pass builds from) is
-   * `clawbackCents` MINUS whatever this batch itself put there —
-   * concretely 0, since clawbackBatchId being this batch's id means this
-   * batch is the ONLY possible contributor since its own last pass (any
-   * OTHER batch touching the line afterwards would have overwritten
-   * clawbackBatchId to ITS OWN id first). A line last touched by a
-   * DIFFERENT, still-open batch is deliberately left alone here (its
-   * clawbackBatchId won't match `batchId`) — untangling a genuine
-   * interleaved multi-open-batch race on the very same line is out of
-   * this fix's scope; the concrete, review-confirmed scenarios (a single
-   * batch recomputed via adminApprove/adminRetry with no other batch
-   * touching its lines in between) are what this closes, and is what the
-   * two extended realdb scenarios below assert stays idempotent.
+   * A line with zero demand (fees ate its whole gross) is left with a NULL
+   * flag: there is nothing to resolve, and the recovery queries exclude it
+   * on the `remainder > 0` predicate anyway.
    */
-  private async lockPendingClawback(
+  private async projectLinesFromLedger(
+    tx: Prisma.TransactionClient,
+    reservationIds: string[],
+    now: Date,
+  ): Promise<void> {
+    if (reservationIds.length === 0) return;
+
+    const [lines, allocations] = await Promise.all([
+      tx.settlementLine.findMany({
+        where: { reservationId: { in: reservationIds } },
+        select: {
+          reservationId: true,
+          grossCents: true,
+          bagFeeCents: true,
+          bagFeeVatCents: true,
+          withholdingCents: true,
+          clawbackAppliedAt: true,
+        },
+      }),
+      tx.settlementClawbackAllocation.findMany({
+        where: { reservationId: { in: reservationIds } },
+        orderBy: [{ createdAt: "asc" }, { batchId: "asc" }],
+      }),
+    ]);
+
+    const byReservation = new Map<
+      string,
+      { total: number; lastBatchId: string }
+    >();
+    for (const a of allocations) {
+      const current = byReservation.get(a.reservationId);
+      byReservation.set(a.reservationId, {
+        total: (current?.total ?? 0) + a.amountCents,
+        // Ordered ascending above, so the last one seen is the most recent.
+        lastBatchId: a.batchId,
+      });
+    }
+
+    for (const line of lines) {
+      const agg = byReservation.get(line.reservationId);
+      const total = agg?.total ?? 0;
+      const fullDemandCents = fullClawbackDemandCents(line);
+      await tx.settlementLine.update({
+        where: { reservationId: line.reservationId },
+        data: {
+          clawbackCents: total,
+          clawbackBatchId: agg?.lastBatchId ?? null,
+          clawbackAppliedAt:
+            fullDemandCents > 0 && total >= fullDemandCents
+              ? (line.clawbackAppliedAt ?? now)
+              : null,
+        },
+      });
+    }
+  }
+
+  /**
+   * [Fix round #4, R3] The tripwire. Re-reads what was actually persisted
+   * and refuses to let the transaction commit unless the batch ledger and
+   * the line ledger agree:
+   *
+   *   refundClawbackCents
+   *     === (inheritedExternalDemandCents - carriedExternalDemandCents)
+   *       + SUM(this batch's allocation amounts)
+   *
+   * and, for every line this pass was RESPONSIBLE for — the candidates it
+   * considered AND the ones whose claim it released, not merely the ones
+   * it funded — that the line's own `clawbackCents` equals the sum of its
+   * allocations and never exceeds its full demand. Checking only the
+   * funded lines would miss bug 4 exactly, since that bug's signature is a
+   * line the batch stopped funding and never rewrote.
+   *
+   * Every one of the four defects this class of fix was raised against
+   * ended with two of these sides disagreeing. Throwing rolls the whole
+   * recompute back, leaving the previous, self-consistent state in place:
+   * a loud failure on one merchant's batch, never a quiet wrong payment.
+   */
+  private async assertLedgerIdentity(
+    tx: Prisma.TransactionClient,
+    batchId: string,
+    batch: SettlementBatch,
+    responsibleReservationIds: string[],
+  ): Promise<void> {
+    const mine = await tx.settlementClawbackAllocation.findMany({
+      where: { batchId },
+      select: { reservationId: true, amountCents: true },
+    });
+    const allocatedToLines = mine.reduce((s, a) => s + a.amountCents, 0);
+    const externalAbsorbed =
+      batch.inheritedExternalDemandCents - batch.carriedExternalDemandCents;
+
+    if (allocatedToLines + externalAbsorbed !== batch.refundClawbackCents) {
+      throw new Error(
+        `SETTLEMENT_LEDGER_DIVERGENCE: batch ${batchId} recorded refundClawbackCents=${batch.refundClawbackCents} but its ledger accounts for ${externalAbsorbed} (external) + ${allocatedToLines} (lines) = ${allocatedToLines + externalAbsorbed}`,
+      );
+    }
+
+    const touched = Array.from(
+      new Set([
+        ...responsibleReservationIds,
+        ...mine.map((a) => a.reservationId),
+      ]),
+    );
+    if (touched.length === 0) return;
+    const [lines, allocations] = await Promise.all([
+      tx.settlementLine.findMany({
+        where: { reservationId: { in: touched } },
+        select: {
+          reservationId: true,
+          clawbackCents: true,
+          grossCents: true,
+          bagFeeCents: true,
+          bagFeeVatCents: true,
+          withholdingCents: true,
+        },
+      }),
+      tx.settlementClawbackAllocation.findMany({
+        where: { reservationId: { in: touched } },
+        select: { reservationId: true, amountCents: true },
+      }),
+    ]);
+    const totals = new Map<string, number>();
+    for (const a of allocations) {
+      totals.set(
+        a.reservationId,
+        (totals.get(a.reservationId) ?? 0) + a.amountCents,
+      );
+    }
+    for (const line of lines) {
+      const total = totals.get(line.reservationId) ?? 0;
+      if (line.clawbackCents !== total) {
+        throw new Error(
+          `SETTLEMENT_LEDGER_DIVERGENCE: line ${line.reservationId} stores clawbackCents=${line.clawbackCents} but its allocations sum to ${total}`,
+        );
+      }
+      const fullDemandCents = fullClawbackDemandCents(line);
+      if (total > fullDemandCents) {
+        throw new Error(
+          `SETTLEMENT_LEDGER_DIVERGENCE: line ${line.reservationId} has been over-recovered — allocations sum to ${total} against a full demand of ${fullDemandCents}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * [Fix round #4, R1] Takes the row lock on every settlement line this
+   * recompute is responsible for, then DELETES every allocation row this
+   * batch owns — in that order, inside the caller's transaction.
+   *
+   * That delete is the whole point. Rounds #2 and #3 reconstructed "what
+   * did I myself already withhold against this line?" arithmetically, by
+   * subtracting a remembered figure back out of a cumulative column
+   * (`clawbackCents` minus `clawbackCents if clawbackBatchId === me`).
+   * That reconstruction is only correct while THIS batch is the sole
+   * contributor: the moment a second still-open batch topped the same line
+   * up, the pointer moved, the first batch's own contribution became
+   * indistinguishable from everyone else's, and its next recompute either
+   * forgave it or re-charged it — a fifth instance of the same class, one
+   * step further out than the four that were reported.
+   *
+   * Deleting first replaces reconstruction with erasure: whatever remains
+   * in the ledger afterwards IS other batches' recoveries, exactly, with
+   * no arithmetic and no assumption about who touched what since. Any
+   * number of open batches can hold partial claims on the same line and
+   * each can re-derive its own independently.
+   *
+   * WHICH LINES. The union of two sets, so that releasing a claim is
+   * covered by the same exhaustive write as taking one:
+   *   (a) lines with an outstanding refund clawback for this merchant —
+   *       belonging to a SENT/SETTLED batch (a line still being computed
+   *       has not been paid out, so there is nothing to claw back), with a
+   *       DONE/SENT refund, and not yet fully recovered; plus
+   *   (b) lines this batch currently holds an allocation against — even
+   *       fully-recovered ones, because this pass may have to give some or
+   *       all of it back.
+   *
+   * WHY THE LOCK. Without it, two concurrent recomputes for the same
+   * merchant (a fresh today's batch and an older still-open one, from two
+   * overlapping cron ticks) could both read the same outstanding demand,
+   * both bake it into their own aggregate, and only collide at write time
+   * — by which point one batch's already-committed totals would be wrong.
+   * `FOR UPDATE OF sl` makes the second transaction block until the first
+   * commits, then re-read the now-current ledger. It is taken BEFORE the
+   * delete so the delete/read/insert sequence for a line is serialized
+   * end to end.
+   */
+  private async lockAndResetOwnClawbackLedger(
     tx: Prisma.TransactionClient,
     merchantId: string,
     batchId: string,
-  ): Promise<{ totalCents: number; candidates: ClawbackCandidate[] }> {
+  ): Promise<LockedClawbackLine[]> {
     const rows = await tx.$queryRaw<
       {
         reservationId: string;
@@ -620,49 +861,57 @@ export class SettlementBatchBuilderService {
         bagFeeCents: number;
         bagFeeVatCents: number;
         withholdingCents: number;
-        clawbackCents: number;
-        clawbackBatchId: string | null;
       }[]
     >(Prisma.sql`
-      SELECT sl."reservationId", sl."grossCents", sl."bagFeeCents", sl."bagFeeVatCents", sl."withholdingCents", sl."clawbackCents", sl."clawbackBatchId"
+      SELECT sl."reservationId", sl."grossCents", sl."bagFeeCents", sl."bagFeeVatCents", sl."withholdingCents"
       FROM "settlement_lines" sl
       JOIN "settlement_batches" sb ON sb.id = sl."batchId"
-      JOIN "payments" p ON p."reservationId" = sl."reservationId"
-      WHERE (sl."clawbackAppliedAt" IS NULL OR sl."clawbackBatchId" = ${batchId})
-        AND sb."merchantId" = ${merchantId}
-        AND sb."status" IN ('SENT', 'SETTLED')
-        AND EXISTS (
-          SELECT 1 FROM "refunds" rf
-          WHERE rf."paymentId" = p.id AND rf."status" IN ('DONE', 'SENT')
+      WHERE sb."merchantId" = ${merchantId}
+        AND (
+          EXISTS (
+            SELECT 1 FROM "settlement_clawback_allocations" a
+            WHERE a."reservationId" = sl."reservationId" AND a."batchId" = ${batchId}
+          )
+          OR (
+            sl."clawbackAppliedAt" IS NULL
+            AND sb."status" IN ('SENT', 'SETTLED')
+            AND EXISTS (
+              SELECT 1 FROM "payments" p
+              JOIN "refunds" rf ON rf."paymentId" = p.id
+              WHERE p."reservationId" = sl."reservationId"
+                AND rf."status" IN ('DONE', 'SENT')
+            )
+          )
         )
-      ORDER BY sl."redeemedAt" ASC
+      ORDER BY sl."redeemedAt" ASC, sl."reservationId" ASC
       FOR UPDATE OF sl
     `);
 
-    const candidates: ClawbackCandidate[] = rows
-      .map((r) => {
-        const fullDemandCents = Math.max(
-          0,
-          r.grossCents - r.bagFeeCents - r.bagFeeVatCents - r.withholdingCents,
-        );
-        const priorContributionByThisBatch =
-          r.clawbackBatchId === batchId ? r.clawbackCents : 0;
-        const priorClawbackCents =
-          r.clawbackCents - priorContributionByThisBatch;
-        const remainingCents = Math.max(
-          0,
-          fullDemandCents - priorClawbackCents,
-        );
-        return {
-          reservationId: r.reservationId,
-          priorClawbackCents,
-          fullDemandCents,
-          remainingCents,
-        };
-      })
-      .filter((c) => c.remainingCents > 0);
-    const totalCents = candidates.reduce((sum, c) => sum + c.remainingCents, 0);
-    return { totalCents, candidates };
+    // Erase this batch's own claims BEFORE reading the ledger, so what is
+    // read back cannot possibly include them.
+    await tx.settlementClawbackAllocation.deleteMany({ where: { batchId } });
+
+    const reservationIds = rows.map((r) => r.reservationId);
+    const othersLedger =
+      reservationIds.length === 0
+        ? []
+        : await tx.settlementClawbackAllocation.findMany({
+            where: { reservationId: { in: reservationIds } },
+            select: { reservationId: true, amountCents: true },
+          });
+    const otherRecovered = new Map<string, number>();
+    for (const a of othersLedger) {
+      otherRecovered.set(
+        a.reservationId,
+        (otherRecovered.get(a.reservationId) ?? 0) + a.amountCents,
+      );
+    }
+
+    return rows.map((r) => ({
+      reservationId: r.reservationId,
+      fullDemandCents: fullClawbackDemandCents(r),
+      otherBatchesRecoveredCents: otherRecovered.get(r.reservationId) ?? 0,
+    }));
   }
 
   /** The merchant's single most-recently-CREATED batch, excluding the one
@@ -682,14 +931,14 @@ export class SettlementBatchBuilderService {
    *   - unresolved refund-clawback demand (fresh or itself inherited from
    *     an earlier link in the chain) — this DOES have an independent
    *     representation: every settlement_line with clawbackAppliedAt still
-   *     NULL stays visible to lockPendingClawback() for EVERY future batch
+   *     NULL stays visible to the candidate query (lockAndResetOwnClawbackLedger) for EVERY future batch
    *     of this merchant, regardless of which batch is HELD in between.
    * Inheriting the full total here double-counts that second component —
    * proven by a real scenario built while writing this fix's test: two
    * refunded lines from one SENT batch partially absorbed by a HELD
    * successor (one line fully resolved, one left with a remainder); if the
    * THIRD batch inherited the second batch's full carriedShortfallCents
-   * AND separately had lockPendingClawback re-find that same still-open
+   * AND separately had the candidate query re-find that same still-open
    * line, the remaining demand would be charged twice. So this method
    * returns exactly:
    *   predecessor's OWN fee deficit (re-derived here from its stored
