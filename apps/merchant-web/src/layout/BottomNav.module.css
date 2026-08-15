@@ -1,0 +1,34 @@
+.nav {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  background: var(--color-neutral-0);
+  border-top: 1px solid var(--color-neutral-200);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* Above anything else that might scroll under it. */
+  z-index: 10;
+}
+
+.item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 56px;
+  padding: var(--space-xs) 0;
+  color: var(--color-neutral-500);
+  text-decoration: none;
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-label);
+}
+
+.itemActive {
+  color: var(--color-primary-600);
+}
+
+.icon {
+  width: 22px;
+  height: 22px;
+}

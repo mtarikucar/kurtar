@@ -1,0 +1,80 @@
+.wrap {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+  padding: var(--space-2xl) var(--space-lg) var(--space-3xl);
+  max-width: 520px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.topRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.logoutButton {
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--color-neutral-500);
+  cursor: pointer;
+  font-size: var(--font-size-label);
+}
+
+.title {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-h1);
+  color: var(--color-neutral-900);
+}
+
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.checklistHeading {
+  font-size: var(--font-size-label);
+  color: var(--color-neutral-500);
+}
+
+.checklistItems {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.checklistItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  font-size: var(--font-size-body);
+  color: var(--color-neutral-700);
+}
+
+.checklistBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  border-radius: 50%;
+  background: var(--color-neutral-100);
+  color: var(--color-neutral-500);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bodyStrong);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.contractVersion {
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-500);
+}
