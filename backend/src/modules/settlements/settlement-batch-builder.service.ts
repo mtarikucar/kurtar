@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ConflictException, Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { Prisma, SettlementBatch } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -20,6 +20,18 @@ import { MembershipOffsetService } from "../memberships/membership-offset.servic
 import { RECOMPUTABLE_SETTLEMENT_STATUSES } from "./settlement-transitions";
 
 const PAYOUT_DUE_BUSINESS_DAYS = 5;
+
+/** [Fix round #5, follow-up] One merchant's nightly work that did not
+ * complete. Collected instead of thrown, so a single merchant needing
+ * reconciliation cannot stop the platform's night — and surfaced in the
+ * cycle's result (logged by the cron, returned by the admin trigger) so it
+ * is visible rather than silently swallowed. `merchantId` is null only for
+ * a failure of the platform-wide clawback scan itself. */
+export interface NightlyCycleFailure {
+  merchantId: string | null;
+  stage: "batch" | "clawback-sweep" | "clawback-sweep-scan";
+  message: string;
+}
 
 /** One settlement line this recompute has LOCKED and is responsible for
  * re-projecting from the allocation ledger — whether or not it ends up
@@ -211,13 +223,22 @@ export class SettlementBatchBuilderService {
         `Nightly settlement batch: touched ${result.batchIds.length} batch(es)`,
       );
     }
+    if (result.failures.length > 0) {
+      this.logger.error(
+        `Nightly settlement batch: ${result.failures.length} merchant(s) need reconciliation and were skipped — ${result.failures
+          .map((f) => `${f.merchantId ?? "platform"} (${f.stage})`)
+          .join(", ")}`,
+      );
+    }
   }
 
   /** Not private — realdb specs (and the admin trigger endpoint) call
    * this directly (once, or concurrently from two harness instances)
    * instead of waiting on the cron schedule. Returns every batch id
    * touched this run. */
-  async runNightlyCycle(now: Date): Promise<{ batchIds: string[] }> {
+  async runNightlyCycle(
+    now: Date,
+  ): Promise<{ batchIds: string[]; failures: NightlyCycleFailure[] }> {
     const touched = new Set<string>();
 
     const eligible = await this.prisma.reservation.findMany({
@@ -274,38 +295,86 @@ export class SettlementBatchBuilderService {
     }
 
     const merchantsWithFreshLines = new Set<string>();
+    // [Fix round #5, follow-up] PER-MERCHANT ISOLATION. Every merchant's
+    // work is its own failure domain. Before this, one merchant's
+    // exception — and this round made an exception REACHABLE, via
+    // assertIrrevocableClaimsHonoured's deliberate refusal — aborted the
+    // whole cycle: every remaining group AND the entire clawback-only
+    // sweep below. Since the eligibility scan is ordered by `redeemedAt`
+    // ascending, a single merchant with an old redemption sat at the front
+    // and could take down most of the platform's night. One merchant's
+    // reconciliation item must never stop everybody else from being paid.
+    //
+    // Failures are collected and returned (and logged by the cron and
+    // surfaced by the admin trigger's response) rather than swallowed: an
+    // isolated failure that nobody can see is its own defect.
+    const failures: NightlyCycleFailure[] = [];
+    const isolate = async (
+      merchantId: string,
+      stage: NightlyCycleFailure["stage"],
+      work: () => Promise<void>,
+    ) => {
+      try {
+        await work();
+      } catch (err) {
+        const error = err as Error;
+        failures.push({ merchantId, stage, message: error.message });
+        this.logger.error(
+          `Nightly settlement ${stage} failed for merchant ${merchantId}: ${error.message} — continuing with the remaining merchants.`,
+        );
+      }
+    };
+
     for (const group of groups.values()) {
       merchantsWithFreshLines.add(group.merchantId);
-      const batchId = await this.createOrExtendBatch(
-        group.merchantId,
-        group.dayKey,
-        group.lines,
-        group.redeemedAtByReservation,
-      );
-      await this.recomputeBatch(batchId, now);
-      touched.add(batchId);
+      await isolate(group.merchantId, "batch", async () => {
+        const batchId = await this.createOrExtendBatch(
+          group.merchantId,
+          group.dayKey,
+          group.lines,
+          group.redeemedAtByReservation,
+        );
+        await this.recomputeBatch(batchId, now);
+        touched.add(batchId);
+      });
     }
 
     // Clawback-only sweep: merchants with an unclaimed refund clawback but
     // NO fresh lines this cycle (a merchant WITH fresh lines already had
     // its clawback opportunistically absorbed by recomputeBatch above —
     // it queries pending clawback unconditionally, not just for the
-    // clawback-only path).
-    const clawbackMerchantIds = await this.findMerchantsWithPendingClawback();
+    // clawback-only path). Reached even when every group above failed,
+    // which was NOT true before this fix.
+    let clawbackMerchantIds: string[] = [];
+    try {
+      clawbackMerchantIds = await this.findMerchantsWithPendingClawback();
+    } catch (err) {
+      const error = err as Error;
+      failures.push({
+        merchantId: null,
+        stage: "clawback-sweep-scan",
+        message: error.message,
+      });
+      this.logger.error(
+        `Nightly settlement clawback sweep scan failed: ${error.message} — the batches above are unaffected.`,
+      );
+    }
     const todayKey = istanbulDateKey(now);
     for (const merchantId of clawbackMerchantIds) {
       if (merchantsWithFreshLines.has(merchantId)) continue;
-      const batchId = await this.createOrExtendBatch(
-        merchantId,
-        todayKey,
-        [],
-        new Map(),
-      );
-      await this.recomputeBatch(batchId, now);
-      touched.add(batchId);
+      await isolate(merchantId, "clawback-sweep", async () => {
+        const batchId = await this.createOrExtendBatch(
+          merchantId,
+          todayKey,
+          [],
+          new Map(),
+        );
+        await this.recomputeBatch(batchId, now);
+        touched.add(batchId);
+      });
     }
 
-    return { batchIds: Array.from(touched) };
+    return { batchIds: Array.from(touched), failures };
   }
 
   private async findMerchantsWithPendingClawback(): Promise<string[]> {
@@ -1166,8 +1235,14 @@ export class SettlementBatchBuilderService {
     const collected = irrevocable.reduce((sum, c) => sum + c.amountCents, 0);
     const exportable = exportableCarriedDemandCents(batch);
     if (collected > exportable) {
-      throw new Error(
-        `SETTLEMENT_CARRIED_DEMAND_ALREADY_COLLECTED: batch ${batch.id} would export only ${exportable} kuruş after this recompute, but ${irrevocable
+      // [Parked ruling 2] ConflictException, not a bare Error: an operator
+      // hitting this through an admin endpoint sees the errorCode instead of
+      // a generic 500. The code stays inside `message` too, so the cron log
+      // line and the per-merchant failure entry both name it.
+      throw new ConflictException({
+        statusCode: 409,
+        errorCode: "SETTLEMENT_CARRIED_DEMAND_ALREADY_COLLECTED",
+        message: `SETTLEMENT_CARRIED_DEMAND_ALREADY_COLLECTED: batch ${batch.id} would export only ${exportable} kuruş after this recompute, but ${irrevocable
           .map(
             (c) =>
               `${c.claimantBatchId} (${c.claimantBatch.status}, ${c.amountCents})`,
@@ -1175,7 +1250,7 @@ export class SettlementBatchBuilderService {
           .join(
             ", ",
           )} already withheld ${collected} kuruş of its demand from a payout that can no longer be recomputed. Refusing to commit — the difference is owed back to the merchant and needs manual reconciliation, not a silent re-derivation.`,
-      );
+      });
     }
   }
 }

@@ -2151,9 +2151,25 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
       unitPriceCents: 100000,
       redeemedAt: new Date("2026-08-01T15:00:00.000Z"),
     });
-    await expect(
-      batchBuilder.runNightlyCycle(new Date("2026-08-05T02:00:00.000Z")),
-    ).rejects.toThrow(/SETTLEMENT_CARRIED_DEMAND_ALREADY_COLLECTED/);
+    // [Fix round #5, follow-up] The refusal is now COLLECTED per merchant,
+    // not thrown out of the cycle — see test [o]. The batch is still
+    // refused; what changed is that it can no longer take the rest of the
+    // platform's night down with it.
+    const refusedCycle = await batchBuilder.runNightlyCycle(
+      new Date("2026-08-05T02:00:00.000Z"),
+    );
+    expect(
+      refusedCycle.failures.filter((f) => f.merchantId === merchantB.id),
+    ).toEqual([
+      {
+        merchantId: merchantB.id,
+        stage: "batch",
+        message: expect.stringContaining(
+          "SETTLEMENT_CARRIED_DEMAND_ALREADY_COLLECTED",
+        ),
+      },
+    ]);
+    expect(refusedCycle.batchIds).not.toContain(bB1.id);
 
     // The recompute transaction rolled back: the predecessor keeps its
     // previous, self-consistent MONEY state, the successor's sent payout is
@@ -2186,5 +2202,122 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
       }),
     ).toMatchObject({ sourceBatchId: bB1.id, amountCents: 4000 });
     await expectClawbackLedgerConsistent(prisma, merchantB.id);
+  }, 30000);
+
+  it("[o] [Fix round #5, follow-up] one merchant needing reconciliation does NOT stop the rest of the platform settling that night — the failure is isolated, collected and reported", async () => {
+    const { batchBuilder, settlements, payout } = buildHarness(prisma);
+
+    // Merchant A: driven into the one state that makes recomputeBatch
+    // refuse (a predecessor cured after a successor's payout was already
+    // sent). Its late line is redeemed EARLIEST, and runNightlyCycle's
+    // eligibility scan is ordered by redeemedAt ASC, so A is processed
+    // FIRST — with no isolation, everyone after it silently loses their
+    // night.
+    const merchantA = await seedMerchant(prisma, {
+      bagFeeCentsOverride: 20000,
+    });
+    merchantIds.push(merchantA.id);
+    const storeA = await seedStore(prisma, merchantA.id);
+    const tplA = await seedBagTemplate(prisma, storeA.id, 20000);
+    const offerA = await seedOffer(prisma, tplA.id, storeA.id, 20);
+
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: storeA.id,
+      offerId: offerA.id,
+      qty: 1,
+      unitPriceCents: 20000,
+      redeemedAt: new Date("2026-08-01T11:00:00.000Z"),
+    });
+    await batchBuilder.runNightlyCycle(new Date("2026-08-02T02:00:00.000Z"));
+    const aB1 = await prisma.settlementBatch.findFirstOrThrow({
+      where: { merchantId: merchantA.id },
+    });
+    expect(aB1.status).toBe("HELD");
+
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: storeA.id,
+      offerId: offerA.id,
+      qty: 1,
+      unitPriceCents: 100000,
+      redeemedAt: new Date("2026-08-03T11:00:00.000Z"),
+    });
+    await batchBuilder.runNightlyCycle(new Date("2026-08-04T02:00:00.000Z"));
+    const aB2 = await prisma.settlementBatch.findFirstOrThrow({
+      where: { merchantId: merchantA.id, id: { not: aB1.id } },
+    });
+    await settlements.adminApprove(
+      aB2.id,
+      new Date("2026-08-04T03:00:00.000Z"),
+    );
+    await payout.executeOne(aB2.id);
+    // The very-late line that will cure aB1 and trip the guard.
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: storeA.id,
+      offerId: offerA.id,
+      qty: 1,
+      unitPriceCents: 100000,
+      redeemedAt: new Date("2026-08-01T15:00:00.000Z"),
+    });
+
+    // Merchant B: an ordinary merchant with an ordinary redemption,
+    // redeemed LATER than A's late line, so it is processed after A.
+    const merchantB2 = await seedMerchant(prisma, { bagFeeCentsOverride: 0 });
+    merchantIds.push(merchantB2.id);
+    const storeB2 = await seedStore(prisma, merchantB2.id);
+    const tplB2 = await seedBagTemplate(prisma, storeB2.id, 30000);
+    const offerB2 = await seedOffer(prisma, tplB2.id, storeB2.id, 20);
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: storeB2.id,
+      offerId: offerB2.id,
+      qty: 1,
+      unitPriceCents: 30000,
+      redeemedAt: new Date("2026-08-01T18:00:00.000Z"),
+    });
+
+    const cycle = await batchBuilder.runNightlyCycle(
+      new Date("2026-08-05T02:00:00.000Z"),
+    );
+
+    // A is refused, by name, and recorded.
+    expect(cycle.failures.map((f) => f.merchantId)).toContain(merchantA.id);
+    const aFailure = cycle.failures.find((f) => f.merchantId === merchantA.id)!;
+    expect(aFailure.stage).toBe("batch");
+    expect(aFailure.message).toContain(
+      "SETTLEMENT_CARRIED_DEMAND_ALREADY_COLLECTED",
+    );
+    const refusedA1 = await prisma.settlementBatch.findUniqueOrThrow({
+      where: { id: aB1.id },
+    });
+    expect(refusedA1.status).toBe("HELD"); // rolled back, unchanged
+    expect(refusedA1.grossCents).toBe(20000);
+
+    // THE POINT: B still settled, correctly, in the SAME cycle.
+    // gross 30000, bagFee 0, withholding round(30000*1%)=300 -> net 29700.
+    const batchB2 = await prisma.settlementBatch.findFirstOrThrow({
+      where: { merchantId: merchantB2.id },
+    });
+    expect(batchB2.grossCents).toBe(30000);
+    expect(batchB2.withholdingCents).toBe(300);
+    expect(batchB2.netPayoutCents).toBe(29700);
+    expect(batchB2.status).toBe("CALCULATED");
+    expect(cycle.batchIds).toContain(batchB2.id);
+    expect(cycle.failures.map((f) => f.merchantId)).not.toContain(
+      merchantB2.id,
+    );
+    await expectClawbackLedgerConsistent(prisma, merchantB2.id);
+
+    // ...and the batch is genuinely payable, not merely computed.
+    await settlements.adminApprove(
+      batchB2.id,
+      new Date("2026-08-05T03:00:00.000Z"),
+    );
+    await payout.executeOne(batchB2.id);
+    expect(
+      (
+        await prisma.settlementBatch.findUniqueOrThrow({
+          where: { id: batchB2.id },
+        })
+      ).status,
+    ).toBe("SENT");
   }, 30000);
 });
