@@ -14,6 +14,10 @@ import {
 } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { isUniqueConstraintViolation } from "../../common/utils/prisma-error.util";
+import {
+  istanbulDateKey,
+  offerDateToDbDate,
+} from "../../common/utils/istanbul-date.util";
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { toPrismaPaymentProvider } from "../payments-core/payment-provider.mapping";
 import { OfferStockService } from "./offer-stock.service";
@@ -64,6 +68,65 @@ export interface ListReservationsResult {
   total: number;
   page: number;
   pageSize: number;
+}
+
+export interface ListReservationsForMerchantFilters {
+  storeId?: string;
+  offerId?: string;
+  date?: string;
+  status?: ReservationStatus[];
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * [Merchant pickup list] Deliberately NOT the Reservation model, and
+ * deliberately NOT the consumer's own `user` object at all — the
+ * merchant-facing pickup screen exists to greet a customer and match a
+ * bag to a code, not to view an account. `customerFirstName` is the
+ * FIRST TOKEN of User.name only (no phone, no email, no surname, no
+ * userId) — `null` when the consumer never set a name (common: OTP
+ * signup never asks for one). See firstNameOnly()'s own doc comment for
+ * why this is a deliberate minimization, not an oversight.
+ */
+export interface ReservationForMerchantItem {
+  id: string;
+  storeId: string;
+  offerId: string;
+  code: string;
+  qty: number;
+  status: ReservationStatus;
+  pickupStartAt: Date;
+  pickupEndAt: Date;
+  redeemedAt: Date | null;
+  customerFirstName: string | null;
+}
+
+export interface ListReservationsForMerchantResult {
+  items: ReservationForMerchantItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * [Merchant pickup list — PII minimization] The merchant's whole reason
+ * to see this row is "does the person standing in front of me match this
+ * bag" — a first name is enough for that ("Ayşe?" / "Hi, is this for
+ * Mehmet?"); a phone number, email, surname, or the consumer's own
+ * userId would hand the merchant identity data they have no operational
+ * need for and the consumer never consented to sharing beyond "let this
+ * specific merchant fulfill my order." `User.name` is a single free-text
+ * field (no separate first/last columns — see schema.prisma), so "first
+ * name only" means the first whitespace-separated token, not a real
+ * structured first-name lookup; genuinely single-word names pass through
+ * unchanged either way.
+ */
+function firstNameOnly(name: string | null): string | null {
+  if (!name) return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  return trimmed.split(/\s+/)[0];
 }
 
 /** [Task 5] cancelAllForOffer's DB-write-only result — see its doc comment. */
@@ -853,5 +916,73 @@ export class ReservationsService {
       this.prisma.reservation.count({ where: { userId } }),
     ]);
     return { items, total, page, pageSize };
+  }
+
+  /**
+   * [Merchant pickup list] The "Bugün" screen's pickup list — what a shop
+   * owner watches while handing bags over during the pickup window.
+   * Scoped to the caller's own merchantId via `store: { merchantId }`, a
+   * Prisma relation filter that compiles to a real SQL JOIN/WHERE — the
+   * scoping happens IN the query Postgres runs, not as a filter over
+   * already-fetched rows, so a mis-scoped query is structurally
+   * impossible to silently widen later (there is no unscoped result set
+   * this ever holds in memory). `date` defaults to today's Europe/
+   * Istanbul calendar day and filters on the OFFER's own offerDate (the
+   * reservation itself has no pickup-window columns — those live on
+   * DailyOffer) — same "today" default offers.service.ts's listMine
+   * already uses for the equivalent merchant-facing offers list.
+   */
+  async listForMerchant(
+    merchantId: string,
+    filters: ListReservationsForMerchantFilters,
+  ): Promise<ListReservationsForMerchantResult> {
+    const dateKey = filters.date ?? istanbulDateKey(new Date());
+    const where: Prisma.ReservationWhereInput = {
+      store: { merchantId },
+      offer: { offerDate: offerDateToDbDate(dateKey) },
+      ...(filters.storeId && { storeId: filters.storeId }),
+      ...(filters.offerId && { offerId: filters.offerId }),
+      ...(filters.status &&
+        filters.status.length > 0 && { status: { in: filters.status } }),
+    };
+
+    const skip = (filters.page - 1) * filters.pageSize;
+    const [rows, total] = await Promise.all([
+      this.prisma.reservation.findMany({
+        where,
+        // Soonest pickup first — what a merchant scanning the list while
+        // handing out bags actually wants to see next.
+        orderBy: [{ offer: { pickupStartAt: "asc" } }, { createdAt: "asc" }],
+        skip,
+        take: filters.pageSize,
+        select: {
+          id: true,
+          storeId: true,
+          offerId: true,
+          code: true,
+          qty: true,
+          status: true,
+          redeemedAt: true,
+          offer: { select: { pickupStartAt: true, pickupEndAt: true } },
+          user: { select: { name: true } },
+        },
+      }),
+      this.prisma.reservation.count({ where }),
+    ]);
+
+    const items: ReservationForMerchantItem[] = rows.map((r) => ({
+      id: r.id,
+      storeId: r.storeId,
+      offerId: r.offerId,
+      code: r.code,
+      qty: r.qty,
+      status: r.status,
+      pickupStartAt: r.offer.pickupStartAt,
+      pickupEndAt: r.offer.pickupEndAt,
+      redeemedAt: r.redeemedAt,
+      customerFirstName: firstNameOnly(r.user.name),
+    }));
+
+    return { items, total, page: filters.page, pageSize: filters.pageSize };
   }
 }

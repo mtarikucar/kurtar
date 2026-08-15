@@ -555,6 +555,146 @@
         ]
       }
     },
+    "/api/reservations/for-merchant": {
+      "get": {
+        "operationId": "ReservationsController_listForMerchant",
+        "parameters": [
+          {
+            "name": "storeId",
+            "required": false,
+            "in": "query",
+            "description": "Restrict to one of the caller's own stores.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offerId",
+            "required": false,
+            "in": "query",
+            "description": "Restrict to one specific offer.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "date",
+            "required": false,
+            "in": "query",
+            "description": "YYYY-MM-DD, Europe/Istanbul calendar day — which offer.offerDate to show. Defaults to today.",
+            "schema": {
+              "pattern": "/^\\d{4}-\\d{2}-\\d{2}$/",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated ReservationStatus values (e.g. CONFIRMED,REDEEMED). Defaults to every status.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "PENDING_PAYMENT",
+                  "CONFIRMED",
+                  "REDEEMED",
+                  "CANCELLED_BY_USER",
+                  "CANCELLED_BY_MERCHANT",
+                  "NO_SHOW",
+                  "EXPIRED"
+                ]
+              }
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "X-Client-Transport",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cookie"
+              ]
+            },
+            "description": "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservationForMerchantListResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List reservations for the caller's own offers — the merchant's pickup list, paginated.",
+        "tags": [
+          "reservations"
+        ]
+      }
+    },
     "/api/reservations/{id}/redeem": {
       "post": {
         "operationId": "ReservationsController_redeem",
@@ -6845,6 +6985,92 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReservationDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "ReservationForMerchantItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
+          },
+          "offerId": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_PAYMENT",
+              "CONFIRMED",
+              "REDEEMED",
+              "CANCELLED_BY_USER",
+              "CANCELLED_BY_MERCHANT",
+              "NO_SHOW",
+              "EXPIRED"
+            ]
+          },
+          "pickupStartAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "pickupEndAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "redeemedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "customerFirstName": {
+            "type": "string",
+            "nullable": true,
+            "description": "First whitespace-separated token of the customer's name — null if they never set one. No phone/email/surname/userId."
+          }
+        },
+        "required": [
+          "id",
+          "storeId",
+          "offerId",
+          "code",
+          "qty",
+          "status",
+          "pickupStartAt",
+          "pickupEndAt"
+        ]
+      },
+      "ReservationForMerchantListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReservationForMerchantItemDto"
             }
           },
           "total": {

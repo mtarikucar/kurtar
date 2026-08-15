@@ -65,3 +65,39 @@ export class ReservationRedeemResponseDto {
   @ApiProperty({ enum: ["REDEEMED"] }) status!: "REDEEMED";
   @ApiProperty() redeemedAt!: Date;
 }
+
+/** GET /reservations/for-merchant — ReservationsService.
+ * listForMerchant's ReservationForMerchantItem. Deliberately NOT
+ * ReservationDto: no userId, no unitPriceCents/totalCents/
+ * cancelDeadlineAt/redeemedByMerchantUserId — this is the merchant's
+ * pickup-window view (match a customer to a bag), not the full
+ * reservation record. `customerFirstName` is the one customer-identity
+ * field included, and it is deliberately narrowed to a first name only
+ * (see ReservationsService's firstNameOnly() doc comment) — no phone, no
+ * email, no surname. */
+export class ReservationForMerchantItemDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() storeId!: string;
+  @ApiProperty() offerId!: string;
+  @ApiProperty() code!: string;
+  @ApiProperty() qty!: number;
+  @ApiProperty({ enum: ReservationStatus }) status!: ReservationStatus;
+  @ApiProperty() pickupStartAt!: Date;
+  @ApiProperty() pickupEndAt!: Date;
+  @ApiPropertyOptional({ nullable: true, type: Date }) redeemedAt!: Date | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    type: String,
+    description:
+      "First whitespace-separated token of the customer's name — null if they never set one. No phone/email/surname/userId.",
+  })
+  customerFirstName!: string | null;
+}
+
+export class ReservationForMerchantListResponseDto {
+  @ApiProperty({ type: [ReservationForMerchantItemDto] })
+  items!: ReservationForMerchantItemDto[];
+  @ApiProperty() total!: number;
+  @ApiProperty() page!: number;
+  @ApiProperty() pageSize!: number;
+}

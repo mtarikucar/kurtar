@@ -49,6 +49,7 @@ function buildDeps() {
     reservation: {
       findUnique: jest.fn(),
       count: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       $queryRaw: jest.fn(),
     },
     refund: { create: jest.fn() },
@@ -763,5 +764,159 @@ describe("ReservationsService.listMine", () => {
     const result = await service.listMine("user1", 1, 20);
     expect(result).toHaveProperty("pageSize", 20);
     expect(result).not.toHaveProperty("limit");
+  });
+});
+
+describe("ReservationsService.listForMerchant — the merchant pickup list", () => {
+  function buildRow(overrides: Record<string, any> = {}) {
+    return {
+      id: "resv1",
+      storeId: "store1",
+      offerId: "offer1",
+      code: "K-ABCD",
+      qty: 1,
+      status: "CONFIRMED",
+      redeemedAt: null,
+      offer: {
+        pickupStartAt: new Date("2026-08-15T10:00:00.000Z"),
+        pickupEndAt: new Date("2026-08-15T12:00:00.000Z"),
+      },
+      user: { name: "Ayşe Yılmaz" },
+      ...overrides,
+    };
+  }
+
+  // [Security] The structural half of the isolation proof — the
+  // behavioral half (a second merchant's row is genuinely absent from a
+  // real query result) is reservations.realdb.spec.ts's real-DB test;
+  // this one proves the WHERE clause this service hands to Prisma is the
+  // thing doing the scoping, not some filter applied afterward.
+  it("scopes the query itself to the caller's own merchantId via a store relation filter — never a post-filter", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findMany as jest.Mock).mockResolvedValue([buildRow()]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(1);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    await service.listForMerchant("merchant-caller", {
+      date: "2026-08-15",
+      page: 1,
+      pageSize: 20,
+    });
+
+    const findManyArgs = (prisma.reservation.findMany as jest.Mock).mock
+      .calls[0][0];
+    expect(findManyArgs.where.store).toEqual({ merchantId: "merchant-caller" });
+    const countArgs = (prisma.reservation.count as jest.Mock).mock.calls[0][0];
+    expect(countArgs.where.store).toEqual({ merchantId: "merchant-caller" });
+  });
+
+  it("defaults `date` to today's Istanbul calendar day when omitted", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(0);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    await service.listForMerchant("m1", { page: 1, pageSize: 20 });
+
+    const findManyArgs = (prisma.reservation.findMany as jest.Mock).mock
+      .calls[0][0];
+    expect(findManyArgs.where.offer.offerDate).toBeInstanceOf(Date);
+  });
+
+  it("folds storeId/offerId/status filters into the WHERE clause when given", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(0);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    await service.listForMerchant("m1", {
+      storeId: "store1",
+      offerId: "offer1",
+      status: ["CONFIRMED", "REDEEMED"],
+      date: "2026-08-15",
+      page: 1,
+      pageSize: 20,
+    });
+
+    const findManyArgs = (prisma.reservation.findMany as jest.Mock).mock
+      .calls[0][0];
+    expect(findManyArgs.where.storeId).toBe("store1");
+    expect(findManyArgs.where.offerId).toBe("offer1");
+    expect(findManyArgs.where.status).toEqual({
+      in: ["CONFIRMED", "REDEEMED"],
+    });
+  });
+
+  // [PII minimization] The deliberate customer-identity narrowing — see
+  // firstNameOnly()'s own doc comment in reservations.service.ts.
+  it("projects the customer down to a first name only — no userId/phone/email/surname in the mapped item", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findMany as jest.Mock).mockResolvedValue([
+      buildRow({ user: { name: "Mehmet Can Öztürk" } }),
+    ]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(1);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.listForMerchant("m1", {
+      date: "2026-08-15",
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(result.items[0]).toEqual({
+      id: "resv1",
+      storeId: "store1",
+      offerId: "offer1",
+      code: "K-ABCD",
+      qty: 1,
+      status: "CONFIRMED",
+      pickupStartAt: new Date("2026-08-15T10:00:00.000Z"),
+      pickupEndAt: new Date("2026-08-15T12:00:00.000Z"),
+      redeemedAt: null,
+      customerFirstName: "Mehmet",
+    });
+    expect(result.items[0]).not.toHaveProperty("userId");
+  });
+
+  it("returns null customerFirstName when the consumer never set a name", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findMany as jest.Mock).mockResolvedValue([
+      buildRow({ user: { name: null } }),
+    ]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(1);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.listForMerchant("m1", {
+      date: "2026-08-15",
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(result.items[0].customerFirstName).toBeNull();
   });
 });
