@@ -16,7 +16,27 @@ import type { components } from "./generated/openapi-types";
 export type ClientTransport = "cookie" | "body";
 
 /**
- * `POST /auth/refresh`'s response shape — derived from the generated
+ * Which kind of principal this client signs in as. Required, and
+ * deliberately not inferable from anything else: it selects the
+ * actor-scoped auth routes (`/api/auth/{consumer|merchant|admin}/refresh`
+ * and `.../logout`) that back this surface's session.
+ *
+ * Why those routes are per-actor at all: every kurtar surface talks to
+ * the SAME backend origin, and a cookie is scoped by host+path — never by
+ * port, and never by which frontend set it. One shared `/api/auth`
+ * refresh cookie therefore meant whichever actor signed in LAST owned the
+ * browser's only session, that logging out of one surface killed the
+ * other's, and that any script on any same-site surface could trade that
+ * cookie for an access token belonging to whoever it happened to be. Each
+ * actor now gets its own cookie name AND path (`refreshToken_admin` at
+ * `/api/auth/admin`, and so on), and the backend additionally re-checks
+ * the presented token's own actor against the route it arrived on. See
+ * backend/src/modules/auth/refresh-cookie-transport.util.ts.
+ */
+export type ClientActor = "CONSUMER" | "MERCHANT" | "ADMIN";
+
+/**
+ * The refresh routes' response shape — derived from the generated
  * `AuthTokensDto` schema, not hand-written (an earlier revision of this
  * file hand-declared this type as a documented workaround for a backend
  * gap — every auth-issuing operation lacked a response DTO at the time.
@@ -40,6 +60,8 @@ export interface CreateClientOptions {
   /** Origin only, e.g. "http://localhost:4750" — every generated operation path already includes the "/api" prefix. */
   baseUrl: string;
   transport: ClientTransport;
+  /** Which actor's session this client manages — picks the actor-scoped `/api/auth/<actor>/refresh` + `/logout` routes. See `ClientActor`. */
+  actor: ClientActor;
   /** Returns the current access token synchronously (from memory/React state/a ref) — read fresh on every request. */
   getAccessToken: () => string | null | undefined;
   /** Only consulted for transport:"body" — the current refresh token (e.g. from Expo SecureStore). Cookie transport doesn't need this; the browser attaches the refresh cookie itself. */

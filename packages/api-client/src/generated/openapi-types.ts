@@ -89,7 +89,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/refresh": {
+    "/api/auth/consumer/refresh": {
         parameters: {
             query?: never;
             header?: never;
@@ -98,15 +98,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rotate a refresh token for a fresh token pair. No auth required (the refresh token IS the credential). */
-        post: operations["AuthController_refresh"];
+        /** Rotate a CONSUMER refresh token for a fresh token pair. No auth required (the refresh token IS the credential). */
+        post: operations["AuthController_refreshConsumer"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/auth/logout": {
+    "/api/auth/merchant/refresh": {
         parameters: {
             query?: never;
             header?: never;
@@ -115,8 +115,76 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Revoke a refresh token's whole family. No auth required (the refresh token IS the credential). */
-        post: operations["AuthController_logout"];
+        /** Rotate a MERCHANT refresh token for a fresh token pair. No auth required (the refresh token IS the credential). */
+        post: operations["AuthController_refreshMerchant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/admin/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate an ADMIN refresh token for a fresh token pair. No auth required (the refresh token IS the credential). */
+        post: operations["AuthController_refreshAdmin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/consumer/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke a CONSUMER refresh token's whole family. No auth required (the refresh token IS the credential). */
+        post: operations["AuthController_logoutConsumer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/merchant/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke a MERCHANT refresh token's whole family. No auth required (the refresh token IS the credential). */
+        post: operations["AuthController_logoutMerchant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/admin/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke an ADMIN refresh token's whole family. No auth required (the refresh token IS the credential). */
+        post: operations["AuthController_logoutAdmin"];
         delete?: never;
         options?: never;
         head?: never;
@@ -200,7 +268,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Redeem a reservation's pickup code (MERCHANT, staff scan at the counter). */
+        /** Redeem a reservation's pickup code — CONSUMER (the phone-swipe, owner-only) or MERCHANT (staff panel, fallback for a dead customer phone). */
         post: operations["ReservationsController_redeem"];
         delete?: never;
         options?: never;
@@ -458,6 +526,23 @@ export interface paths {
         };
         /** List merchants, filterable by verification status. */
         get: operations["AdminMerchantsController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/merchants/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A merchant's full KYC detail — docsJson, IBAN, verification history — what an approver needs to actually judge the submission. Every read is audited. */
+        get: operations["AdminMerchantsController_getDetail"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1433,6 +1518,9 @@ export interface components {
             cancelDeadlineAt: string;
             /** Format: date-time */
             redeemedAt?: string | null;
+            /** @enum {string|null} */
+            redeemedByActorType?: "CONSUMER" | "MERCHANT" | "ADMIN" | null;
+            redeemedByUserId?: string | null;
             redeemedByMerchantUserId?: string | null;
             /** Format: date-time */
             pickupReminderSentAt?: string | null;
@@ -1706,6 +1794,47 @@ export interface components {
             total: number;
             page: number;
             pageSize: number;
+        };
+        AdminMerchantVerificationEventDto: {
+            id: string;
+            /** @enum {string} */
+            fromStatus: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPENDED";
+            /** @enum {string} */
+            toStatus: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPENDED";
+            actorAdminId?: string | null;
+            note?: string | null;
+            /** @description This event's own submitted-documents snapshot, if any. */
+            docsJson?: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminMerchantDetailResponseDto: {
+            id: string;
+            legalName: string;
+            tradeName: string;
+            taxId: string;
+            mersisNo?: string | null;
+            kepAddress?: string | null;
+            /** @description Full IBAN, deliberately not masked to last-4 — see this endpoint's own doc comment for why. */
+            iban: string;
+            /** @enum {string} */
+            verificationStatus: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPENDED";
+            /** Format: date-time */
+            verifiedAt?: string | null;
+            /** Format: date-time */
+            nextReverifyAt?: string | null;
+            /** Format: date-time */
+            sttAttestationAcceptedAt?: string | null;
+            /** Format: date-time */
+            intermediationAcceptedAt?: string | null;
+            intermediationContractVersion?: string | null;
+            /** @description The most recent non-null docsJson among verificationEvents below — the documents behind the merchant's current status. Null if never submitted. */
+            docsJson?: {
+                [key: string]: unknown;
+            } | null;
+            verificationEvents: components["schemas"]["AdminMerchantVerificationEventDto"][];
         };
         AdminMerchantActionDto: {
             note?: string;
@@ -2434,7 +2563,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -2456,7 +2585,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -2482,7 +2611,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -2508,7 +2637,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -2534,7 +2663,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -2556,11 +2685,11 @@ export interface operations {
             };
         };
     };
-    AuthController_refresh: {
+    AuthController_refreshConsumer: {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -2582,11 +2711,115 @@ export interface operations {
             };
         };
     };
-    AuthController_logout: {
+    AuthController_refreshMerchant: {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshTokenBodyDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokensDto"];
+                };
+            };
+        };
+    };
+    AuthController_refreshAdmin: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshTokenBodyDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokensDto"];
+                };
+            };
+        };
+    };
+    AuthController_logoutConsumer: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshTokenBodyDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogoutResponseDto"];
+                };
+            };
+        };
+    };
+    AuthController_logoutMerchant: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshTokenBodyDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogoutResponseDto"];
+                };
+            };
+        };
+    };
+    AuthController_logoutAdmin: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -2612,7 +2845,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -2665,7 +2898,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -2719,7 +2952,7 @@ export interface operations {
                 pageSize: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -2779,7 +3012,7 @@ export interface operations {
                 pageSize?: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -2828,7 +3061,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -2879,7 +3112,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -2932,7 +3165,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -2983,7 +3216,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -3007,7 +3240,7 @@ export interface operations {
                 storeId?: string;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -3056,7 +3289,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -3109,7 +3342,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -3160,7 +3393,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -3211,7 +3444,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -3266,7 +3499,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -3321,7 +3554,7 @@ export interface operations {
                 date?: string;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -3370,7 +3603,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -3421,7 +3654,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -3476,7 +3709,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -3527,7 +3760,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -3578,7 +3811,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -3604,7 +3837,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -3657,7 +3890,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -3710,7 +3943,7 @@ export interface operations {
                 pageSize: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -3755,11 +3988,62 @@ export interface operations {
             };
         };
     };
+    AdminMerchantsController_getDetail: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMerchantDetailResponseDto"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Missing or invalid access token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+        };
+    };
     AdminMerchantsController_approve: {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -3814,7 +4098,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -3869,7 +4153,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -3924,7 +4208,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -3973,7 +4257,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4026,7 +4310,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -4077,7 +4361,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -4143,7 +4427,7 @@ export interface operations {
                 pageSize: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4165,7 +4449,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -4195,7 +4479,7 @@ export interface operations {
                 north: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4217,7 +4501,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -4241,7 +4525,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4290,7 +4574,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4339,7 +4623,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4392,7 +4676,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4450,7 +4734,7 @@ export interface operations {
                 pageSize?: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4499,7 +4783,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4548,7 +4832,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -4599,7 +4883,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -4650,7 +4934,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -4705,7 +4989,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -4756,7 +5040,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4805,7 +5089,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4861,7 +5145,7 @@ export interface operations {
                 pageSize: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -4910,7 +5194,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -4961,7 +5245,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -5012,7 +5296,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -5066,7 +5350,7 @@ export interface operations {
                 pageSize: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -5115,7 +5399,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -5174,7 +5458,7 @@ export interface operations {
                 pageSize: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -5228,7 +5512,7 @@ export interface operations {
                 pageSize?: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -5277,7 +5561,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -5328,7 +5612,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -5379,7 +5663,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -5429,7 +5713,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -5478,7 +5762,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -5504,7 +5788,7 @@ export interface operations {
                 pageSize?: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -5553,7 +5837,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -5610,7 +5894,7 @@ export interface operations {
                 pageSize?: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -5659,7 +5943,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -5710,7 +5994,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -5771,7 +6055,7 @@ export interface operations {
                 pageSize?: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -5820,7 +6104,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -5871,7 +6155,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -5926,7 +6210,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -5981,7 +6265,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -6012,7 +6296,7 @@ export interface operations {
                 pageSize?: number;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -6061,7 +6345,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -6116,7 +6400,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path: {
@@ -6171,7 +6455,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -6223,7 +6507,7 @@ export interface operations {
                 to?: string;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -6276,7 +6560,7 @@ export interface operations {
                 to?: string;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;
@@ -6329,7 +6613,7 @@ export interface operations {
                 to?: string;
             };
             header?: {
-                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
                 "X-Client-Transport"?: "cookie";
             };
             path?: never;

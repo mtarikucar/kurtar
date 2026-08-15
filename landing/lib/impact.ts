@@ -48,6 +48,11 @@ export async function getPublicImpact(): Promise<ImpactSnapshot> {
     const client = createClient({
       baseUrl,
       transport: "cookie",
+      // Landing has no authenticated surface at all; CONSUMER is the
+      // actor its public reads notionally belong to. It never mints or
+      // refreshes a session, so this only ever selects a route it does
+      // not call.
+      actor: "CONSUMER",
       getAccessToken: () => null, // landing has no authenticated surface
       fetch: (input: RequestInfo | URL, init?: RequestInit) =>
         fetch(input, { ...init, next: { revalidate: REVALIDATE_SECONDS } }),

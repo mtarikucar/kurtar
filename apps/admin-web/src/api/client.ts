@@ -50,6 +50,11 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4750";
 export const client = createClient({
   baseUrl: apiBaseUrl,
   transport: "cookie",
+  // ADMIN: picks the admin-scoped refresh/logout routes, so this app's
+  // session restore can only ever succeed off an ADMIN refresh cookie —
+  // never a merchant's (see @kurtar/api-client's ClientActor doc
+  // comment for the cross-actor bleed this closes).
+  actor: "ADMIN",
   getAccessToken: () => currentAccessToken,
   onTokensIssued: (tokens) => {
     currentAccessToken = tokens.accessToken;

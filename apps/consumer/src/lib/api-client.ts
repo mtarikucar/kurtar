@@ -55,6 +55,10 @@ export function onClientTokensIssued(listener: TokensIssuedListener): () => void
 export const client = createClient({
   baseUrl: API_BASE_URL,
   transport: "body",
+  // CONSUMER: body transport still needs the actor — the refresh route
+  // is per-actor and the backend rejects a token whose principal type
+  // doesn't match the route it arrived on.
+  actor: "CONSUMER",
   getAccessToken: () => tokenStore.accessToken,
   getRefreshToken: () => tokenStore.refreshToken,
   onTokensIssued: (tokens) => {

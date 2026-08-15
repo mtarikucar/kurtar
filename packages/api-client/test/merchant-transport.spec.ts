@@ -43,6 +43,7 @@ describe("merchant.signup() transport header", () => {
     const client = createClient({
       baseUrl: "http://api.test",
       transport: "cookie",
+      actor: "MERCHANT",
       getAccessToken: () => null,
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -67,6 +68,7 @@ describe("merchant.signup() transport header", () => {
     const client = createClient({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "MERCHANT",
       getAccessToken: () => null,
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -90,6 +92,7 @@ describe("merchant.signup() transport header", () => {
     const client = createClient({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "MERCHANT",
       getAccessToken: () => null,
       fetch: fetchMock as unknown as typeof fetch,
     });

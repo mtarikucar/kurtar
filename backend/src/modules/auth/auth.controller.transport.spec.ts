@@ -61,54 +61,53 @@ function makeController() {
   };
 }
 
+/**
+ * Every endpoint that mints a brand-new session, paired with the
+ * actor-scoped cookie name it must set. Shared by both it.each blocks
+ * below so a new issuing endpoint is added in exactly one place.
+ */
+const ISSUING_CALLS = [
+  [
+    "verifyOtp",
+    (c: AuthController, req: Request, res: Response) =>
+      c.verifyOtp({ phone: "+905551234567", code: "123456" }, req, res),
+    "refreshToken_consumer",
+  ],
+  [
+    "merchantLogin",
+    (c: AuthController, req: Request, res: Response) =>
+      c.merchantLogin({ email: "a@b.com", password: "pw" }, req, res),
+    "refreshToken_merchant",
+  ],
+  [
+    "adminLogin",
+    (c: AuthController, req: Request, res: Response) =>
+      c.adminLogin({ email: "a@b.com", password: "pw" }, req, res),
+    "refreshToken_admin",
+  ],
+] as const;
+
 describe("AuthController — initial-issuance transport (otp/verify, merchant/admin login)", () => {
-  it.each([
-    [
-      "verifyOtp",
-      (c: AuthController, req: Request, res: Response) =>
-        c.verifyOtp({ phone: "+905551234567", code: "123456" }, req, res),
-    ],
-    [
-      "merchantLogin",
-      (c: AuthController, req: Request, res: Response) =>
-        c.merchantLogin({ email: "a@b.com", password: "pw" }, req, res),
-    ],
-    [
-      "adminLogin",
-      (c: AuthController, req: Request, res: Response) =>
-        c.adminLogin({ email: "a@b.com", password: "pw" }, req, res),
-    ],
-  ] as const)(
+  it.each(ISSUING_CALLS)(
     "%s: includes refreshToken in the body by default (no transport header — mobile)",
-    async (_name, invoke) => {
+    async (_name, invoke, expectedCookie) => {
       const { controller } = makeController();
       const res = makeRes();
       const result = await invoke(controller, makeReq(), res);
 
       expect(result).toHaveProperty("refreshToken", "refresh-token-x");
       expect(res.cookie).toHaveBeenCalledTimes(1);
+      expect(res.cookie).toHaveBeenCalledWith(
+        expectedCookie,
+        "refresh-token-x",
+        expect.any(Object),
+      );
     },
   );
 
-  it.each([
-    [
-      "verifyOtp",
-      (c: AuthController, req: Request, res: Response) =>
-        c.verifyOtp({ phone: "+905551234567", code: "123456" }, req, res),
-    ],
-    [
-      "merchantLogin",
-      (c: AuthController, req: Request, res: Response) =>
-        c.merchantLogin({ email: "a@b.com", password: "pw" }, req, res),
-    ],
-    [
-      "adminLogin",
-      (c: AuthController, req: Request, res: Response) =>
-        c.adminLogin({ email: "a@b.com", password: "pw" }, req, res),
-    ],
-  ] as const)(
+  it.each(ISSUING_CALLS)(
     "%s: strips refreshToken from the body when X-Client-Transport: cookie is declared — Critical/Important fix",
-    async (_name, invoke) => {
+    async (_name, invoke, expectedCookie) => {
       const { controller } = makeController();
       const res = makeRes();
       const req = makeReq({ headers: { "x-client-transport": "cookie" } });
@@ -117,9 +116,11 @@ describe("AuthController — initial-issuance transport (otp/verify, merchant/ad
       expect(result).not.toHaveProperty("refreshToken");
       expect(res.cookie).toHaveBeenCalledTimes(1);
       // The cookie itself still carries the fresh token — only the
-      // JS-readable JSON body is stripped.
+      // JS-readable JSON body is stripped. Its NAME is the actor's own
+      // (refreshToken_consumer / _merchant / _admin), never the shared
+      // pre-fix `refreshToken` — see refresh-cookie-transport.util.ts.
       expect(res.cookie).toHaveBeenCalledWith(
-        "refreshToken",
+        expectedCookie,
         "refresh-token-x",
         expect.any(Object),
       );
@@ -139,34 +140,56 @@ describe("AuthController — initial-issuance transport (otp/verify, merchant/ad
   });
 });
 
-describe("AuthController.refresh — cookie/body precedence and strip behavior", () => {
+describe("AuthController refresh — cookie/body precedence and strip behavior", () => {
   it("prefers the cookie token over a body token when both are presented", async () => {
     const { controller, tokenService } = makeController();
-    const req = makeReq({ cookies: { refreshToken: "cookie-tok" } });
-    await controller.refresh(req, { refreshToken: "body-tok" }, makeRes());
+    const req = makeReq({ cookies: { refreshToken_admin: "cookie-tok" } });
+    await controller.refreshAdmin(req, { refreshToken: "body-tok" }, makeRes());
 
-    expect(tokenService.refresh).toHaveBeenCalledWith("cookie-tok");
+    expect(tokenService.refresh).toHaveBeenCalledWith("cookie-tok", "ADMIN");
   });
 
   it("falls back to the body token when no cookie is presented", async () => {
     const { controller, tokenService } = makeController();
     const req = makeReq();
-    await controller.refresh(req, { refreshToken: "body-tok" }, makeRes());
+    await controller.refreshConsumer(
+      req,
+      { refreshToken: "body-tok" },
+      makeRes(),
+    );
 
-    expect(tokenService.refresh).toHaveBeenCalledWith("body-tok");
+    expect(tokenService.refresh).toHaveBeenCalledWith("body-tok", "CONSUMER");
+  });
+
+  // The heart of the cross-actor session-bleed fix at the controller
+  // layer: even if a browser DOES present another actor's cookie (a
+  // pre-fix cookie jar, a hand-crafted request), this route never reads
+  // it — it looks up its OWN actor's cookie name and nothing else.
+  it("ignores another actor's refresh cookie entirely", async () => {
+    const { controller, tokenService } = makeController();
+    const req = makeReq({
+      cookies: {
+        refreshToken_merchant: "merchant-tok",
+        refreshToken: "legacy-unscoped-tok",
+      },
+    });
+    await expect(
+      controller.refreshAdmin(req, {}, makeRes()),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(tokenService.refresh).not.toHaveBeenCalled();
   });
 
   it("throws Missing refresh token when neither cookie nor body token is presented", async () => {
     const { controller } = makeController();
     await expect(
-      controller.refresh(makeReq(), {}, makeRes()),
+      controller.refreshMerchant(makeReq(), {}, makeRes()),
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it("strips the body refreshToken when a cookie was actually presented (even with no header)", async () => {
     const { controller } = makeController();
-    const req = makeReq({ cookies: { refreshToken: "cookie-tok" } });
-    const result = await controller.refresh(req, {}, makeRes());
+    const req = makeReq({ cookies: { refreshToken_merchant: "cookie-tok" } });
+    const result = await controller.refreshMerchant(req, {}, makeRes());
 
     expect(result).not.toHaveProperty("refreshToken");
   });
@@ -176,7 +199,7 @@ describe("AuthController.refresh — cookie/body precedence and strip behavior",
     const req = makeReq({
       headers: { "x-client-transport": "cookie" },
     });
-    const result = await controller.refresh(
+    const result = await controller.refreshMerchant(
       req,
       { refreshToken: "body-tok" },
       makeRes(),
@@ -188,7 +211,7 @@ describe("AuthController.refresh — cookie/body precedence and strip behavior",
   it("includes the body refreshToken when neither the header nor a cookie is present (mobile default)", async () => {
     const { controller } = makeController();
     const req = makeReq();
-    const result = await controller.refresh(
+    const result = await controller.refreshConsumer(
       req,
       { refreshToken: "body-tok" },
       makeRes(),
@@ -204,7 +227,7 @@ describe("AuthController — refresh cookie attributes", () => {
     process.env.NODE_ENV = originalEnv;
   });
 
-  it("sets httpOnly, sameSite=strict, path=/api/auth, and secure=false outside production", async () => {
+  it("sets httpOnly, sameSite=strict, the ACTOR's own path, and secure=false outside production", async () => {
     process.env.NODE_ENV = "development";
     const { controller } = makeController();
     const res = makeRes();
@@ -214,12 +237,50 @@ describe("AuthController — refresh cookie attributes", () => {
       res,
     );
 
-    expect(res.cookie).toHaveBeenCalledWith("refreshToken", "refresh-token-x", {
-      httpOnly: true,
-      secure: false,
-      sameSite: "strict",
+    expect(res.cookie).toHaveBeenCalledWith(
+      "refreshToken_consumer",
+      "refresh-token-x",
+      {
+        httpOnly: true,
+        secure: false,
+        sameSite: "strict",
+        // NOT "/api/auth": a path that matches every actor's refresh
+        // route is what let one surface's JS reach another actor's
+        // cookie in the first place.
+        path: "/api/auth/consumer",
+        expires: expect.any(Date),
+      },
+    );
+  });
+
+  it("scopes the admin cookie to the admin path, not a shared one", async () => {
+    process.env.NODE_ENV = "development";
+    const { controller } = makeController();
+    const res = makeRes();
+    await controller.adminLogin(
+      { email: "a@b.com", password: "pw" },
+      makeReq(),
+      res,
+    );
+
+    expect(res.cookie).toHaveBeenCalledWith(
+      "refreshToken_admin",
+      "refresh-token-x",
+      expect.objectContaining({ path: "/api/auth/admin" }),
+    );
+  });
+
+  it("clears any leftover pre-fix unscoped cookie whenever it sets a scoped one", async () => {
+    const { controller } = makeController();
+    const res = makeRes();
+    await controller.merchantLogin(
+      { email: "a@b.com", password: "pw" },
+      makeReq(),
+      res,
+    );
+
+    expect(res.clearCookie).toHaveBeenCalledWith("refreshToken", {
       path: "/api/auth",
-      expires: expect.any(Date),
     });
   });
 
@@ -234,37 +295,59 @@ describe("AuthController — refresh cookie attributes", () => {
     );
 
     expect(res.cookie).toHaveBeenCalledWith(
-      "refreshToken",
+      "refreshToken_consumer",
       "refresh-token-x",
       expect.objectContaining({ secure: true }),
     );
   });
 });
 
-describe("AuthController.logout — precedence and cookie clearing", () => {
+describe("AuthController logout — precedence and cookie clearing", () => {
   it("revokes the cookie token over a body token when both are presented", async () => {
     const { controller, tokenService } = makeController();
-    const req = makeReq({ cookies: { refreshToken: "cookie-tok" } });
-    await controller.logout(req, { refreshToken: "body-tok" }, makeRes());
+    const req = makeReq({ cookies: { refreshToken_merchant: "cookie-tok" } });
+    await controller.logoutMerchant(
+      req,
+      { refreshToken: "body-tok" },
+      makeRes(),
+    );
 
-    expect(tokenService.revokeFamilyByToken).toHaveBeenCalledWith("cookie-tok");
+    expect(tokenService.revokeFamilyByToken).toHaveBeenCalledWith(
+      "cookie-tok",
+      "MERCHANT",
+    );
   });
 
   it("falls back to the body token when no cookie is presented", async () => {
     const { controller, tokenService } = makeController();
-    await controller.logout(makeReq(), { refreshToken: "body-tok" }, makeRes());
+    await controller.logoutConsumer(
+      makeReq(),
+      { refreshToken: "body-tok" },
+      makeRes(),
+    );
 
-    expect(tokenService.revokeFamilyByToken).toHaveBeenCalledWith("body-tok");
+    expect(tokenService.revokeFamilyByToken).toHaveBeenCalledWith(
+      "body-tok",
+      "CONSUMER",
+    );
   });
 
-  it("no-ops the revoke call when neither is presented, but still clears the cookie", async () => {
+  it("never revokes off another actor's cookie", async () => {
     const { controller, tokenService } = makeController();
-    const res = makeRes();
-    const result = await controller.logout(makeReq(), {}, res);
+    const req = makeReq({ cookies: { refreshToken_admin: "admin-tok" } });
+    await controller.logoutMerchant(req, {}, makeRes());
 
     expect(tokenService.revokeFamilyByToken).not.toHaveBeenCalled();
-    expect(res.clearCookie).toHaveBeenCalledWith("refreshToken", {
-      path: "/api/auth",
+  });
+
+  it("no-ops the revoke call when neither is presented, but still clears the actor's cookie", async () => {
+    const { controller, tokenService } = makeController();
+    const res = makeRes();
+    const result = await controller.logoutAdmin(makeReq(), {}, res);
+
+    expect(tokenService.revokeFamilyByToken).not.toHaveBeenCalled();
+    expect(res.clearCookie).toHaveBeenCalledWith("refreshToken_admin", {
+      path: "/api/auth/admin",
     });
     expect(result).toEqual({ success: true });
   });

@@ -17,7 +17,7 @@ import { createClient, KurtarApiError } from "@kurtar/api-client";
  * NOTE on `onTokensIssued`: reading packages/api-client/src/engine.ts, this
  * callback only actually fires from the internal single-flight
  * `performRefresh()` path — the generic `request()` method never calls it
- * for an ordinary 2xx response. That means it fires for `/auth/refresh`,
+ * for an ordinary 2xx response. That means it fires for `/auth/merchant/refresh`,
  * but NOT for the login/signup calls that also mint a fresh token pair
  * (`client.auth.merchantLogin`, `client.merchant.signup`) — those hand
  * their result back to the caller instead. So `setAccessToken` is exported
@@ -57,6 +57,13 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4750";
 export const client = createClient({
   baseUrl: apiBaseUrl,
   transport: "cookie",
+  // MERCHANT: picks the merchant-scoped refresh/logout routes and, with
+  // them, the merchant-only `refreshToken_merchant` cookie at path
+  // /api/auth/merchant. Before actor scoping existed, this app and
+  // admin-web shared ONE cookie on one backend origin — whoever signed in
+  // last owned the browser's only session (see @kurtar/api-client's
+  // ClientActor doc comment).
+  actor: "MERCHANT",
   getAccessToken: () => accessToken,
   onTokensIssued: (tokens) => {
     setAccessToken(tokens.accessToken);

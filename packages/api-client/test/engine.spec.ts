@@ -21,6 +21,7 @@ describe("createRequestEngine — happy path", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => null,
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -39,6 +40,7 @@ describe("createRequestEngine — happy path", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => "token-123",
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -57,6 +59,7 @@ describe("createRequestEngine — happy path", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => null,
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -75,6 +78,7 @@ describe("createRequestEngine — happy path", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => "t",
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -97,6 +101,7 @@ describe("createRequestEngine — error envelope mapping", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => "t",
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -121,6 +126,7 @@ describe("createRequestEngine — error envelope mapping", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => "t",
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -142,7 +148,7 @@ describe("createRequestEngine — single-flight refresh", () => {
     let protectedCallCount = 0;
 
     const fetchMock = jest.fn(async (url: string, init: RequestInit = {}) => {
-      if (url.endsWith("/api/auth/refresh")) {
+      if (url.endsWith("/api/auth/consumer/refresh")) {
         refreshCallCount += 1;
         return jsonResponse(200, {
           accessToken: "fresh-token",
@@ -168,6 +174,7 @@ describe("createRequestEngine — single-flight refresh", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => currentAccessToken,
       getRefreshToken: () => "stale-refresh-token",
       onTokensIssued: (tokens) => {
@@ -208,7 +215,7 @@ describe("createRequestEngine — single-flight refresh", () => {
     // returned, not a second call to getAccessToken() (which could race a
     // caller's async state update, e.g. React's setState).
     const fetchMock = jest.fn(async (url: string, init: RequestInit = {}) => {
-      if (url.endsWith("/api/auth/refresh")) {
+      if (url.endsWith("/api/auth/consumer/refresh")) {
         return jsonResponse(200, {
           accessToken: "fresh-token",
           refreshToken: "r",
@@ -228,6 +235,7 @@ describe("createRequestEngine — single-flight refresh", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => "stale-token-never-updated",
       onTokensIssued,
       fetch: fetchMock as unknown as typeof fetch,
@@ -245,7 +253,7 @@ describe("createRequestEngine — single-flight refresh", () => {
     let refreshCallCount = 0;
     const onUnauthorized = jest.fn();
     const fetchMock = jest.fn(async (url: string) => {
-      if (url.endsWith("/api/auth/refresh")) {
+      if (url.endsWith("/api/auth/consumer/refresh")) {
         refreshCallCount += 1;
         return jsonResponse(401, {
           statusCode: 401,
@@ -262,6 +270,7 @@ describe("createRequestEngine — single-flight refresh", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => "expired-token",
       onUnauthorized,
       fetch: fetchMock as unknown as typeof fetch,
@@ -291,7 +300,7 @@ describe("createRequestEngine — single-flight refresh", () => {
     let refreshCallCount = 0;
     let currentAccessToken = "expired-1";
     const fetchMock = jest.fn(async (url: string, init: RequestInit = {}) => {
-      if (url.endsWith("/api/auth/refresh")) {
+      if (url.endsWith("/api/auth/consumer/refresh")) {
         refreshCallCount += 1;
         return jsonResponse(200, {
           accessToken: `fresh-${refreshCallCount}`,
@@ -312,6 +321,7 @@ describe("createRequestEngine — single-flight refresh", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => currentAccessToken,
       onTokensIssued: (tokens) => {
         currentAccessToken = tokens.accessToken;
@@ -341,6 +351,7 @@ describe("createRequestEngine — transport header behavior", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "cookie",
+      actor: "CONSUMER",
       getAccessToken: () => null,
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -364,6 +375,7 @@ describe("createRequestEngine — transport header behavior", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => null,
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -387,6 +399,7 @@ describe("createRequestEngine — transport header behavior", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "cookie",
+      actor: "CONSUMER",
       getAccessToken: () => "t",
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -405,6 +418,7 @@ describe("createRequestEngine — network failure", () => {
     const engine = createRequestEngine({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => null,
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -413,5 +427,52 @@ describe("createRequestEngine — network failure", () => {
       errorCode: "NETWORK_ERROR",
       statusCode: 0,
     });
+  });
+});
+
+describe("createRequestEngine — the refresh call is actor-scoped", () => {
+  /**
+   * Regression gate for the cross-actor session-bleed fix: the engine's
+   * single-flight refresh must hit THIS client's own actor route, never a
+   * shared `/api/auth/refresh`. Every surface shares one backend origin,
+   * so a shared refresh path is a shared refresh COOKIE — see
+   * `ClientActor` in src/transport.ts.
+   */
+  it.each([
+    ["CONSUMER", "/api/auth/consumer/refresh"],
+    ["MERCHANT", "/api/auth/merchant/refresh"],
+    ["ADMIN", "/api/auth/admin/refresh"],
+  ] as const)("a %s client refreshes at %s", async (actor, expectedPath) => {
+    const refreshUrls: string[] = [];
+    const fetchMock = jest.fn(async (url: string) => {
+      if (url.includes("/refresh")) {
+        refreshUrls.push(url);
+        return jsonResponse(200, {
+          accessToken: "fresh-token",
+          refreshTokenExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+        });
+      }
+      return jsonResponse(401, {
+        statusCode: 401,
+        message: "jwt expired",
+        error: "Unauthorized",
+      });
+    });
+
+    const engine = createRequestEngine({
+      baseUrl: "http://api.test",
+      transport: "cookie",
+      actor,
+      getAccessToken: () => "expired-token",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    // The retry 401s too (the mock only ever 200s /refresh), which is
+    // fine — all this asserts is WHERE the refresh itself went.
+    await engine
+      .request("get", "/api/reservations/mine")
+      .catch(() => undefined);
+
+    expect(refreshUrls).toEqual([`http://api.test${expectedPath}`]);
   });
 });

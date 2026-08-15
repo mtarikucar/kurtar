@@ -48,8 +48,8 @@ async function fetchMe(): Promise<MerchantMe> {
  * Session state for the whole app. Session RESTORE (a page reload with no
  * access token in memory) works by simply calling `getMe()` on mount: the
  * engine's single-flight refresh (packages/api-client/src/engine.ts) turns
- * the resulting 401 into one `/auth/refresh` call using the httpOnly
- * cookie, and either succeeds (session restored) or throws (no valid
+ * the resulting 401 into one `/auth/merchant/refresh` call using the
+ * merchant-scoped httpOnly cookie, and either succeeds (session restored) or throws (no valid
  * session) — this component never has to special-case "returning user"
  * vs "fresh visit" itself. Per docs/frontend-contract.md §7.4/§3.5: no
  * token is ever read from or written to localStorage.

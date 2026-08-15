@@ -167,19 +167,20 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
 
   // Separate browser contexts (no shared cookie jar) for the merchant-web
   // and admin-web portions — a real merchant and a real admin are
-  // different people who never share one browser session. This also
-  // sidesteps a genuine cross-surface finding this suite surfaced: the
-  // backend's refresh-token cookie is scoped to ITS OWN origin, not to
-  // whichever frontend set it, so a browser holding a valid merchant
-  // session cookie sends that SAME cookie to admin-web's own POST
-  // /auth/refresh call too (cookies are not port-scoped, and in
-  // production every surface still shares one backend origin). Every
-  // admin-only endpoint still correctly 403s the resulting merchant-
-  // scoped token (no data ever leaks), but admin-web's own session-
-  // restore doesn't check the restored token's actor type before
-  // rendering itself "authenticated" — showing a broken "insufficient
-  // permissions" shell instead of a clean login prompt. Reported in
-  // task-14-report.md as a real, non-blocking UX gap; not fixed here.
+  // different people who never share one browser session, so this is the
+  // honest shape for the test regardless.
+  //
+  // It is no longer load-bearing for correctness, though. This suite
+  // originally surfaced a real cross-surface defect — one unscoped
+  // `refreshToken` cookie at path /api/auth served all three actors on
+  // one shared backend origin, so a browser holding a merchant session
+  // handed that same cookie to admin-web's own refresh call and admin-web
+  // rendered an authenticated shell off it. That is fixed at the backend
+  // cookie layer: each actor now has its own cookie name AND path, and
+  // /api/auth/<actor>/refresh rejects a token whose principal type
+  // doesn't match (backend/src/modules/auth/refresh-cookie-transport.
+  // util.ts, plus auth-refresh-actor-binding.realdb.spec.ts, which proves
+  // a real merchant token cannot mint an admin session).
   const merchantContext = await browser.newContext();
   const adminContext = await browser.newContext();
   const page = await merchantContext.newPage();

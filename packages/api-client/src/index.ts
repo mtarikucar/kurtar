@@ -9,6 +9,7 @@ export type { KurtarClient } from "./client";
 export type {
   CreateClientOptions,
   ClientTransport,
+  ClientActor,
   AuthTokens,
 } from "./transport";
 

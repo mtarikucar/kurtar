@@ -64,7 +64,7 @@ describe("MerchantsController.signup — transport (mirrors AuthController)", ()
     // The cookie itself still carries the fresh token — only the
     // JS-readable JSON body is stripped.
     expect(res.cookie).toHaveBeenCalledWith(
-      "refreshToken",
+      "refreshToken_merchant",
       "refresh-token-x",
       expect.any(Object),
     );
@@ -96,20 +96,23 @@ describe("MerchantsController.signup — transport (mirrors AuthController)", ()
       process.env.NODE_ENV = originalEnv;
     });
 
-    it("sets httpOnly, sameSite=strict, path=/api/auth, and secure=false outside production", async () => {
+    it("sets httpOnly, sameSite=strict, the MERCHANT actor's path, and secure=false outside production", async () => {
       process.env.NODE_ENV = "development";
       const { controller } = makeController();
       const res = makeRes();
       await controller.signup({} as never, makeReq(), res);
 
       expect(res.cookie).toHaveBeenCalledWith(
-        "refreshToken",
+        "refreshToken_merchant",
         "refresh-token-x",
         {
           httpOnly: true,
           secure: false,
           sameSite: "strict",
-          path: "/api/auth",
+          // Signup mints a MERCHANT session, so its cookie carries the
+          // merchant actor's own path even though this route lives
+          // outside /api/auth — see refresh-cookie-transport.util.ts.
+          path: "/api/auth/merchant",
           expires: expect.any(Date),
         },
       );
@@ -122,7 +125,7 @@ describe("MerchantsController.signup — transport (mirrors AuthController)", ()
       await controller.signup({} as never, makeReq(), res);
 
       expect(res.cookie).toHaveBeenCalledWith(
-        "refreshToken",
+        "refreshToken_merchant",
         "refresh-token-x",
         expect.objectContaining({ secure: true }),
       );

@@ -45,9 +45,13 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
       schema: { type: "string", enum: ["cookie"] },
       description:
         "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, " +
-        "/auth/admin/login, and /auth/refresh to receive the refresh token " +
-        "ONLY as an httpOnly cookie, stripped out of the JSON body. Omit " +
-        "entirely for the mobile app (reads the refresh token from the body).",
+        "/auth/admin/login, and their OWN actor's /auth/{consumer|merchant|" +
+        "admin}/refresh to receive the refresh token ONLY as an httpOnly " +
+        "cookie, stripped out of the JSON body. Each actor's refresh cookie " +
+        "is named and path-scoped to that actor (refreshToken_admin at " +
+        "/api/auth/admin, and so on), so one surface never carries another " +
+        "actor's session. Omit entirely for the mobile app (reads the " +
+        "refresh token from the body).",
     })
     .build();
 

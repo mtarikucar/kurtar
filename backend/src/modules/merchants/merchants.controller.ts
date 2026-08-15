@@ -60,7 +60,16 @@ export class MerchantsController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.merchants.signup(dto);
-    return respondWithTokens(res, result, wantsCookieOnlyTransport(req));
+    // "MERCHANT": signup mints a MERCHANT session, so its refresh cookie
+    // is the merchant-scoped one (name + path) even though this route
+    // lives outside /api/auth — see refresh-cookie-transport.util.ts's
+    // ACTOR SCOPING note on why Path follows the actor, not the route.
+    return respondWithTokens(
+      res,
+      "MERCHANT",
+      result,
+      wantsCookieOnlyTransport(req),
+    );
   }
 
   // Must keep working for exactly the statuses MerchantApprovalGuard would

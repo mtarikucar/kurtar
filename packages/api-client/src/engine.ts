@@ -9,7 +9,7 @@ import type {
 } from "./core-types";
 import { buildPath, buildQuery } from "./path-utils";
 import { errorFromNetworkFailure, errorFromResponse } from "./errors";
-import type { AuthTokens, CreateClientOptions } from "./transport";
+import type { AuthTokens, ClientActor, CreateClientOptions } from "./transport";
 
 export interface RequestOptions<P extends ApiPath, M extends HttpMethod> {
   query?: QueryParams<P, M>;
@@ -32,6 +32,27 @@ export interface RequestEngine {
     path: P,
     options?: RequestOptions<P, M>,
   ): Promise<SuccessBody<P, M>>;
+}
+
+/**
+ * The actor-scoped refresh route. There is no shared `/api/auth/refresh`
+ * any more: one refresh cookie for three actors on one shared backend
+ * origin is exactly how a merchant surface ended up able to mint an admin
+ * session (see `ClientActor`'s doc comment in transport.ts, and
+ * backend/src/modules/auth/refresh-cookie-transport.util.ts for the
+ * server side). Every surface refreshes on its own actor's path, and the
+ * browser only ever attaches that actor's cookie there. (The matching
+ * logout routes are called through the typed `auth` domain instead — see
+ * domains/auth.ts.)
+ */
+const ACTOR_PATH_SEGMENT: Record<ClientActor, string> = {
+  CONSUMER: "consumer",
+  MERCHANT: "merchant",
+  ADMIN: "admin",
+};
+
+export function refreshPath(actor: ClientActor): string {
+  return `/api/auth/${ACTOR_PATH_SEGMENT[actor]}/refresh`;
 }
 
 async function parseBody(response: Response): Promise<unknown> {
@@ -60,7 +81,7 @@ async function parseBody(response: Response): Promise<unknown> {
  * that fires several authenticated requests at once (a dashboard loading
  * three widgets in parallel, say) and gets back several 401s at the same
  * moment would, with a naive "refresh on every 401" client, fire N
- * concurrent `/auth/refresh` calls with the SAME still-valid refresh
+ * concurrent `/auth/<actor>/refresh` calls with the SAME still-valid
  * token. Only the first one to land at the database wins the atomic claim
  * (`UPDATE ... WHERE rotatedAt IS NULL`); every other concurrent call
  * observes the token as already-rotated, which the backend cannot
@@ -72,8 +93,8 @@ async function parseBody(response: Response): Promise<unknown> {
  * The fix: every 401 asks for `refreshOnce()`, which memoizes the
  * in-flight refresh Promise in a closure variable (`inFlightRefresh`) for
  * the lifetime of that one outstanding attempt. N concurrent callers all
- * get the SAME promise, so exactly one `/auth/refresh` request is ever
- * in flight at a time; each of the N original requests then retries with
+ * get the SAME promise, so exactly one refresh request is ever in
+ * flight at a time; each of the N original requests then retries with
  * whatever token that single refresh produced.
  */
 export function createRequestEngine(
@@ -138,7 +159,7 @@ export function createRequestEngine(
     const refreshToken = options.getRefreshToken?.() ?? undefined;
     let response: Response;
     try {
-      response = await rawFetch("post", "/api/auth/refresh", {
+      response = await rawFetch("post", refreshPath(options.actor), {
         body: refreshToken ? { refreshToken } : {},
         cookieTransportHeader: true,
         accessToken: null, // never send a (just-expired) access token on the refresh call itself

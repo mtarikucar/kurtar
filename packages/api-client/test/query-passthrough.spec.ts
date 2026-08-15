@@ -180,6 +180,7 @@ describe("query passthrough coverage (regression for methods that silently drop 
       const client = createClient({
         baseUrl: "http://api.test",
         transport: "body",
+        actor: "CONSUMER",
         getAccessToken: () => "token",
         fetch: fetchMock as unknown as typeof fetch,
       });

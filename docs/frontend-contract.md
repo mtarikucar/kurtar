@@ -65,6 +65,7 @@ CI (`frontend-quality` job) diffs the committed file against a fresh regeneratio
 const client = createClient({
   baseUrl: "http://localhost:4750",     // origin only — every operation path already starts with /api
   transport: "cookie" | "body",          // see §4 — one per surface, never mixed
+  actor: "CONSUMER" | "MERCHANT" | "ADMIN",  // see §4.1 — required, picks the actor-scoped refresh/logout routes
   getAccessToken: () => accessToken,     // read from wherever YOUR app keeps it (state/ref/SecureStore)
   getRefreshToken: () => refreshToken,   // body transport only — omit for cookie transport
   onTokensIssued: (tokens) => { /* persist tokens.accessToken (+ .refreshToken for body transport) */ },
@@ -83,8 +84,8 @@ client.auth.requestOtp(body)
 client.auth.verifyOtp(body)              // -> ConsumerAuthResponseDto (accessToken + user)
 client.auth.merchantLogin(body)          // -> MerchantAuthResponseDto (accessToken + user)
 client.auth.adminLogin(body)             // -> AdminAuthResponseDto (accessToken + user)
-client.auth.refresh(body?)               // -> AuthTokensDto (accessToken only — no `user`)
-client.auth.logout(body?)
+client.auth.refresh(body?)               // -> AuthTokensDto (accessToken only — no `user`); routed to POST /auth/<your actor>/refresh
+client.auth.logout(body?)                // routed to POST /auth/<your actor>/logout
 
 client.merchant.signup(body)             // -> MerchantSignupResponseDto (accessToken + merchant)
 client.merchant.submitForReview(body)
@@ -152,9 +153,9 @@ try {
 
 ### 3.5 Single-flight refresh — READ THIS
 
-The backend revokes a refresh token's **entire family** the moment an already-rotated token is presented again (`backend/src/modules/auth/services/token.service.ts`). If your screen fires several authenticated requests at once and they all 401 together, a client that fires one `/auth/refresh` per 401 sends the same still-valid refresh token N times — only the first wins, every other one looks like token reuse, and the whole session gets killed for a real, currently-active user.
+The backend revokes a refresh token's **entire family** the moment an already-rotated token is presented again (`backend/src/modules/auth/services/token.service.ts`). If your screen fires several authenticated requests at once and they all 401 together, a client that fires one `/auth/<actor>/refresh` per 401 sends the same still-valid refresh token N times — only the first wins, every other one looks like token reuse, and the whole session gets killed for a real, currently-active user.
 
-**This is already solved for you in `packages/api-client/src/engine.ts`** — every 401, no matter how many concurrent callers hit it, collapses into exactly ONE `/auth/refresh` call; every caller then retries once with whatever token that single refresh produced. You don't need to do anything except call the client normally — do NOT add your own retry-on-401 logic on top, and do NOT call `client.auth.refresh()` yourself except for a genuinely proactive case (e.g. refreshing on app foreground before the access token's known 15m TTL expires). Unit-tested in `packages/api-client/test/engine.spec.ts` (N-concurrent-401 -> 1-refresh is the load-bearing test).
+**This is already solved for you in `packages/api-client/src/engine.ts`** — every 401, no matter how many concurrent callers hit it, collapses into exactly ONE `/auth/<actor>/refresh` call; every caller then retries once with whatever token that single refresh produced. You don't need to do anything except call the client normally — do NOT add your own retry-on-401 logic on top, and do NOT call `client.auth.refresh()` yourself except for a genuinely proactive case (e.g. refreshing on app foreground before the access token's known 15m TTL expires). Unit-tested in `packages/api-client/test/engine.spec.ts` (N-concurrent-401 -> 1-refresh is the load-bearing test).
 
 ## 4. Transport rule — one per surface, never mixed
 
@@ -165,9 +166,22 @@ The backend revokes a refresh token's **entire family** the moment an already-ro
 | landing | `"cookie"` | Same (landing has little/no authenticated surface, but if it ever calls an authenticated endpoint, stay consistent) |
 | apps/consumer (Expo) | `"body"` | No meaningful cookie jar on native — refresh token comes back in the JSON body; persist it in `expo-secure-store`, never AsyncStorage/plain state |
 
-Concretely: `"cookie"` transport sends `credentials: "include"` on every request and `X-Client-Transport: cookie` on the four auth-issuing calls (`otp/verify`, `merchant/login`, `admin/login`, `refresh`) — this tells the backend to strip the refresh token out of the JSON body entirely and set it only as an httpOnly cookie (`backend/src/modules/auth/auth.controller.ts`'s `wantsCookieOnlyTransport`). `"body"` transport omits that header — the backend returns the refresh token in the JSON body every time, which is what `getRefreshToken`/`onTokensIssued` are for.
+Concretely: `"cookie"` transport sends `credentials: "include"` on every request and `X-Client-Transport: cookie` on the four auth-issuing calls (`otp/verify`, `merchant/login`, `admin/login`, and your actor's own `<actor>/refresh`) — this tells the backend to strip the refresh token out of the JSON body entirely and set it only as an httpOnly cookie (`backend/src/modules/auth/auth.controller.ts`'s `wantsCookieOnlyTransport`). `"body"` transport omits that header — the backend returns the refresh token in the JSON body every time, which is what `getRefreshToken`/`onTokensIssued` are for.
 
 Never send `"cookie"` transport from a context with no real cookie jar (Expo) — you'd get a refresh token in neither the cookie nor the body and have nothing to persist.
+
+### 4.1 Actor rule — every client declares whose session it manages
+
+`createClient({ actor })` is **required** and picks the actor-scoped auth routes:
+
+| Surface | `actor` | Refresh / logout routes | Refresh cookie |
+|---|---|---|---|
+| apps/merchant-web | `"MERCHANT"` | `POST /auth/merchant/{refresh,logout}` | `refreshToken_merchant`, path `/api/auth/merchant` |
+| apps/admin-web | `"ADMIN"` | `POST /auth/admin/{refresh,logout}` | `refreshToken_admin`, path `/api/auth/admin` |
+| apps/consumer | `"CONSUMER"` | `POST /auth/consumer/{refresh,logout}` | body transport — no cookie |
+| landing | `"CONSUMER"` | (never called — no authenticated surface) | — |
+
+There is **no shared `POST /auth/refresh`**. Every kurtar surface talks to the same backend origin, and a cookie is scoped by host+path — never by port, and never by which frontend set it. One shared refresh cookie for three actors meant whichever actor signed in last owned the browser's only session, logging out of one surface killed the other's, and any script on any same-site surface could trade that cookie for an access token belonging to whoever it happened to be. Per-actor names and paths mean the three sessions coexist and the browser never even transmits another actor's cookie; the backend additionally rejects a refresh token whose own principal type doesn't match the route it arrived on (`backend/src/modules/auth/services/token.service.ts`'s `expectedActor`), so the guarantee doesn't rest on cookie attributes alone.
 
 ## 5. `@kurtar/ui-tokens` — design tokens
 
@@ -229,7 +243,7 @@ A freshly-signed-up merchant is `PENDING` — most merchant-only endpoints 403 w
 ### 7.4 Logout
 
 ```
-POST /auth/logout  -> client.auth.logout()
+POST /auth/<actor>/logout  -> client.auth.logout()
 ```
 Revokes the whole refresh-token family server-side. Call this, then clear whatever you persisted locally (SecureStore for consumer; nothing extra needed for cookie transport beyond clearing your in-memory access token, since the backend also clears the cookie).
 

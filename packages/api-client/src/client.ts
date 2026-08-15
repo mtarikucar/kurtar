@@ -45,7 +45,7 @@ export function createClient(options: CreateClientOptions): KurtarClient {
 
   return {
     health: createHealthDomain(engine),
-    auth: createAuthDomain(engine, options.transport),
+    auth: createAuthDomain(engine, options.transport, options.actor),
     merchant: createMerchantDomain(engine, options.transport),
     offers: createOffersDomain(engine),
     discovery: createDiscoveryDomain(engine),

@@ -93,9 +93,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // before the access token's known 15m TTL expires" — restoring a
     // session on load is the same category of case).
     //
+    // `client.auth.refresh()` hits POST /api/auth/admin/refresh, which
+    // only ever accepts an ADMIN refresh token (the cookie is named and
+    // path-scoped to the admin actor, and the backend re-checks the
+    // token's own principal type — see @kurtar/api-client's ClientActor
+    // doc comment). A merchant session in the same browser therefore
+    // cannot restore an admin shell here, which it once could.
+    //
     // There is no GET /admin/me endpoint in this API (confirmed by
     // reading backend/src/modules/auth and backend/src/modules/admin — no
-    // "who am I" route exists for the ADMIN actor, and POST /auth/refresh
+    // "who am I" route exists for the ADMIN actor, and the refresh route
     // returns only {accessToken, refreshToken?, refreshTokenExpiresAt},
     // never `user`). So a successful silent refresh restores the SESSION
     // (the admin stays authenticated and every subsequent API call works)

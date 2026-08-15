@@ -20,6 +20,7 @@ describe("createClient", () => {
     const client = createClient({
       baseUrl: "http://api.test",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => null,
       fetch: fetchMock as unknown as typeof fetch,
     });
@@ -55,6 +56,7 @@ describe("createClient", () => {
     const client = createClient({
       baseUrl: "http://api.test/",
       transport: "body",
+      actor: "CONSUMER",
       getAccessToken: () => null,
       fetch: fetchMock as unknown as typeof fetch,
     });
