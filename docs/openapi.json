@@ -479,7 +479,7 @@
             }
           },
           {
-            "name": "limit",
+            "name": "pageSize",
             "required": true,
             "in": "query",
             "schema": {
@@ -6853,7 +6853,7 @@
           "page": {
             "type": "number"
           },
-          "limit": {
+          "pageSize": {
             "type": "number"
           }
         },
@@ -6861,7 +6861,7 @@
           "items",
           "total",
           "page",
-          "limit"
+          "pageSize"
         ]
       },
       "ReservationRedeemResponseDto": {

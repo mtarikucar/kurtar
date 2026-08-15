@@ -25,20 +25,19 @@ export class ReservationDto {
   @ApiProperty() updatedAt!: Date;
 }
 
-/** GET /reservations/mine — ListReservationsResult. NOTE: this envelope's
- * 4th field is genuinely named `limit`, not `pageSize` — unlike every
- * other paginated list in this API (settlements/complaints/reports/
- * ratings/merchants all use `{items,total,page,pageSize}`). This is a
- * real, pre-existing inconsistency in the API surface (reservations.
- * service.ts's own ListReservationsResult interface), documented as-is
- * per the brief's "derive, never hand-copy" — not silently normalized to
- * `pageSize` here, which would misrepresent the actual field name a
- * client receives. Flagged separately as a contract inconsistency. */
+/** GET /reservations/mine — ListReservationsResult.
+ * [Consistency fix] This envelope's 4th field used to be named `limit`,
+ * the one paginated list in this API that didn't agree with everyone
+ * else's `{items,total,page,pageSize}` (settlements/complaints/reports/
+ * ratings/merchants). Renamed to `pageSize` — both the DTO here and
+ * ReservationsService's own ListReservationsResult interface — while the
+ * contract was still pre-launch and had zero real consumers (the four
+ * app tasks start after this). */
 export class ReservationListResponseDto {
   @ApiProperty({ type: [ReservationDto] }) items!: ReservationDto[];
   @ApiProperty() total!: number;
   @ApiProperty() page!: number;
-  @ApiProperty() limit!: number;
+  @ApiProperty() pageSize!: number;
 }
 
 /** POST /reservations — CreateReservationResult. */

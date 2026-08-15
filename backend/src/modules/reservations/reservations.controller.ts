@@ -56,7 +56,7 @@ export class ReservationsController {
     @CurrentUser("id") userId: string,
     @Query() query: ListReservationsQueryDto,
   ) {
-    return this.reservations.listMine(userId, query.page, query.limit);
+    return this.reservations.listMine(userId, query.page, query.pageSize);
   }
 
   // Judgment call (Task 5 review): redeem is exempted from

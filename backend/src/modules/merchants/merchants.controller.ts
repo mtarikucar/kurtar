@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from "@nestjs/common";
+import { Body, Controller, Get, Post, Req, Res } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import {
   ApiBearerAuth,
@@ -7,11 +7,16 @@ import {
   ApiOperation,
   ApiTags,
 } from "@nestjs/swagger";
+import { Request, Response } from "express";
 import { Public } from "../auth/decorators/public.decorator";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { AllowUnapprovedMerchant } from "../auth/decorators/allow-unapproved-merchant.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
+import {
+  respondWithTokens,
+  wantsCookieOnlyTransport,
+} from "../auth/refresh-cookie-transport.util";
 import { MerchantSignupDto } from "./dto/merchant-signup.dto";
 import { MerchantSubmitDto } from "./dto/merchant-submit.dto";
 import { MerchantsService } from "./merchants.service";
@@ -30,6 +35,18 @@ const SIGNUP_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
 export class MerchantsController {
   constructor(private readonly merchants: MerchantsService) {}
 
+  // [Security fix] Merchant signup mints a full session (a token pair) in
+  // a browser-reachable response — merchant-web's own registration
+  // screen — but this endpoint was added after Task 3's
+  // X-Client-Transport: cookie convention and never adopted it: it used
+  // to return `this.merchants.signup(dto)` directly, which always
+  // includes the 30-day refresh token in JS-readable JSON regardless of
+  // transport and never sets the httpOnly cookie at all. Same class of
+  // bug the review originally caught and fixed on /auth/otp/verify and
+  // /auth/*/login. Now routes through the SAME shared
+  // respondWithTokens()/wantsCookieOnlyTransport() used by
+  // AuthController — same header, same cookie attributes, same
+  // stripping, same precedence — not a second, divergent implementation.
   @ApiOperation({
     summary: "Create a merchant account (DRAFT). No auth required.",
   })
@@ -37,8 +54,13 @@ export class MerchantsController {
   @Public()
   @Throttle(SIGNUP_THROTTLE)
   @Post("signup")
-  signup(@Body() dto: MerchantSignupDto) {
-    return this.merchants.signup(dto);
+  async signup(
+    @Body() dto: MerchantSignupDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.merchants.signup(dto);
+    return respondWithTokens(res, result, wantsCookieOnlyTransport(req));
   }
 
   // Must keep working for exactly the statuses MerchantApprovalGuard would

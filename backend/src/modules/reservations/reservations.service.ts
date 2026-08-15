@@ -63,7 +63,7 @@ export interface ListReservationsResult {
   items: Reservation[];
   total: number;
   page: number;
-  limit: number;
+  pageSize: number;
 }
 
 /** [Task 5] cancelAllForOffer's DB-write-only result — see its doc comment. */
@@ -826,14 +826,20 @@ export class ReservationsService {
   async listMine(
     userId: string,
     page: number,
-    limit: number,
+    pageSize: number,
   ): Promise<ListReservationsResult> {
-    const offset = (page - 1) * limit;
+    const offset = (page - 1) * pageSize;
     const [items, total] = await Promise.all([
       // Prisma's query builder has no way to express "order by a custom
       // priority derived from an enum column" — active reservations
       // (PENDING_PAYMENT, CONFIRMED) first, everything terminal after —
-      // so this is raw SQL, same rationale as OfferStockService.
+      // so this is raw SQL, same rationale as OfferStockService. The SQL
+      // `LIMIT` KEYWORD below is unrelated to the `pageSize` parameter
+      // name — it's just what Postgres calls "how many rows," same as
+      // every other paginated query in this codebase already uses
+      // `pageSize` for its OWN param name (this endpoint used to be the
+      // one exception, calling it `limit` — [Consistency fix] renamed to
+      // match every other paginated list's envelope field).
       this.prisma.$queryRaw<Reservation[]>`
         SELECT * FROM "reservations"
         WHERE "userId" = ${userId}
@@ -842,10 +848,10 @@ export class ReservationsService {
           WHEN 'CONFIRMED' THEN 1
           ELSE 2
         END ASC, "createdAt" DESC
-        LIMIT ${limit} OFFSET ${offset}
+        LIMIT ${pageSize} OFFSET ${offset}
       `,
       this.prisma.reservation.count({ where: { userId } }),
     ]);
-    return { items, total, page, limit };
+    return { items, total, page, pageSize };
   }
 }

@@ -13,10 +13,14 @@ export class MerchantSignupMerchantDto {
 }
 
 /** POST /merchants/signup — MerchantSignupResult extends IssuedTokens.
- * Unlike the /auth/* login endpoints, this handler returns the service
- * result directly (no AuthController.respond() cookie-stripping) — the
- * refresh token is ALWAYS present in the body here, never conditionally
- * omitted, and no httpOnly cookie is set by this endpoint either. */
+ * [Security fix] Now routes through the SAME
+ * respondWithTokens()/wantsCookieOnlyTransport() convention as the
+ * /auth/* login endpoints (refresh-cookie-transport.util.ts) — a
+ * merchant-web caller declaring `X-Client-Transport: cookie` gets the
+ * refresh token ONLY as an httpOnly cookie, stripped from this body,
+ * exactly like /auth/otp/verify and the /auth login endpoints. AuthTokensDto's own
+ * `refreshToken`/`refreshTokenExpiresAt` are already optional for
+ * exactly this reason — see its doc comment. */
 export class MerchantSignupResponseDto extends AuthTokensDto {
   @ApiProperty({ type: MerchantSignupMerchantDto })
   merchant!: MerchantSignupMerchantDto;

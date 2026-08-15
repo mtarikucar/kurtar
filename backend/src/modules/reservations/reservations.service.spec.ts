@@ -725,7 +725,7 @@ describe("ReservationsService.redeem", () => {
 });
 
 describe("ReservationsService.listMine", () => {
-  it("passes page/limit through to the LIMIT/OFFSET raw query and returns total from count()", async () => {
+  it("passes page/pageSize through to the LIMIT/OFFSET raw query and returns total from count()", async () => {
     const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ id: "r1" }]);
     (prisma.reservation.count as jest.Mock).mockResolvedValue(1);
@@ -741,7 +741,27 @@ describe("ReservationsService.listMine", () => {
       items: [{ id: "r1" }],
       total: 1,
       page: 2,
-      limit: 10,
+      pageSize: 10,
     });
+  });
+
+  // [Consistency fix] Regression coverage for the field-name rename
+  // itself — `listMine` used to return `limit`, the one paginated list in
+  // this API that didn't match every other list's `{items,total,page,
+  // pageSize}` envelope.
+  it("names its 4th field pageSize, not limit — matches every other paginated list in this API", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(0);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.listMine("user1", 1, 20);
+    expect(result).toHaveProperty("pageSize", 20);
+    expect(result).not.toHaveProperty("limit");
   });
 });
