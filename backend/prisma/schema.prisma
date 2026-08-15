@@ -826,6 +826,18 @@ model SettlementBatch {
   // left after my own last pass" — exactly mirroring why a settlement_line
   // this batch previously fully absorbed must have its FULL original
   // demand (not 0) fed back in as the baseline on a repeat pass.
+  //
+  // [Fix round #5] This is now a PROJECTION of the batch's
+  // SettlementCarriedDemandClaim row (0 when there is none), rewritten on
+  // every pass — not a write-once frozen copy. Freezing it was this same
+  // defect class in its OTHER half: a predecessor's own fee deficit is
+  // MUTABLE (a HELD batch stays recomputable and can be cured by a very
+  // late line or a fee correction), so a frozen copy could outlive the
+  // demand that justified it and be withheld from the merchant a second
+  // time. Re-deriving it from the PINNED PREDECESSOR every pass — never
+  // from this batch's own earlier output, so R1 still holds — is what
+  // makes the handoff retirable. assertLedgerIdentity cross-checks this
+  // column against the claim row.
   inheritedExternalDemandCents Int       @default(0)
   // [Fix round, C2] Stamped the FIRST time this batch is ever recomputed
   // (settlement-batch-builder.service.ts's recomputeBatch), whether or not
@@ -862,18 +874,32 @@ model SettlementBatch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  settlementLines     SettlementLine[]
-  commissionInvoices  CommissionInvoice[]
+  settlementLines            SettlementLine[]
+  commissionInvoices         CommissionInvoice[]
   // [Task 8] The settled lines whose reservation was refunded AFTER this
   // batch sent — the clawback lands on the NEXT batch, but this relation
   // still points back at the batch that ORIGINALLY paid the line out, for
   // audit ("what got clawed back, and why"). See SettlementLine.clawbackBatchId.
-  clawedBackLines     SettlementLine[]               @relation("SettlementLineClawback")
+  clawedBackLines            SettlementLine[]               @relation("SettlementLineClawback")
   // [Fix round #4] This batch's OWN per-line clawback contributions — the
   // authoritative ledger every recompute rebuilds from scratch and checks
   // `refundClawbackCents` against before committing. See
   // SettlementClawbackAllocation's own doc comment.
-  clawbackAllocations SettlementClawbackAllocation[]
+  clawbackAllocations        SettlementClawbackAllocation[]
+  // [Fix round #5] The carried-demand handoff, recorded on both sides.
+  // `carriedDemandSourceBatchId` is the PREDECESSOR this batch inherited
+  // external demand from — write-once, discovered on the first pass only,
+  // pure identity with no money in it. `carriedDemandClaim` is the live,
+  // every-pass-rebuilt MONEY claim against that predecessor;
+  // `carriedDemandClaimsAgainst` is the same rows seen from the
+  // predecessor's side, which is what lets a predecessor whose deficit is
+  // cured have the claim retired instead of leaving a frozen copy behind.
+  // See SettlementCarriedDemandClaim.
+  carriedDemandSourceBatchId String?
+  carriedDemandSource        SettlementBatch?               @relation("SettlementCarriedDemandSource", fields: [carriedDemandSourceBatchId], references: [id], onDelete: SetNull)
+  carriedDemandSuccessors    SettlementBatch[]              @relation("SettlementCarriedDemandSource")
+  carriedDemandClaim         SettlementCarriedDemandClaim?  @relation("CarriedDemandClaimant")
+  carriedDemandClaimsAgainst SettlementCarriedDemandClaim[] @relation("CarriedDemandSource")
 
   @@index([merchantId, status])
   @@map("settlement_batches")
@@ -981,6 +1007,56 @@ model SettlementClawbackAllocation {
   @@id([batchId, reservationId])
   @@index([reservationId])
   @@map("settlement_clawback_allocations")
+}
+
+/**
+ * [Fix round #5] The carried-demand ledger: at most ONE row per claimant
+ * batch, saying "batch S has taken over `amountCents` of predecessor P's
+ * still-unresolved demand."
+ * WHY, given the line ledger already exists. `priorClawbackCents` has two
+ * halves. The LINE half (settlement_clawback_allocations) was fixed in
+ * round #4. The other half — the shortfall a HELD predecessor hands to its
+ * successor — was still an INFERRED COPY: resolveCarriedShortfall read the
+ * predecessor's own fee deficit and froze it into the successor's
+ * inheritedExternalDemandCents, and nothing on the predecessor recorded
+ * that the claim had been made. Unlike a settled line's demand, a
+ * predecessor's deficit is MUTABLE: a HELD batch stays recomputable, and
+ * `createOrExtendBatch` deliberately adds very-late lines to it. So a
+ * cured predecessor left the successor holding a frozen claim on a demand
+ * that no longer existed, and the merchant was charged for it twice —
+ * the opposite direction from the four forgiveness bugs, the same class.
+ * Recording the handoff makes it RETIRABLE, exactly as recording line
+ * attribution made that undoable: the claimant deletes its own row before
+ * re-deriving, re-reads the predecessor's CURRENT exportable demand, and
+ * re-inserts only what is still justified. A predecessor that resolves
+ * (leaves HELD) exports 0, so the claim simply is not re-created.
+ * INVARIANTS (1 and 2 asserted against persisted rows inside the recompute
+ * transaction — see assertLedgerIdentity / assertIrrevocableClaimsHonoured):
+ * 1. batch.inheritedExternalDemandCents === COALESCE(its claim's amountCents, 0)
+ * 2. a claim held by a claimant that can no longer recompute (anything
+ * outside CALCULATED/HELD — its amount is committed money) must stay
+ * covered by the source's exportable demand; a source recompute that
+ * would break that refuses to commit rather than silently under-paying.
+ * 3. amountCents > 0 — enforced by a DB CHECK. A zero claim is the
+ * ABSENCE of a row, so "claim nothing" and "release my claim" are the
+ * same write and no branch can skip either.
+ */
+model SettlementCarriedDemandClaim {
+  claimantBatchId String          @id
+  claimantBatch   SettlementBatch @relation("CarriedDemandClaimant", fields: [claimantBatchId], references: [id], onDelete: Cascade)
+
+  sourceBatchId String
+  sourceBatch   SettlementBatch @relation("CarriedDemandSource", fields: [sourceBatchId], references: [id], onDelete: Cascade)
+
+  /// Always > 0 (invariant 3). Kuruş, Int.
+  amountCents Int
+
+  // No `updatedAt`, for the same reason as SettlementClawbackAllocation:
+  // the row is deleted and re-inserted, never patched.
+  createdAt DateTime @default(now())
+
+  @@index([sourceBatchId])
+  @@map("settlement_carried_demand_claims")
 }
 
 model CommissionInvoice {
