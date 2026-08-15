@@ -1,0 +1,35 @@
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-lg);
+  font-size: var(--font-size-body);
+}
+
+.success {
+  background-color: var(--color-success-50);
+  color: var(--color-success-700);
+  border: 1px solid var(--color-success-500);
+}
+
+.error {
+  background-color: var(--color-danger-50);
+  color: var(--color-danger-700);
+  border: 1px solid var(--color-danger-500);
+}
+
+.message {
+  flex: 1;
+}
+
+.dismiss {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--font-size-h2);
+  line-height: 1;
+  color: inherit;
+}

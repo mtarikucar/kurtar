@@ -1,0 +1,70 @@
+{
+  "app": {
+    "title": "kurtar yönetim"
+  },
+  "nav": {
+    "dashboard": "Panel",
+    "merchants": "İşletme onayları",
+    "complaints": "Şikayetler",
+    "moderation": "Moderasyon",
+    "settlements": "Finans",
+    "pricing": "Fiyatlandırma",
+    "ratings": "Puan moderasyonu",
+    "exports": "Dışa aktarma",
+    "logout": "Çıkış yap"
+  },
+  "actions": {
+    "approve": "Onayla",
+    "reject": "Reddet",
+    "suspend": "Askıya al",
+    "resolve": "Çöz",
+    "escalate": "Yükselt",
+    "action": "İşlem uygula",
+    "dismiss": "Reddet",
+    "hold": "Beklet",
+    "retry": "Tekrar dene",
+    "cancel": "Vazgeç",
+    "confirm": "Onayla",
+    "send": "Gönder",
+    "download": "İndir",
+    "save": "Kaydet",
+    "close": "Kapat",
+    "viewDetail": "Detay",
+    "back": "Geri",
+    "viewAll": "Tümünü gör"
+  },
+  "status": {
+    "loading": "Yükleniyor…",
+    "error": "Bir hata oluştu.",
+    "retry": "Tekrar dene",
+    "empty": "Kayıt bulunamadı."
+  },
+  "pagination": {
+    "pageOf": "Sayfa {{page}} / {{totalPages}}",
+    "previous": "Önceki",
+    "next": "Sonraki",
+    "totalItems": "{{count}} kayıt"
+  },
+  "countdown": {
+    "remainingDays": "{{days}} gün {{hours}} saat kaldı",
+    "remainingHours": "{{hours}} saat {{minutes}} dakika kaldı",
+    "remainingMinutes": "{{minutes}} dakika kaldı",
+    "breachedDays": "{{days}} gün {{hours}} saat önce süresi doldu",
+    "breachedHours": "{{hours}} saat {{minutes}} dakika önce süresi doldu",
+    "breachedMinutes": "{{minutes}} dakika önce süresi doldu",
+    "breachedLabel": "SÜRESİ DOLDU",
+    "criticalLabel": "ACİL",
+    "warningLabel": "YAKLAŞIYOR",
+    "safeLabel": "SÜRESİNDE"
+  },
+  "confirmDialog": {
+    "cancel": "Vazgeç",
+    "confirm": "Onayla, işlemi uygula"
+  },
+  "errors": {
+    "network": "Sunucuya ulaşılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.",
+    "forbidden": "Bu işlem için yetkiniz yok.",
+    "notFound": "Kayıt bulunamadı.",
+    "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin."
+  }
+}

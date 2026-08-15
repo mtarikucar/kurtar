@@ -1,0 +1,30 @@
+.state {
+  padding: var(--space-3xl);
+  text-align: center;
+  color: var(--color-neutral-600);
+  font-size: var(--font-size-body);
+}
+
+.errorState {
+  padding: var(--space-2xl);
+  text-align: center;
+  color: var(--color-danger-700);
+  background-color: var(--color-danger-50);
+  border: 1px solid var(--color-danger-500);
+  border-radius: var(--radius-md);
+}
+
+.retryButton {
+  margin-top: var(--space-md);
+  padding: var(--space-sm) var(--space-xl);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-danger-500);
+  background-color: var(--color-neutral-0);
+  color: var(--color-danger-700);
+  font-weight: var(--font-weight-bodyStrong);
+  cursor: pointer;
+}
+
+.retryButton:hover {
+  background-color: var(--color-danger-50);
+}
