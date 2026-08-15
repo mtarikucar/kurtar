@@ -1,0 +1,82 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.heading {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-h3);
+}
+
+.planRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.planText {
+  font-size: var(--font-size-body);
+  color: var(--color-neutral-700);
+}
+
+.editToggle {
+  min-height: 44px;
+  padding: 0 var(--space-sm);
+  border: none;
+  background: transparent;
+  color: var(--color-primary-600);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bodyStrong);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.editPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-neutral-100);
+}
+
+.qtyRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.qtyLabel {
+  font-size: var(--font-size-label);
+  color: var(--color-neutral-700);
+}
+
+.timeRow {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.timeRow > * {
+  flex: 1;
+  /* see shared/ui/Form.module.css's .field comment — same flex-shrink
+     floor applies to a bare native <input> as to the shared TextField. */
+  min-width: 0;
+}
+
+.timeRow label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.timeRow input[type="time"] {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-neutral-300);
+  background: var(--color-neutral-0);
+  font-size: var(--font-size-body);
+  box-sizing: border-box;
+}
