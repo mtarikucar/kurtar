@@ -10,16 +10,26 @@
 #
 # next.config.ts's `output: "standalone"` + `outputFileTracingRoot`
 # (pointed at the repo root, since this is an npm workspace) is what
-# makes `.next/standalone/` a minimal, self-contained server — verified
-# empirically: this app's only `@kurtar/*` usage is inside a "use client"
-# component, so the standalone server bundle needs neither package at
-# runtime (they're already inlined into the CLIENT chunks under .next/
-# static by Next's bundler). If Task 13 later adds a Server
-# Component/Route Handler that imports @kurtar/api-client directly, check
-# `.next/standalone/node_modules/@kurtar/` actually appears — if Next's
-# tracer doesn't pick it up, this Dockerfile's build stage will need an
-# explicit `npm run build -w @kurtar/api-client` COPY step added, same as
-# the other two frontend Dockerfiles already do.
+# makes `.next/standalone/` a minimal, self-contained server.
+#
+# UPDATE (task-13): lib/impact.ts now imports @kurtar/api-client from a
+# Server Component (app/[locale]/page.tsx, the home page's live impact
+# counter) — no longer confined to a "use client" component as this
+# comment previously assumed. That page is statically generated (SSG)
+# but uses `fetch(..., { next: { revalidate: 300 } })`, which makes it
+# eligible for ISR: the STANDALONE SERVER re-executes this exact code
+# path in the background once the cache window elapses, not just once
+# at build time. Verified empirically that Next's output file tracer does
+# NOT pick up `@kurtar/api-client` into `.next/standalone/node_modules/`
+# on its own (grepped the built standalone output — zero "@kurtar"
+# matches) — so the explicit copy step below is required, not optional;
+# omitting it would make the home page's live counter silently start
+# throwing (and therefore never refresh past its first revalidate) the
+# moment the container has been up for 5 minutes. `@kurtar/api-client`
+# itself declares zero runtime "dependencies" of its own (see its
+# package.json), so its built dist/ is the only thing that needs to land
+# in the runtime image's node_modules — no transitive package graph to
+# chase.
 
 ########################################################################
 # Stage 1: install + build
@@ -74,6 +84,14 @@ ENV HOSTNAME=0.0.0.0
 COPY --from=build --chown=kurtar:kurtar /app/landing/.next/standalone ./
 COPY --from=build --chown=kurtar:kurtar /app/landing/.next/static ./landing/.next/static
 COPY --from=build --chown=kurtar:kurtar /app/landing/public ./landing/public
+
+# See this file's top comment ("UPDATE (task-13)") — Next's tracer does
+# not include this package in the standalone output on its own. Node's
+# module resolution walks up from /app/landing/server.js and finds
+# /app/node_modules first, matching where every other runtime dependency
+# (next, react, react-dom) already landed above.
+COPY --from=build --chown=kurtar:kurtar /app/packages/api-client/dist ./node_modules/@kurtar/api-client/dist
+COPY --from=build --chown=kurtar:kurtar /app/packages/api-client/package.json ./node_modules/@kurtar/api-client/package.json
 
 USER kurtar
 EXPOSE 4758
