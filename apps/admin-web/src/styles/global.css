@@ -1,0 +1,70 @@
+/* Global reset + base typography. Colors/spacing/type all come from CSS
+   custom properties injected by styles/tokens.ts from @kurtar/ui-tokens —
+   nothing in this file (or any .module.css) hardcodes a hex/px value that
+   ui-tokens already defines. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-neutral-900);
+  background-color: var(--color-neutral-50);
+}
+
+/* Desktop-first admin console (docs/frontend-contract task-11 brief §Cross-
+   cutting) — 1024px is the documented floor, not a target to design for. */
+#root {
+  min-width: 1024px;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--color-primary-600);
+}
+
+/* A single, consistent focus ring for every interactive element — keyboard
+   operability is a hard requirement (brief §Cross-cutting) and must never
+   depend on a browser's inconsistent default outline. */
+:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+table {
+  border-collapse: collapse;
+}

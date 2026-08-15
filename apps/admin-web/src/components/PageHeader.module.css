@@ -1,0 +1,26 @@
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-xl);
+  margin-bottom: var(--space-2xl);
+}
+
+.title {
+  font-size: var(--font-size-h1);
+  line-height: var(--line-height-h1);
+  font-weight: var(--font-weight-h1);
+  color: var(--color-neutral-900);
+}
+
+.subtitle {
+  margin-top: var(--space-xs);
+  font-size: var(--font-size-body);
+  color: var(--color-neutral-600);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-md);
+  flex-shrink: 0;
+}

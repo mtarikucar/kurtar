@@ -1,0 +1,29 @@
+{
+  "title": "Dışa aktarma",
+  "subtitle": "Denetim ve mevzuat kayıtları için CSV dışa aktarımları — tarih aralığı zorunludur.",
+  "rangeLabel": "Tarih aralığı",
+  "fromLabel": "Başlangıç",
+  "toLabel": "Bitiş",
+  "errors": {
+    "MISSING_FROM": "Başlangıç tarihi seçin.",
+    "MISSING_TO": "Bitiş tarihi seçin.",
+    "FROM_AFTER_TO": "Başlangıç tarihi, bitiş tarihinden sonra olamaz."
+  },
+  "cards": {
+    "complaints": {
+      "title": "Şikayetler",
+      "description": "ETAHS 15 günlük SLA kayıtları — her şikayetin açılış, çözülme ve SLA durumu."
+    },
+    "settlements": {
+      "title": "Ödemeler",
+      "description": "Dönem bazlı ödeme kayıtları — brüt, kesintiler, net tutar ve ödeme tarihi."
+    },
+    "merchants": {
+      "title": "İşletmeler",
+      "description": "KYC onay geçmişi — başvuru, onay/ret ve askıya alma kayıtları."
+    }
+  },
+  "download": "CSV indir",
+  "downloading": "İndiriliyor…",
+  "downloadError": "Dışa aktarma başarısız oldu. Lütfen tekrar deneyin."
+}

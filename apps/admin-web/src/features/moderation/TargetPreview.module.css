@@ -1,0 +1,37 @@
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.badge {
+  display: inline-block;
+  width: fit-content;
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-neutral-200);
+  color: var(--color-neutral-800);
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-label);
+}
+
+.id {
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-600);
+  font-family: monospace;
+}
+
+.storeName {
+  font-weight: var(--font-weight-bodyStrong);
+}
+
+.storeAddress {
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-600);
+}
+
+.unavailable {
+  font-size: var(--font-size-label);
+  color: var(--color-neutral-500);
+  font-style: italic;
+}

@@ -1,0 +1,57 @@
+{
+  "title": "Şikayetler",
+  "subtitle": "ETAHS uyarınca her şikayet 15 takvim günü içinde çözülmelidir.",
+  "filter": {
+    "status": "Durum",
+    "category": "Kategori",
+    "merchant": "İşletme kimliği",
+    "merchantPlaceholder": "İşletme ID gir, Enter'a bas",
+    "ALL": "Tümü",
+    "OPEN_ACTIVE": "İşlem bekleyen",
+    "AT_RISK": "SLA riski taşıyan",
+    "OPEN": "Açık",
+    "MERCHANT_RESPONDED": "Satıcı yanıtladı",
+    "RESOLVED": "Çözüldü",
+    "ESCALATED": "Yükseltildi"
+  },
+  "category": {
+    "FOOD_QUALITY": "Gıda kalitesi",
+    "MISSING_ITEMS": "Eksik ürün",
+    "WRONG_ITEMS": "Yanlış ürün",
+    "STORE_CLOSED_NO_SHOW": "Mağaza kapalı / gelinmedi",
+    "RUDE_STAFF": "Kaba personel",
+    "PAYMENT_BILLING": "Ödeme/faturalama",
+    "SAFETY_HYGIENE": "Güvenlik/hijyen",
+    "OTHER": "Diğer"
+  },
+  "table": {
+    "category": "Kategori",
+    "description": "Açıklama",
+    "status": "Durum",
+    "deadline": "SLA",
+    "createdAt": "Açılış tarihi"
+  },
+  "detail": {
+    "back": "Şikayetlere dön",
+    "openedAt": "Açılış tarihi: {{date}}",
+    "resolvedAt": "Çözülme tarihi: {{date}}",
+    "threadTitle": "Mesaj geçmişi",
+    "noMessages": "Henüz mesaj yok.",
+    "authorConsumer": "Müşteri",
+    "authorMerchant": "İşletme",
+    "authorAdmin": "Yönetici (siz)",
+    "messageLabel": "Yeni mesaj",
+    "sendMessage": "Mesajı gönder",
+    "resolveTitle": "Şikayeti çöz",
+    "resolveConsequence": "Bu şikayet \"Çözüldü\" durumuna alınacak ve SLA takibi sona erecektir.",
+    "resolveNoteLabel": "Çözüm notu (opsiyonel)",
+    "escalateTitle": "Şikayeti yükselt",
+    "escalateConsequence": "Bu şikayet \"Yükseltildi\" durumuna alınacaktır — normal SLA takibinin ötesinde ek inceleme gerektiğini işaretler.",
+    "escalateNoteLabel": "Yükseltme notu (opsiyonel)"
+  },
+  "errors": {
+    "transitionInvalid": "Bu şikayet artık bu duruma geçirilemez — sayfa güncellendi.",
+    "notFound": "Şikayet bulunamadı.",
+    "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin."
+  }
+}

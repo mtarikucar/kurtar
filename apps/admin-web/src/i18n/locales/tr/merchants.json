@@ -1,0 +1,62 @@
+{
+  "title": "İşletme onayları",
+  "subtitle": "KYC başvurularını inceleyin, onaylayın, reddedin veya askıya alın.",
+  "filter": {
+    "label": "Durum",
+    "ALL": "Tümü",
+    "PENDING": "Onay bekleyen",
+    "DRAFT": "Taslak",
+    "SUBMITTED": "Başvuru yapıldı",
+    "UNDER_REVIEW": "İncelemede",
+    "APPROVED": "Onaylı",
+    "REJECTED": "Reddedildi",
+    "SUSPENDED": "Askıya alındı"
+  },
+  "table": {
+    "tradeName": "Ticari unvan",
+    "legalName": "Yasal unvan",
+    "taxId": "VKN/TCKN",
+    "status": "Durum",
+    "verifiedAt": "Onay tarihi",
+    "createdAt": "Başvuru tarihi",
+    "actions": "İşlemler"
+  },
+  "actions": {
+    "approve": "Onayla",
+    "reject": "Reddet",
+    "suspend": "Askıya al"
+  },
+  "approveDialog": {
+    "title": "İşletmeyi onayla",
+    "consequence": "\"{{tradeName}}\" işletmesi onaylanacak ve platformda paket satışına başlayabilecek.",
+    "noteLabel": "Not (opsiyonel)",
+    "confirm": "Onayla"
+  },
+  "rejectDialog": {
+    "title": "İşletmeyi reddet",
+    "consequence": "\"{{tradeName}}\" işletmesinin başvurusu reddedilecek. Ret gerekçesi kayıt altına alınacak ve işletmeye iletilecektir.",
+    "noteLabel": "Ret gerekçesi (zorunlu)",
+    "noteRequired": "Reddetmek için bir gerekçe yazmalısınız.",
+    "confirm": "Reddet"
+  },
+  "suspendDialog": {
+    "title": "İşletmeyi askıya al",
+    "consequence": "\"{{tradeName}}\" işletmesi askıya alınacak: <bold>tüm aktif teklifleri iptal edilecek</bold> ve bu tekliflere ait rezervasyonu olan <bold>her alıcıya tam iade yapılacaktır</bold>. Bu işlem gerçek para hareketi doğurur ve geri alınamaz — işletme yeniden onaylanana kadar satış yapamaz.",
+    "noteLabel": "Not (opsiyonel)",
+    "confirm": "Askıya al, teklifleri iptal et"
+  },
+  "suspendResult": "\"{{tradeName}}\" askıya alındı — {{count}} aktif teklif iptal edildi ve ilgili alıcılara iade başlatıldı.",
+  "errors": {
+    "notApprovable": "Bu işletme artık onaylanabilir durumda değil — sayfa güncellendi.",
+    "notRejectable": "Bu işletme artık reddedilebilir durumda değil — sayfa güncellendi.",
+    "notSuspendable": "Bu işletme askıya alınabilir durumda değil (zaten askıda ya da henüz onaylanmamış).",
+    "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin."
+  },
+  "reverify": {
+    "title": "Yıllık yeniden doğrulama gereken işletmeler",
+    "subtitle": "Onay tarihinden 1 yıl sonra yeniden doğrulama önerilir (verifiedAt + 1 yıl olarak hesaplanır — API bu tarihi liste görünümünde ayrıca sağlamaz).",
+    "dueDate": "Yeniden doğrulama tarihi: {{date}}",
+    "overdue": "Süresi geçti",
+    "empty": "Yaklaşan yeniden doğrulama yok."
+  }
+}

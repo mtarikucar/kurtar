@@ -1,0 +1,48 @@
+{
+  "title": "Moderasyon",
+  "subtitle": "İçerik bildirimleri 48 saat içinde işleme alınmalıdır.",
+  "filter": {
+    "status": "Durum",
+    "targetType": "Hedef türü",
+    "ALL": "Tümü",
+    "OPEN": "Açık",
+    "ACTIONED": "İşlem uygulandı",
+    "DISMISSED": "Reddedildi",
+    "STORE": "Mağaza",
+    "OFFER": "Teklif",
+    "RATING": "Puan"
+  },
+  "table": {
+    "target": "Hedef",
+    "reason": "Gerekçe",
+    "status": "Durum",
+    "deadline": "Son işlem tarihi",
+    "actions": "İşlemler"
+  },
+  "target": {
+    "STORE": "Mağaza",
+    "OFFER": "Teklif",
+    "RATING": "Puan",
+    "idLabel": "Kimlik: {{id}}",
+    "storeAddress": "{{address}}, {{district}}/{{city}}",
+    "previewUnavailable": "Bu hedef türü için önizleme mevcut değil — yalnızca kimlik gösterilebilir."
+  },
+  "actions": {
+    "action": "İşlem uygula",
+    "dismiss": "Reddet"
+  },
+  "actionDialog": {
+    "actionTitle": "Bildirime göre işlem uygula",
+    "dismissTitle": "Bildirimi reddet",
+    "dismissConsequence": "Bu bildirim reddedilecek — hedefe herhangi bir işlem uygulanmayacaktır.",
+    "consequenceStore": "Bu mağaza devre dışı bırakılacak ve platformda artık görünmeyecektir.",
+    "consequenceOffer": "Bu teklif iptal edilecek ve bu teklife ait rezervasyonu olan her alıcıya tam iade yapılacaktır. Bu işlem gerçek para hareketi doğurur ve geri alınamaz.",
+    "consequenceRating": "Bu puan reddedilecek ve mağazanın puan ortalamasından çıkarılacaktır.",
+    "noteLabel": "Not (opsiyonel)"
+  },
+  "errors": {
+    "alreadyHandled": "Bu bildirim zaten işleme alınmış — sayfa güncellendi.",
+    "notFound": "Bildirim bulunamadı.",
+    "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin."
+  }
+}
