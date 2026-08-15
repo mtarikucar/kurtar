@@ -26,6 +26,17 @@ function createdAtWhere(range: ExportRange): Prisma.DateTimeFilter | undefined {
  * in memory at once. `res` is the raw Express response
  * (`@Res({passthrough:false})` at the controller) — streamCsv owns
  * writing/ending it.
+ *
+ * [Fix round, Minor] Every `orderBy` carries `id: "asc"` as a secondary
+ * sort key — `createdAt` alone is not a stable sort when two rows share
+ * the exact same millisecond (plausible for complaints/merchants created
+ * in the same request burst), and an unstable sort under OFFSET/LIMIT
+ * pagination can skip or duplicate a row across a page boundary. Still
+ * plain offset pagination, not keyset — acceptable here (bounded by
+ * `pageSize`, not the total row count, so the O(n) OFFSET cost only
+ * matters for a genuinely huge export) but flagged as the natural next
+ * step if these exports ever need to scale past what an admin actually
+ * pages through by hand.
  */
 @Injectable()
 export class AdminExportsService {
@@ -50,7 +61,7 @@ export class AdminExportsService {
       (skip, take) =>
         this.prisma.complaintTicket.findMany({
           where: { ...(createdAt && { createdAt }) },
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           skip,
           take,
         }),
@@ -93,7 +104,7 @@ export class AdminExportsService {
       (skip, take) =>
         this.prisma.settlementBatch.findMany({
           where: { ...(createdAt && { createdAt }) },
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           skip,
           take,
         }),
@@ -135,7 +146,7 @@ export class AdminExportsService {
       (skip, take) =>
         this.prisma.merchant.findMany({
           where: { ...(createdAt && { createdAt }) },
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           skip,
           take,
         }),

