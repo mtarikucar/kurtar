@@ -83,6 +83,32 @@ function storeNotFoundError() {
   });
 }
 
+function offerNotFoundError() {
+  return new NotFoundException({
+    statusCode: 404,
+    errorCode: "OFFER_NOT_FOUND",
+    message: "Offer not found.",
+  });
+}
+
+export interface DiscoveryOfferDetail {
+  offerId: string;
+  store: { id: string; name: string; district: string };
+  template: {
+    title: string;
+    category: string;
+    dietFlags: string[];
+    allergenDisclaimer: string;
+    priceCents: number;
+    originalValueCentsMin: number;
+    originalValueCentsMax: number;
+  };
+  pickupStartAt: string;
+  pickupEndAt: string;
+  qtyLeft: number;
+  coverImageUrl: string | null;
+}
+
 function parseDietFlags(diet: string | undefined): DietFlag[] | undefined {
   if (!diet) return undefined;
   const values = diet
@@ -447,6 +473,105 @@ export class DiscoveryService {
         average: avgStars,
         count: ratingCount,
       },
+    };
+  }
+
+  /**
+   * [Universal-link bridge page] GET /discovery/offers/:id — a single
+   * offer's public share-preview. Same visibility rules as searchOffers/
+   * map (buildLiveOfferConditions's shared six conditions: PUBLISHED,
+   * stock left, pickup window not over, store active, template active,
+   * merchant APPROVED), narrowed to one `d."id"` in the SAME WHERE clause
+   * rather than a separate existence check first — a non-visible offer
+   * (wrong id, or a real id that's since sold out/closed/deactivated)
+   * produces zero matching rows either way, so it 404s identically to a
+   * genuinely nonexistent one. Never leaks "this id exists but isn't
+   * showable right now" the way a two-step "find by id, then check
+   * visibility" would.
+   *
+   * Deliberately NOT behind DiscoveryCacheService, unlike searchOffers/
+   * map: those cache a RADIUS/BBOX scan (an inherently fan-out query
+   * whose cost scales with how many live offers are nearby); this is a
+   * single indexed primary-key lookup joined to three FK-indexed tables,
+   * LIMIT 1 — the same cost profile as storeProfile() above, which has
+   * never needed caching either. A crawler/unfurler hits ONE known id at
+   * a time, not a broad geographic area, so Postgres's own index lookup
+   * already bounds the per-request cost tightly; adding a cache layer
+   * here would mainly buy staleness risk (a stale qtyLeft/price in a
+   * share preview) for negligible real load reduction. If one specific
+   * offer ever goes viral enough to change that calculus, the same
+   * DiscoveryCacheService this module already has is a two-line addition
+   * at that point.
+   */
+  async getOfferById(offerId: string): Promise<DiscoveryOfferDetail> {
+    const conditions: Prisma.Sql[] = [
+      ...buildLiveOfferConditions(new Date()),
+      Prisma.sql`d."id" = ${offerId}`,
+    ];
+    const whereClause = Prisma.join(conditions, " AND ");
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        offerId: string;
+        storeId: string;
+        storeName: string;
+        district: string;
+        title: string;
+        category: string;
+        dietFlags: string[];
+        allergenDisclaimer: string;
+        priceCents: number;
+        originalValueCentsMin: number;
+        originalValueCentsMax: number;
+        pickupStartAt: Date;
+        pickupEndAt: Date;
+        qtyLeft: number;
+        coverImageUrl: string | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        d."id" AS "offerId",
+        s."id" AS "storeId",
+        s."name" AS "storeName",
+        s."district" AS "district",
+        bt."title" AS "title",
+        bt."category" AS "category",
+        bt."dietFlags" AS "dietFlags",
+        bt."allergenDisclaimer" AS "allergenDisclaimer",
+        bt."priceCents" AS "priceCents",
+        bt."originalValueCentsMin" AS "originalValueCentsMin",
+        bt."originalValueCentsMax" AS "originalValueCentsMax",
+        d."pickupStartAt" AS "pickupStartAt",
+        d."pickupEndAt" AS "pickupEndAt",
+        (d."qtyTotal" - d."qtyReserved") AS "qtyLeft",
+        s."coverImageUrl" AS "coverImageUrl"
+      FROM "daily_offers" d
+      JOIN "stores" s ON s."id" = d."storeId"
+      JOIN "bag_templates" bt ON bt."id" = d."bagTemplateId"
+      JOIN "merchants" m ON m."id" = s."merchantId"
+      WHERE ${whereClause}
+      LIMIT 1
+    `);
+
+    const row = rows[0];
+    if (!row) throw offerNotFoundError();
+
+    return {
+      offerId: row.offerId,
+      store: { id: row.storeId, name: row.storeName, district: row.district },
+      template: {
+        title: row.title,
+        category: row.category,
+        dietFlags: row.dietFlags,
+        allergenDisclaimer: row.allergenDisclaimer,
+        priceCents: row.priceCents,
+        originalValueCentsMin: row.originalValueCentsMin,
+        originalValueCentsMax: row.originalValueCentsMax,
+      },
+      pickupStartAt: row.pickupStartAt.toISOString(),
+      pickupEndAt: row.pickupEndAt.toISOString(),
+      qtyLeft: row.qtyLeft,
+      coverImageUrl: row.coverImageUrl,
     };
   }
 }

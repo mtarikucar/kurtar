@@ -84,3 +84,37 @@ export class DiscoveryStoreProfileResponseDto {
   @ApiProperty({ type: DiscoveryStoreRatingDto })
   rating!: DiscoveryStoreRatingDto;
 }
+
+/** GET /discovery/offers/:id — the universal-link bridge page's (/o/[id])
+ * share-preview read. Same family as DiscoveryOfferItemDto/
+ * DiscoveryOfferTemplateDto above (same field names/types wherever they
+ * overlap), but NOT a bare reuse of either: `store` here has no
+ * `distanceM` (a single offer fetched by id has no query lat/lng to be
+ * distant FROM — reusing DiscoveryOfferStoreDto as-is would falsely
+ * claim this endpoint always returns one), and `template` gains
+ * `allergenDisclaimer` (what a share preview needs that the list view
+ * doesn't) via a dedicated subclass rather than adding the field to the
+ * shared DiscoveryOfferTemplateDto, which would incorrectly claim the
+ * LIST endpoint and store-profile's todaysOffers return it too — they
+ * don't select that column. */
+export class DiscoveryOfferDetailStoreDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() name!: string;
+  @ApiProperty() district!: string;
+}
+
+export class DiscoveryOfferDetailTemplateDto extends DiscoveryOfferTemplateDto {
+  @ApiProperty() allergenDisclaimer!: string;
+}
+
+export class DiscoveryOfferDetailResponseDto {
+  @ApiProperty() offerId!: string;
+  @ApiProperty({ type: DiscoveryOfferDetailStoreDto })
+  store!: DiscoveryOfferDetailStoreDto;
+  @ApiProperty({ type: DiscoveryOfferDetailTemplateDto })
+  template!: DiscoveryOfferDetailTemplateDto;
+  @ApiProperty() pickupStartAt!: string;
+  @ApiProperty() pickupEndAt!: string;
+  @ApiProperty() qtyLeft!: number;
+  @ApiProperty({ nullable: true, type: String }) coverImageUrl!: string | null;
+}

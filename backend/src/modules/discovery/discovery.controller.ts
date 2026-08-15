@@ -6,6 +6,7 @@ import { DiscoveryMapQueryDto } from "./dto/discovery-map-query.dto";
 import { DiscoveryOffersQueryDto } from "./dto/discovery-offers-query.dto";
 import {
   DiscoveryMapPinDto,
+  DiscoveryOfferDetailResponseDto,
   DiscoveryOffersResponseDto,
   DiscoveryStoreProfileResponseDto,
 } from "./dto/discovery-offers-response.dto";
@@ -21,6 +22,22 @@ export class DiscoveryController {
   @Get("offers")
   offers(@Query() query: DiscoveryOffersQueryDto) {
     return this.discovery.searchOffers(query);
+  }
+
+  // [Universal-link bridge page] A different segment count than
+  // GET "offers" above (/discovery/offers/:id vs /discovery/offers), so
+  // there is no route-shadowing risk between the two regardless of
+  // declaration order — Express only ever considers this a candidate
+  // match for a request path with exactly one MORE segment. Registered
+  // here anyway, directly under "offers", for readability.
+  @ApiOperation({
+    summary:
+      "A single offer's public share preview (the universal-link bridge page /o/[id]). Same visibility rules as the list — a non-visible or nonexistent offer 404s identically. No auth required.",
+  })
+  @ApiOkResponse({ type: DiscoveryOfferDetailResponseDto })
+  @Get("offers/:id")
+  offer(@Param("id") id: string) {
+    return this.discovery.getOfferById(id);
   }
 
   @ApiOperation({

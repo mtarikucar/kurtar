@@ -2863,6 +2863,49 @@
         ]
       }
     },
+    "/api/discovery/offers/{id}": {
+      "get": {
+        "operationId": "DiscoveryController_offer",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Client-Transport",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cookie"
+              ]
+            },
+            "description": "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryOfferDetailResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "A single offer's public share preview (the universal-link bridge page /o/[id]). Same visibility rules as the list — a non-visible or nonexistent offer 404s identically. No auth required.",
+        "tags": [
+          "discovery"
+        ]
+      }
+    },
     "/api/discovery/map": {
       "get": {
         "operationId": "DiscoveryController_map",
@@ -8337,6 +8380,99 @@
           "total",
           "page",
           "pageSize"
+        ]
+      },
+      "DiscoveryOfferDetailStoreDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "district": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "district"
+        ]
+      },
+      "DiscoveryOfferDetailTemplateDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "dietFlags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "priceCents": {
+            "type": "number"
+          },
+          "originalValueCentsMin": {
+            "type": "number"
+          },
+          "originalValueCentsMax": {
+            "type": "number"
+          },
+          "allergenDisclaimer": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "category",
+          "dietFlags",
+          "priceCents",
+          "originalValueCentsMin",
+          "originalValueCentsMax",
+          "allergenDisclaimer"
+        ]
+      },
+      "DiscoveryOfferDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string"
+          },
+          "store": {
+            "$ref": "#/components/schemas/DiscoveryOfferDetailStoreDto"
+          },
+          "template": {
+            "$ref": "#/components/schemas/DiscoveryOfferDetailTemplateDto"
+          },
+          "pickupStartAt": {
+            "type": "string"
+          },
+          "pickupEndAt": {
+            "type": "string"
+          },
+          "qtyLeft": {
+            "type": "number"
+          },
+          "coverImageUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "offerId",
+          "store",
+          "template",
+          "pickupStartAt",
+          "pickupEndAt",
+          "qtyLeft",
+          "coverImageUrl"
         ]
       },
       "DiscoveryMapPinDto": {

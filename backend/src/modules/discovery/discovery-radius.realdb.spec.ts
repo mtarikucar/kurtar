@@ -317,15 +317,23 @@ d("DiscoveryService — real DB radius search", () => {
       expect(ids).not.toContain(draftOffer.id);
       expect(ids).not.toContain(suspendedOffer.id);
 
-      // Also prove the storeProfile surface hides them (404s), and the map
-      // surface omits their pins — both discovery entry points, not just
-      // the offers list.
+      // Also prove the storeProfile surface hides them (404s), the
+      // single-offer detail surface 404s the exact same way (never a
+      // distinct "exists but hidden" error), and the map surface omits
+      // their pins — every discovery entry point, not just the offers
+      // list.
       await expect(service.storeProfile(draftStore.id)).rejects.toMatchObject({
         response: { errorCode: "STORE_NOT_FOUND" },
       });
       await expect(
         service.storeProfile(suspendedStore.id),
       ).rejects.toMatchObject({ response: { errorCode: "STORE_NOT_FOUND" } });
+      await expect(service.getOfferById(draftOffer.id)).rejects.toMatchObject({
+        response: { errorCode: "OFFER_NOT_FOUND" },
+      });
+      await expect(
+        service.getOfferById(suspendedOffer.id),
+      ).rejects.toMatchObject({ response: { errorCode: "OFFER_NOT_FOUND" } });
 
       const pins = await service.map({
         west: SEARCH_LNG - 0.02,
@@ -371,4 +379,60 @@ d("DiscoveryService — real DB radius search", () => {
     const result = await service.searchOffers(offersQuery());
     expect(result.items.map((i) => i.offerId)).not.toContain(offer.id);
   }, 15_000);
+
+  describe("getOfferById — the universal-link bridge page's single-offer read", () => {
+    it("returns the full share-preview shape for a genuinely live offer", async () => {
+      const { service } = buildHarness(prisma);
+      const { bagTemplate, offer } = await seedOffer(prisma, store500Id, {
+        category: "BAKERY",
+        dietFlags: ["VEGAN"],
+        qtyTotal: 5,
+        qtyReserved: 2,
+      });
+
+      const result = await service.getOfferById(offer.id);
+
+      expect(result).toEqual({
+        offerId: offer.id,
+        store: { id: store500Id, name: "Store 500m", district: "Kadıköy" },
+        template: {
+          title: bagTemplate.title,
+          category: "BAKERY",
+          dietFlags: ["VEGAN"],
+          allergenDisclaimer: "N/A",
+          priceCents: 5900,
+          originalValueCentsMin: 10000,
+          originalValueCentsMax: 20000,
+        },
+        pickupStartAt: offer.pickupStartAt.toISOString(),
+        pickupEndAt: offer.pickupEndAt.toISOString(),
+        qtyLeft: 3, // 5 - 2
+        coverImageUrl: null,
+      });
+    }, 15_000);
+
+    it("404s OFFER_NOT_FOUND for an id that never existed", async () => {
+      const { service } = buildHarness(prisma);
+      await expect(
+        service.getOfferById("cnonexistent00000000000000"),
+      ).rejects.toMatchObject({ response: { errorCode: "OFFER_NOT_FOUND" } });
+    });
+
+    it("404s a real id the same way once the offer is SOLD_OUT or CLOSED — never a distinct error from a nonexistent id", async () => {
+      const { service } = buildHarness(prisma);
+      const { offer: soldOut } = await seedOffer(prisma, store500Id, {
+        status: "SOLD_OUT",
+      });
+      const { offer: closed } = await seedOffer(prisma, store500Id, {
+        status: "CLOSED",
+      });
+
+      await expect(service.getOfferById(soldOut.id)).rejects.toMatchObject({
+        response: { errorCode: "OFFER_NOT_FOUND" },
+      });
+      await expect(service.getOfferById(closed.id)).rejects.toMatchObject({
+        response: { errorCode: "OFFER_NOT_FOUND" },
+      });
+    }, 15_000);
+  });
 });
