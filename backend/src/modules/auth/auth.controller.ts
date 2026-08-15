@@ -7,7 +7,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiCreatedResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Request, Response } from "express";
 import { AuthService } from "./auth.service";
 import { TokenService, IssuedTokens } from "./services/token.service";
@@ -16,6 +16,14 @@ import { OtpVerifyDto } from "./dto/otp-verify.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshTokenBodyDto } from "./dto/refresh-token.dto";
 import { Public } from "./decorators/public.decorator";
+import {
+  AdminAuthResponseDto,
+  AuthTokensDto,
+  ConsumerAuthResponseDto,
+  LogoutResponseDto,
+  MerchantAuthResponseDto,
+  OtpRequestResponseDto,
+} from "./dto/auth-response.dto";
 
 // Per-route throttle tiers for the auth surface. All auth endpoints are
 // either unauthenticated (@Public) or credential/OTP-bearing, so every one
@@ -115,6 +123,7 @@ export class AuthController {
   @ApiOperation({
     summary: "Request a consumer OTP code by phone. No auth required.",
   })
+  @ApiCreatedResponse({ type: OtpRequestResponseDto })
   @Public()
   @Throttle(OTP_REQUEST_THROTTLE)
   @Post("otp/request")
@@ -126,6 +135,7 @@ export class AuthController {
     summary:
       "Verify a consumer OTP code and issue a token pair. No auth required.",
   })
+  @ApiCreatedResponse({ type: ConsumerAuthResponseDto })
   @Public()
   @Throttle(OTP_VERIFY_THROTTLE)
   @Post("otp/verify")
@@ -142,6 +152,7 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: "Merchant email/password login. No auth required." })
+  @ApiCreatedResponse({ type: MerchantAuthResponseDto })
   @Public()
   @Throttle(LOGIN_THROTTLE)
   @Post("merchant/login")
@@ -158,6 +169,7 @@ export class AuthController {
   }
 
   @ApiOperation({ summary: "Admin email/password login. No auth required." })
+  @ApiCreatedResponse({ type: AdminAuthResponseDto })
   @Public()
   @Throttle(LOGIN_THROTTLE)
   @Post("admin/login")
@@ -174,6 +186,7 @@ export class AuthController {
     summary:
       "Rotate a refresh token for a fresh token pair. No auth required (the refresh token IS the credential).",
   })
+  @ApiCreatedResponse({ type: AuthTokensDto })
   @Public()
   @Throttle(REFRESH_THROTTLE)
   @Post("refresh")
@@ -213,6 +226,7 @@ export class AuthController {
     summary:
       "Revoke a refresh token's whole family. No auth required (the refresh token IS the credential).",
   })
+  @ApiCreatedResponse({ type: LogoutResponseDto })
   @Public()
   @Throttle(REFRESH_THROTTLE)
   @Post("logout")

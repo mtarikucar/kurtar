@@ -1,9 +1,10 @@
 import { Body, Controller, Post } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiCreatedResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Public } from "../auth/decorators/public.decorator";
 import { CreateReportDto } from "./dto/create-report.dto";
 import { ModerationService } from "./moderation.service";
+import { ContentReportDto } from "./dto/report-response.dto";
 
 // @Public (see moderation.service.ts's doc comment for the "pick and
 // justify" reasoning) — an anonymous flood of reports is the real risk
@@ -22,6 +23,7 @@ export class ReportsController {
     summary:
       "Report a STORE/OFFER/RATING for review (48h takedown SLA starts now). No auth required — heavily throttled instead.",
   })
+  @ApiCreatedResponse({ type: ContentReportDto })
   @Throttle(REPORT_THROTTLE)
   @Post()
   create(@Body() dto: CreateReportDto) {

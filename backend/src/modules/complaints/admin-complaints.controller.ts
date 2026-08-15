@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -13,6 +14,7 @@ import { AdminListComplaintsQueryDto } from "./dto/admin-list-complaints-query.d
 import {
   AdminComplaintListResponseDto,
   ComplaintDetailResponseDto,
+  ComplaintTicketDto,
 } from "./dto/complaint-response.dto";
 import { ComplaintsService } from "./complaints.service";
 
@@ -50,6 +52,7 @@ export class AdminComplaintsController {
   }
 
   @ApiOperation({ summary: "Resolve a complaint." })
+  @ApiCreatedResponse({ type: ComplaintTicketDto })
   @Post(":id/resolve")
   resolve(
     @CurrentUser("id") adminId: string,
@@ -63,6 +66,7 @@ export class AdminComplaintsController {
     summary:
       "Manually escalate a complaint (the SLA cron also does this automatically on breach).",
   })
+  @ApiCreatedResponse({ type: ComplaintTicketDto })
   @Post(":id/escalate")
   escalate(
     @CurrentUser("id") adminId: string,

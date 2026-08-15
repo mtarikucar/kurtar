@@ -1,10 +1,16 @@
 import { Body, Controller, Param, Post } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { CreateRatingDto } from "./dto/create-rating.dto";
 import { RatingsService } from "./ratings.service";
+import { RatingDto } from "./dto/rating-response.dto";
 
 /** POST /api/reservations/:id/rating — lives under the reservations URL
  * prefix (matches the brief's literal endpoint) but is owned by
@@ -21,6 +27,7 @@ export class ReservationRatingController {
     summary:
       "Rate a REDEEMED reservation. Once per reservation — a repeat call gets 409.",
   })
+  @ApiCreatedResponse({ type: RatingDto })
   @Post(":id/rating")
   create(
     @CurrentUser("id") userId: string,

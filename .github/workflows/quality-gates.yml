@@ -395,6 +395,21 @@ jobs:
           fi
           echo "docs/openapi.json matches the current source — no drift."
 
+      # [Contract completion] The drift check above only proves the
+      # COMMITTED file matches what the source currently generates — it
+      # says nothing about whether that generated contract is actually
+      # USABLE by a typed client. 65 of 81 operations had no response
+      # schema at all until this pass (frontend-contract.md §9's finding,
+      # which blocked Tasks 10-13's parallel frontend build); this step is
+      # the tripwire so that gap can never silently reopen — every
+      # operation must keep exactly one 2xx response with a real schema
+      # (see check-openapi-response-types.ts's own doc comment for the
+      # exact two failure classes it catches, including the "has *a*
+      # schema but it's a vacuous {type:object}" trap that a naive
+      # presence check would miss).
+      - name: Every operation has exactly one typed 2xx response
+        run: npm run openapi:check-response-types
+
   # -----------------------------------------------------------------
   # [Task 9.5] The four frontend apps (apps/merchant-web, apps/admin-web,
   # apps/consumer, landing) + the two shared packages (packages/api-client,

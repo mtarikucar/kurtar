@@ -1,9 +1,15 @@
 import { Controller, Get } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { MembershipsService } from "./memberships.service";
+import { MembershipMineResponseDto } from "./dto/membership-response.dto";
 
 @ApiTags("memberships")
 @ApiBearerAuth()
@@ -17,6 +23,7 @@ export class MembershipsController {
     summary:
       "The calling merchant's own membership subscription and outstanding balance.",
   })
+  @ApiOkResponse({ type: MembershipMineResponseDto })
   @Get()
   getMine(@CurrentUser("merchantId") merchantId: string) {
     return this.memberships.getMine(merchantId);

@@ -1,5 +1,11 @@
 import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { AllowUnapprovedMerchant } from "../auth/decorators/allow-unapproved-merchant.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -8,6 +14,12 @@ import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.deco
 import { CreateReservationDto } from "./dto/create-reservation.dto";
 import { ListReservationsQueryDto } from "./dto/list-reservations-query.dto";
 import { ReservationsService } from "./reservations.service";
+import {
+  ReservationCancelResponseDto,
+  ReservationCreateResponseDto,
+  ReservationListResponseDto,
+  ReservationRedeemResponseDto,
+} from "./dto/reservation-response.dto";
 
 @ApiTags("reservations")
 @ApiBearerAuth()
@@ -17,6 +29,7 @@ export class ReservationsController {
   constructor(private readonly reservations: ReservationsService) {}
 
   @ApiOperation({ summary: "Reserve a bag from a live offer (CONSUMER)." })
+  @ApiCreatedResponse({ type: ReservationCreateResponseDto })
   @Actors("CONSUMER")
   @Post()
   create(@CurrentUser("id") userId: string, @Body() dto: CreateReservationDto) {
@@ -26,6 +39,7 @@ export class ReservationsController {
   @ApiOperation({
     summary: "Cancel the caller's own reservation and refund it (CONSUMER).",
   })
+  @ApiCreatedResponse({ type: ReservationCancelResponseDto })
   @Actors("CONSUMER")
   @Post(":id/cancel")
   cancel(@CurrentUser("id") userId: string, @Param("id") id: string) {
@@ -35,6 +49,7 @@ export class ReservationsController {
   @ApiOperation({
     summary: "List the caller's own reservations, paginated (CONSUMER).",
   })
+  @ApiOkResponse({ type: ReservationListResponseDto })
   @Actors("CONSUMER")
   @Get("mine")
   listMine(
@@ -59,6 +74,7 @@ export class ReservationsController {
     summary:
       "Redeem a reservation's pickup code (MERCHANT, staff scan at the counter).",
   })
+  @ApiCreatedResponse({ type: ReservationRedeemResponseDto })
   @Actors("MERCHANT")
   @AllowUnapprovedMerchant()
   @Post(":id/redeem")

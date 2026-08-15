@@ -1,11 +1,17 @@
 import { Controller, Get, Query } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { AllowUnapprovedMerchant } from "../auth/decorators/allow-unapproved-merchant.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { ListComplaintsQueryDto } from "./dto/list-complaints-query.dto";
 import { ComplaintsService } from "./complaints.service";
+import { ComplaintListResponseDto } from "./dto/complaint-response.dto";
 
 @ApiTags("complaints")
 @ApiBearerAuth()
@@ -19,6 +25,7 @@ export class MerchantComplaintsController {
   @ApiOperation({
     summary: "List complaints assigned to the caller's own merchant.",
   })
+  @ApiOkResponse({ type: ComplaintListResponseDto })
   @Get()
   listAssigned(
     @CurrentUser("merchantId") merchantId: string,

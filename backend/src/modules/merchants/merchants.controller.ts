@@ -1,6 +1,12 @@
 import { Body, Controller, Get, Post } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { Public } from "../auth/decorators/public.decorator";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { AllowUnapprovedMerchant } from "../auth/decorators/allow-unapproved-merchant.decorator";
@@ -9,6 +15,11 @@ import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.deco
 import { MerchantSignupDto } from "./dto/merchant-signup.dto";
 import { MerchantSubmitDto } from "./dto/merchant-submit.dto";
 import { MerchantsService } from "./merchants.service";
+import {
+  MerchantMeResponseDto,
+  MerchantSignupResponseDto,
+  MerchantSubmitResponseDto,
+} from "./dto/merchant-response.dto";
 
 // Account-creation surface — same tier as auth's LOGIN_THROTTLE
 // (auth.controller.ts), tighter than the global default profile.
@@ -22,6 +33,7 @@ export class MerchantsController {
   @ApiOperation({
     summary: "Create a merchant account (DRAFT). No auth required.",
   })
+  @ApiCreatedResponse({ type: MerchantSignupResponseDto })
   @Public()
   @Throttle(SIGNUP_THROTTLE)
   @Post("signup")
@@ -35,6 +47,7 @@ export class MerchantsController {
   // merchant account's whole verification journey happens through this
   // endpoint before it can ever reach APPROVED.
   @ApiOperation({ summary: "Submit the merchant account for KYC review." })
+  @ApiCreatedResponse({ type: MerchantSubmitResponseDto })
   @ApiBearerAuth()
   @ApiStandardErrors()
   @Actors("MERCHANT")
@@ -53,6 +66,7 @@ export class MerchantsController {
   @ApiOperation({
     summary: "Get the calling merchant's own account/verification status.",
   })
+  @ApiOkResponse({ type: MerchantMeResponseDto })
   @ApiBearerAuth()
   @ApiStandardErrors()
   @Actors("MERCHANT")

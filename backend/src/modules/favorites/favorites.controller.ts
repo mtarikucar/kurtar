@@ -1,6 +1,7 @@
 import { Controller, Delete, Get, Param, Post, Query } from "@nestjs/common";
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -11,6 +12,10 @@ import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.deco
 import { ListFavoritesQueryDto } from "./dto/list-favorites-query.dto";
 import { FavoriteListResponseDto } from "./dto/favorite-list-response.dto";
 import { FavoritesService } from "./favorites.service";
+import {
+  FavoriteAddResponseDto,
+  FavoriteRemoveResponseDto,
+} from "./dto/favorite-toggle-response.dto";
 
 @ApiTags("favorites")
 @ApiBearerAuth()
@@ -23,6 +28,7 @@ export class StoreFavoritesController {
   @ApiOperation({
     summary: "Favorite a store. Idempotent — repeating it is a no-op.",
   })
+  @ApiCreatedResponse({ type: FavoriteAddResponseDto })
   @Post()
   add(@CurrentUser("id") userId: string, @Param("storeId") storeId: string) {
     return this.favorites.add(userId, storeId);
@@ -31,6 +37,7 @@ export class StoreFavoritesController {
   @ApiOperation({
     summary: "Unfavorite a store. Idempotent — repeating it is a no-op.",
   })
+  @ApiOkResponse({ type: FavoriteRemoveResponseDto })
   @Delete()
   remove(@CurrentUser("id") userId: string, @Param("storeId") storeId: string) {
     return this.favorites.remove(userId, storeId);

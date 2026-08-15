@@ -1,6 +1,7 @@
 import { Controller, Get } from "@nestjs/common";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Public } from "../auth/decorators/public.decorator";
+import { HealthResponseDto } from "./dto/health-response.dto";
 
 export interface HealthStatus {
   status: "ok";
@@ -15,6 +16,7 @@ export class HealthController {
   // default) — health must stay reachable by orchestration/monitoring
   // with no token.
   @ApiOperation({ summary: "Liveness probe. No auth required." })
+  @ApiOkResponse({ type: HealthResponseDto })
   @Public()
   @Get()
   getHealth(): HealthStatus {

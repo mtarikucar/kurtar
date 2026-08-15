@@ -1,10 +1,16 @@
 import { Controller, Get, Query } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { RatingsMineQueryDto } from "./dto/ratings-mine-query.dto";
 import { RatingsService } from "./ratings.service";
+import { RatingsMineResponseDto } from "./dto/rating-response.dto";
 
 @ApiTags("ratings")
 @ApiBearerAuth()
@@ -18,6 +24,7 @@ export class RatingsController {
     summary:
       "Recent ratings + star distribution for one of the caller's own stores.",
   })
+  @ApiOkResponse({ type: RatingsMineResponseDto })
   @Get("mine")
   listMine(
     @CurrentUser("merchantId") merchantId: string,

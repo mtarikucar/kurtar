@@ -17,6 +17,7 @@ import { ListComplaintsQueryDto } from "./dto/list-complaints-query.dto";
 import {
   ComplaintDetailResponseDto,
   ComplaintListResponseDto,
+  ComplaintMessageDto,
   ComplaintTicketDto,
 } from "./dto/complaint-response.dto";
 import { ComplaintsService } from "./complaints.service";
@@ -75,6 +76,7 @@ export class ComplaintsController {
     summary:
       "Post to a complaint's thread (CONSUMER owner, assigned MERCHANT, or ADMIN). A MERCHANT reply also flips OPEN -> MERCHANT_RESPONDED.",
   })
+  @ApiCreatedResponse({ type: ComplaintMessageDto })
   @Actors("CONSUMER", "MERCHANT", "ADMIN")
   @AllowUnapprovedMerchant()
   @Post(":id/messages")

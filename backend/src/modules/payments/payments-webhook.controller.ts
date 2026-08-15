@@ -6,11 +6,12 @@ import {
   RawBodyRequest,
   Req,
 } from "@nestjs/common";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Request } from "express";
 import { Public } from "../auth/decorators/public.decorator";
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { PaymentSettleService } from "./payment-settle.service";
+import { WebhookAckResponseDto } from "./dto/webhook-ack-response.dto";
 
 /**
  * Inbound payment provider callback. @Public (JwtAuthGuard would reject
@@ -43,6 +44,7 @@ export class PaymentsWebhookController {
     summary:
       "Payment provider webhook callback. No bearer auth — verified by a provider-specific signature/shared-secret instead (see PaymentsFacadeService.parseWebhook). Always returns 200.",
   })
+  @ApiOkResponse({ type: WebhookAckResponseDto })
   @Public()
   @Post()
   @HttpCode(200)

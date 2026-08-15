@@ -20,7 +20,8 @@
     "prisma:generate": "prisma generate",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:status": "prisma migrate status",
-    "openapi:generate": "nest build && node dist/scripts/generate-openapi.js"
+    "openapi:generate": "nest build && node dist/scripts/generate-openapi.js",
+    "openapi:check-response-types": "ts-node -T src/scripts/check-openapi-response-types.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",

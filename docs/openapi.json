@@ -24,7 +24,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/HealthResponseDto"
                 }
               }
             }
@@ -69,7 +69,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/OtpRequestResponseDto"
                 }
               }
             }
@@ -114,7 +114,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConsumerAuthResponseDto"
                 }
               }
             }
@@ -159,7 +159,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/MerchantAuthResponseDto"
                 }
               }
             }
@@ -204,7 +204,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminAuthResponseDto"
                 }
               }
             }
@@ -249,7 +249,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthTokensDto"
                 }
               }
             }
@@ -290,7 +290,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponseDto"
+                }
+              }
+            }
           }
         },
         "summary": "Revoke a refresh token's whole family. No auth required (the refresh token IS the credential).",
@@ -332,7 +339,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ReservationCreateResponseDto"
                 }
               }
             }
@@ -406,7 +413,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservationCancelResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -494,7 +508,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ReservationListResponseDto"
                 }
               }
             }
@@ -568,7 +582,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReservationRedeemResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -641,7 +662,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushTokenRegisterResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -712,7 +740,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushTokenRemoveResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -775,7 +810,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAckResponseDto"
+                }
+              }
+            }
           }
         },
         "summary": "Payment provider webhook callback. No bearer auth — verified by a provider-specific signature/shared-secret instead (see PaymentsFacadeService.parseWebhook). Always returns 200.",
@@ -813,7 +855,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BagTemplateDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -882,7 +931,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BagTemplateDto"
+                  }
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -957,7 +1016,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/BagTemplateDto"
                 }
               }
             }
@@ -1039,7 +1098,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BagTemplateDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -1108,7 +1174,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BagTemplateDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -1181,7 +1254,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyOfferDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -1253,7 +1333,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OfferMineItemDto"
+                  }
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -1324,7 +1414,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfferPublishResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -1405,7 +1502,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfferScheduleResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -1476,7 +1580,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfferCloseResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -1551,7 +1662,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/OfferCancelResponseDto"
                 }
               }
             }
@@ -1631,7 +1742,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/MerchantSignupResponseDto"
                 }
               }
             }
@@ -1672,7 +1783,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantSubmitResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -1735,7 +1853,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantMeResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -1835,7 +1960,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMerchantListResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -1916,7 +2048,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantTransitionResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -1997,7 +2136,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantTransitionResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -2082,7 +2228,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/MerchantSuspendResponseDto"
                 }
               }
             }
@@ -2158,7 +2304,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -2219,7 +2372,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StoreDto"
+                  }
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -2290,7 +2453,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -2369,7 +2539,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoreDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -2697,7 +2874,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/MembershipMineResponseDto"
                 }
               }
             }
@@ -2763,7 +2940,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferenceDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -2834,7 +3018,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferenceDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -2907,7 +3098,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserLocationUpdateResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -3016,7 +3214,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSettlementListResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -3079,7 +3284,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunNightlyCycleResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -3154,7 +3366,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminSettlementDetailResponseDto"
                 }
               }
             }
@@ -3232,7 +3444,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminSettlementDetailResponseDto"
                 }
               }
             }
@@ -3320,7 +3532,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminSettlementDetailResponseDto"
                 }
               }
             }
@@ -3398,7 +3610,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminSettlementDetailResponseDto"
                 }
               }
             }
@@ -3470,7 +3682,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object"
+                    "$ref": "#/components/schemas/PlatformPricingDto"
                   }
                 }
               }
@@ -3549,7 +3761,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/PlatformPricingDto"
                 }
               }
             }
@@ -3636,7 +3848,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementListResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -3711,7 +3930,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/SettlementDetailResponseDto"
                 }
               }
             }
@@ -3785,7 +4004,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteAddResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -3854,7 +4080,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteRemoveResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -4026,7 +4259,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -4118,7 +4358,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingsMineResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -4223,7 +4470,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRatingListResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -4294,7 +4548,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -4365,7 +4626,14 @@
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RatingDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -4436,7 +4704,7 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "No response body."
           },
           "400": {
             "description": "Validation failed.",
@@ -4639,7 +4907,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplaintListResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -4983,7 +5258,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplaintMessageDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -5273,7 +5555,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplaintTicketDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -5354,7 +5643,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplaintTicketDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -5427,7 +5723,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentReportDto"
+                }
+              }
+            }
           }
         },
         "summary": "Report a STORE/OFFER/RATING for review (48h takedown SLA starts now). No auth required — heavily throttled instead.",
@@ -5502,7 +5805,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReportListResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -5583,7 +5893,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentReportDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -5664,7 +5981,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentReportDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -6057,6 +6381,31 @@
       }
     },
     "schemas": {
+      "HealthResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok"
+            ]
+          },
+          "service": {
+            "type": "string",
+            "enum": [
+              "kurtar-api"
+            ]
+          },
+          "uptimeSec": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "status",
+          "service",
+          "uptimeSec"
+        ]
+      },
       "OtpRequestDto": {
         "type": "object",
         "properties": {
@@ -6068,6 +6417,18 @@
         },
         "required": [
           "phone"
+        ]
+      },
+      "OtpRequestResponseDto": {
+        "type": "object",
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expiresAt"
         ]
       },
       "OtpVerifyDto": {
@@ -6089,6 +6450,58 @@
           "code"
         ]
       },
+      "ConsumerAuthUserDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "BANNED",
+              "DELETED"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "phone",
+          "status"
+        ]
+      },
+      "ConsumerAuthResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Omitted when the caller declared cookie transport (X-Client-Transport: cookie) — the refresh token went out as an httpOnly cookie instead."
+          },
+          "refreshTokenExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Omitted under the same condition as refreshToken."
+          },
+          "user": {
+            "$ref": "#/components/schemas/ConsumerAuthUserDto"
+          }
+        },
+        "required": [
+          "accessToken",
+          "user"
+        ]
+      },
       "LoginDto": {
         "type": "object",
         "properties": {
@@ -6107,6 +6520,100 @@
           "password"
         ]
       },
+      "MerchantAuthUserDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "OWNER",
+              "STAFF"
+            ]
+          },
+          "merchantId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role",
+          "merchantId"
+        ]
+      },
+      "MerchantAuthResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Omitted when the caller declared cookie transport (X-Client-Transport: cookie) — the refresh token went out as an httpOnly cookie instead."
+          },
+          "refreshTokenExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Omitted under the same condition as refreshToken."
+          },
+          "user": {
+            "$ref": "#/components/schemas/MerchantAuthUserDto"
+          }
+        },
+        "required": [
+          "accessToken",
+          "user"
+        ]
+      },
+      "AdminAuthUserDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name"
+        ]
+      },
+      "AdminAuthResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Omitted when the caller declared cookie transport (X-Client-Transport: cookie) — the refresh token went out as an httpOnly cookie instead."
+          },
+          "refreshTokenExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Omitted under the same condition as refreshToken."
+          },
+          "user": {
+            "$ref": "#/components/schemas/AdminAuthUserDto"
+          }
+        },
+        "required": [
+          "accessToken",
+          "user"
+        ]
+      },
       "RefreshTokenBodyDto": {
         "type": "object",
         "properties": {
@@ -6115,6 +6622,37 @@
             "maxLength": 256
           }
         }
+      },
+      "AuthTokensDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Omitted when the caller declared cookie transport (X-Client-Transport: cookie) — the refresh token went out as an httpOnly cookie instead."
+          },
+          "refreshTokenExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Omitted under the same condition as refreshToken."
+          }
+        },
+        "required": [
+          "accessToken"
+        ]
+      },
+      "LogoutResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
+        ]
       },
       "ErrorEnvelopeDto": {
         "type": "object",
@@ -6158,6 +6696,197 @@
           "qty"
         ]
       },
+      "ReservationPaymentDto": {
+        "type": "object",
+        "properties": {
+          "merchantOid": {
+            "type": "string"
+          },
+          "redirectUrl": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "merchantOid"
+        ]
+      },
+      "ReservationCreateResponseDto": {
+        "type": "object",
+        "properties": {
+          "reservationId": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "totalCents": {
+            "type": "number"
+          },
+          "payment": {
+            "$ref": "#/components/schemas/ReservationPaymentDto"
+          }
+        },
+        "required": [
+          "reservationId",
+          "code",
+          "totalCents",
+          "payment"
+        ]
+      },
+      "ReservationCancelResponseDto": {
+        "type": "object",
+        "properties": {
+          "reservationId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_PAYMENT",
+              "CONFIRMED",
+              "REDEEMED",
+              "CANCELLED_BY_USER",
+              "CANCELLED_BY_MERCHANT",
+              "NO_SHOW",
+              "EXPIRED"
+            ]
+          }
+        },
+        "required": [
+          "reservationId",
+          "status"
+        ]
+      },
+      "ReservationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "offerId": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
+          },
+          "qty": {
+            "type": "number"
+          },
+          "unitPriceCents": {
+            "type": "number"
+          },
+          "totalCents": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_PAYMENT",
+              "CONFIRMED",
+              "REDEEMED",
+              "CANCELLED_BY_USER",
+              "CANCELLED_BY_MERCHANT",
+              "NO_SHOW",
+              "EXPIRED"
+            ]
+          },
+          "cancelDeadlineAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "redeemedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "redeemedByMerchantUserId": {
+            "type": "string",
+            "nullable": true
+          },
+          "pickupReminderSentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "userId",
+          "offerId",
+          "storeId",
+          "qty",
+          "unitPriceCents",
+          "totalCents",
+          "status",
+          "cancelDeadlineAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ReservationListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReservationDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "ReservationRedeemResponseDto": {
+        "type": "object",
+        "properties": {
+          "reservationId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "REDEEMED"
+            ]
+          },
+          "redeemedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservationId",
+          "status",
+          "redeemedAt"
+        ]
+      },
       "RegisterPushTokenDto": {
         "type": "object",
         "properties": {
@@ -6177,6 +6906,46 @@
         "required": [
           "expoPushToken",
           "platform"
+        ]
+      },
+      "PushTokenRegisterResponseDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "number",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "PushTokenRemoveResponseDto": {
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "description": "True if a token matching this user+value was actually removed."
+          }
+        },
+        "required": [
+          "deleted"
+        ]
+      },
+      "WebhookAckResponseDto": {
+        "type": "object",
+        "properties": {
+          "received": {
+            "type": "number",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "received"
         ]
       },
       "CreateBagTemplateDto": {
@@ -6238,6 +7007,83 @@
           "originalValueCentsMin",
           "originalValueCentsMax",
           "priceCents"
+        ]
+      },
+      "BagTemplateDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "MEAL",
+              "BAKERY",
+              "GROCERY",
+              "PRODUCE",
+              "OTHER"
+            ]
+          },
+          "dietFlags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "VEGETARIAN",
+                "VEGAN",
+                "GLUTEN_FREE",
+                "LACTOSE_FREE"
+              ]
+            }
+          },
+          "allergenDisclaimer": {
+            "type": "string"
+          },
+          "originalValueCentsMin": {
+            "type": "number"
+          },
+          "originalValueCentsMax": {
+            "type": "number"
+          },
+          "priceCents": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "storeId",
+          "title",
+          "category",
+          "dietFlags",
+          "allergenDisclaimer",
+          "originalValueCentsMin",
+          "originalValueCentsMax",
+          "priceCents",
+          "active",
+          "createdAt",
+          "updatedAt"
         ]
       },
       "UpdateBagTemplateDto": {
@@ -6322,6 +7168,185 @@
           "pickupEndAt"
         ]
       },
+      "DailyOfferDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bagTemplateId": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
+          },
+          "offerDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "qtyTotal": {
+            "type": "number"
+          },
+          "qtyReserved": {
+            "type": "number"
+          },
+          "qtyRedeemed": {
+            "type": "number"
+          },
+          "pickupStartAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "pickupEndAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SCHEDULED",
+              "PUBLISHED",
+              "SOLD_OUT",
+              "CLOSED",
+              "CANCELLED"
+            ]
+          },
+          "publishAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "version": {
+            "type": "number"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "bagTemplateId",
+          "storeId",
+          "offerDate",
+          "qtyTotal",
+          "qtyReserved",
+          "qtyRedeemed",
+          "pickupStartAt",
+          "pickupEndAt",
+          "status",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "OfferMineItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
+          },
+          "storeName": {
+            "type": "string"
+          },
+          "bagTemplateId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "priceCents": {
+            "type": "number"
+          },
+          "offerDate": {
+            "type": "string",
+            "description": "YYYY-MM-DD, Istanbul calendar day."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SCHEDULED",
+              "PUBLISHED",
+              "SOLD_OUT",
+              "CLOSED",
+              "CANCELLED"
+            ]
+          },
+          "qtyTotal": {
+            "type": "number"
+          },
+          "qtyReserved": {
+            "type": "number"
+          },
+          "qtyRedeemed": {
+            "type": "number"
+          },
+          "qtyLeft": {
+            "type": "number"
+          },
+          "pickupStartAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "pickupEndAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "storeId",
+          "storeName",
+          "bagTemplateId",
+          "title",
+          "priceCents",
+          "offerDate",
+          "status",
+          "qtyTotal",
+          "qtyReserved",
+          "qtyRedeemed",
+          "qtyLeft",
+          "pickupStartAt",
+          "pickupEndAt"
+        ]
+      },
+      "OfferPublishResponseDto": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PUBLISHED"
+            ]
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "offerId",
+          "status",
+          "publishedAt"
+        ]
+      },
       "ScheduleOfferDto": {
         "type": "object",
         "properties": {
@@ -6331,6 +7356,101 @@
         },
         "required": [
           "publishAt"
+        ]
+      },
+      "OfferScheduleResponseDto": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SCHEDULED"
+            ]
+          },
+          "publishAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "offerId",
+          "status",
+          "publishAt"
+        ]
+      },
+      "OfferCloseResponseDto": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CLOSED"
+            ]
+          }
+        },
+        "required": [
+          "offerId",
+          "status"
+        ]
+      },
+      "RefundBatchOutcomeDto": {
+        "type": "object",
+        "properties": {
+          "reservationId": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "refundRef": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservationId",
+          "ok"
+        ]
+      },
+      "OfferCancelResponseDto": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CANCELLED"
+            ]
+          },
+          "expiredCount": {
+            "type": "number"
+          },
+          "cancelledCount": {
+            "type": "number"
+          },
+          "refundResults": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RefundBatchOutcomeDto"
+            }
+          }
+        },
+        "required": [
+          "offerId",
+          "status",
+          "expiredCount",
+          "cancelledCount",
+          "refundResults"
         ]
       },
       "MerchantSignupDto": {
@@ -6377,6 +7497,53 @@
           "ownerName"
         ]
       },
+      "MerchantSignupMerchantDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "verificationStatus": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED",
+              "UNDER_REVIEW",
+              "APPROVED",
+              "REJECTED",
+              "SUSPENDED"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "verificationStatus"
+        ]
+      },
+      "MerchantSignupResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Omitted when the caller declared cookie transport (X-Client-Transport: cookie) — the refresh token went out as an httpOnly cookie instead."
+          },
+          "refreshTokenExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Omitted under the same condition as refreshToken."
+          },
+          "merchant": {
+            "$ref": "#/components/schemas/MerchantSignupMerchantDto"
+          }
+        },
+        "required": [
+          "accessToken",
+          "merchant"
+        ]
+      },
       "MerchantSubmitDto": {
         "type": "object",
         "properties": {
@@ -6400,6 +7567,197 @@
           "intermediationContractVersion"
         ]
       },
+      "MerchantSubmitResponseDto": {
+        "type": "object",
+        "properties": {
+          "merchantId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUBMITTED"
+            ]
+          }
+        },
+        "required": [
+          "merchantId",
+          "status"
+        ]
+      },
+      "MerchantMeStoreSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "district": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "city",
+          "district",
+          "active"
+        ]
+      },
+      "MerchantMeResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradeName": {
+            "type": "string"
+          },
+          "taxId": {
+            "type": "string"
+          },
+          "iban": {
+            "type": "string"
+          },
+          "verificationStatus": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED",
+              "UNDER_REVIEW",
+              "APPROVED",
+              "REJECTED",
+              "SUSPENDED"
+            ]
+          },
+          "verifiedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "nextReverifyAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "sttAttestationAcceptedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "intermediationAcceptedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "intermediationContractVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "stores": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MerchantMeStoreSummaryDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "legalName",
+          "tradeName",
+          "taxId",
+          "iban",
+          "verificationStatus",
+          "createdAt",
+          "stores"
+        ]
+      },
+      "AdminMerchantListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "tradeName": {
+            "type": "string"
+          },
+          "taxId": {
+            "type": "string"
+          },
+          "verificationStatus": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED",
+              "UNDER_REVIEW",
+              "APPROVED",
+              "REJECTED",
+              "SUSPENDED"
+            ]
+          },
+          "verifiedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "legalName",
+          "tradeName",
+          "taxId",
+          "verificationStatus",
+          "createdAt"
+        ]
+      },
+      "AdminMerchantListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminMerchantListItemDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
       "AdminMerchantActionDto": {
         "type": "object",
         "properties": {
@@ -6408,6 +7766,51 @@
             "maxLength": 2000
           }
         }
+      },
+      "MerchantTransitionResponseDto": {
+        "type": "object",
+        "properties": {
+          "merchantId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED",
+              "UNDER_REVIEW",
+              "APPROVED",
+              "REJECTED",
+              "SUSPENDED"
+            ]
+          }
+        },
+        "required": [
+          "merchantId",
+          "status"
+        ]
+      },
+      "MerchantSuspendResponseDto": {
+        "type": "object",
+        "properties": {
+          "merchantId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUSPENDED"
+            ]
+          },
+          "offersCancelled": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "merchantId",
+          "status",
+          "offersCancelled"
+        ]
       },
       "CreateStoreDto": {
         "type": "object",
@@ -6458,6 +7861,90 @@
           "city",
           "latitude",
           "longitude"
+        ]
+      },
+      "StoreDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "district": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "latitude": {
+            "type": "number"
+          },
+          "longitude": {
+            "type": "number"
+          },
+          "coverImageUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "categoryTags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "MEAL",
+                "BAKERY",
+                "GROCERY",
+                "PRODUCE",
+                "OTHER"
+              ]
+            }
+          },
+          "openingHoursJson": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "avgStars": {
+            "type": "number"
+          },
+          "ratingCount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "name",
+          "address",
+          "district",
+          "city",
+          "latitude",
+          "longitude",
+          "categoryTags",
+          "active",
+          "avgStars",
+          "ratingCount",
+          "createdAt",
+          "updatedAt"
         ]
       },
       "UpdateStoreDto": {
@@ -6763,6 +8250,118 @@
           "rating"
         ]
       },
+      "MembershipMineResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "TRIAL",
+              "ACTIVE",
+              "PAST_DUE",
+              "CANCELLED"
+            ]
+          },
+          "anchorDate": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currentPeriodStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currentPeriodEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "priceCents": {
+            "type": "number"
+          },
+          "vatCents": {
+            "type": "number"
+          },
+          "outstandingCents": {
+            "type": "number"
+          },
+          "outstandingVatCents": {
+            "type": "number"
+          },
+          "writtenOffCents": {
+            "type": "number"
+          },
+          "periodPaidAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "nextAnniversary": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "anchorDate",
+          "currentPeriodStart",
+          "currentPeriodEnd",
+          "priceCents",
+          "vatCents",
+          "outstandingCents",
+          "outstandingVatCents",
+          "writtenOffCents",
+          "nextAnniversary"
+        ]
+      },
+      "NotificationPreferenceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "favoritesEnabled": {
+            "type": "boolean"
+          },
+          "nearbyEnabled": {
+            "type": "boolean"
+          },
+          "nearbyRadiusM": {
+            "type": "number"
+          },
+          "marketingEnabled": {
+            "type": "boolean"
+          },
+          "quietHoursStart": {
+            "type": "number",
+            "nullable": true,
+            "description": "Local hour-of-day [0-23]."
+          },
+          "quietHoursEnd": {
+            "type": "number",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "favoritesEnabled",
+          "nearbyEnabled",
+          "nearbyRadiusM",
+          "marketingEnabled",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
       "UpdateNotificationPreferencesDto": {
         "type": "object",
         "properties": {
@@ -6807,6 +8406,539 @@
           "lng"
         ]
       },
+      "UserLocationUpdateResponseDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "number",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "AdminSettlementListMerchantDto": {
+        "type": "object",
+        "properties": {
+          "tradeName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tradeName"
+        ]
+      },
+      "AdminSettlementListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "periodStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "periodEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "CALCULATED",
+              "APPROVED",
+              "SENT",
+              "SETTLED",
+              "FAILED",
+              "HELD"
+            ]
+          },
+          "grossCents": {
+            "type": "number"
+          },
+          "bagFeeCents": {
+            "type": "number"
+          },
+          "bagFeeVatCents": {
+            "type": "number"
+          },
+          "withholdingCents": {
+            "type": "number"
+          },
+          "membershipOffsetCents": {
+            "type": "number"
+          },
+          "membershipOffsetVatCents": {
+            "type": "number"
+          },
+          "refundClawbackCents": {
+            "type": "number"
+          },
+          "netPayoutCents": {
+            "type": "number"
+          },
+          "carriedShortfallCents": {
+            "type": "number"
+          },
+          "carriedExternalDemandCents": {
+            "type": "number"
+          },
+          "inheritedExternalDemandCents": {
+            "type": "number"
+          },
+          "shortfallResolvedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "payoutAttemptedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "holdReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "pspTransferRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "sentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "carriedDemandSourceBatchId": {
+            "type": "string",
+            "nullable": true
+          },
+          "merchant": {
+            "$ref": "#/components/schemas/AdminSettlementListMerchantDto"
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "periodStart",
+          "periodEnd",
+          "status",
+          "grossCents",
+          "bagFeeCents",
+          "bagFeeVatCents",
+          "withholdingCents",
+          "membershipOffsetCents",
+          "membershipOffsetVatCents",
+          "refundClawbackCents",
+          "netPayoutCents",
+          "carriedShortfallCents",
+          "carriedExternalDemandCents",
+          "inheritedExternalDemandCents",
+          "createdAt",
+          "updatedAt",
+          "merchant"
+        ]
+      },
+      "AdminSettlementListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminSettlementListItemDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "NightlyCycleFailureDto": {
+        "type": "object",
+        "properties": {
+          "merchantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "batch",
+              "clawback-sweep",
+              "clawback-sweep-scan"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "stage",
+          "message"
+        ]
+      },
+      "RunNightlyCycleResponseDto": {
+        "type": "object",
+        "properties": {
+          "batchIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "failures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NightlyCycleFailureDto"
+            }
+          }
+        },
+        "required": [
+          "batchIds",
+          "failures"
+        ]
+      },
+      "SettlementLineDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "reservationId": {
+            "type": "string"
+          },
+          "redeemedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "grossCents": {
+            "type": "number"
+          },
+          "bagFeeCents": {
+            "type": "number"
+          },
+          "bagFeeVatCents": {
+            "type": "number"
+          },
+          "withholdingCents": {
+            "type": "number"
+          },
+          "clawbackCents": {
+            "type": "number"
+          },
+          "clawbackAppliedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "clawbackBatchId": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "batchId",
+          "reservationId",
+          "redeemedAt",
+          "grossCents",
+          "bagFeeCents",
+          "bagFeeVatCents",
+          "withholdingCents",
+          "clawbackCents",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CommissionInvoiceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "BAG_FEE",
+              "MEMBERSHIP"
+            ]
+          },
+          "docType": {
+            "type": "string",
+            "enum": [
+              "EFATURA",
+              "EARSIVFATURA"
+            ]
+          },
+          "nilveraDocId": {
+            "type": "string",
+            "nullable": true
+          },
+          "ublXmlRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SENT",
+              "ACCEPTED",
+              "REJECTED"
+            ]
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "netAmountCents": {
+            "type": "number"
+          },
+          "vatCents": {
+            "type": "number"
+          },
+          "totalAmountCents": {
+            "type": "number"
+          },
+          "linesJson": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "type",
+          "docType",
+          "status",
+          "netAmountCents",
+          "vatCents",
+          "totalAmountCents",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "SettlementMerchantSummaryDto": {
+        "type": "object",
+        "properties": {
+          "tradeName": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "iban": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tradeName",
+          "legalName",
+          "iban"
+        ]
+      },
+      "AdminSettlementDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "periodStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "periodEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "CALCULATED",
+              "APPROVED",
+              "SENT",
+              "SETTLED",
+              "FAILED",
+              "HELD"
+            ]
+          },
+          "grossCents": {
+            "type": "number"
+          },
+          "bagFeeCents": {
+            "type": "number"
+          },
+          "bagFeeVatCents": {
+            "type": "number"
+          },
+          "withholdingCents": {
+            "type": "number"
+          },
+          "membershipOffsetCents": {
+            "type": "number"
+          },
+          "membershipOffsetVatCents": {
+            "type": "number"
+          },
+          "refundClawbackCents": {
+            "type": "number"
+          },
+          "netPayoutCents": {
+            "type": "number"
+          },
+          "carriedShortfallCents": {
+            "type": "number"
+          },
+          "carriedExternalDemandCents": {
+            "type": "number"
+          },
+          "inheritedExternalDemandCents": {
+            "type": "number"
+          },
+          "shortfallResolvedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "payoutAttemptedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "holdReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "pspTransferRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "sentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "carriedDemandSourceBatchId": {
+            "type": "string",
+            "nullable": true
+          },
+          "settlementLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettlementLineDto"
+            }
+          },
+          "commissionInvoices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommissionInvoiceDto"
+            }
+          },
+          "merchant": {
+            "$ref": "#/components/schemas/SettlementMerchantSummaryDto"
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "periodStart",
+          "periodEnd",
+          "status",
+          "grossCents",
+          "bagFeeCents",
+          "bagFeeVatCents",
+          "withholdingCents",
+          "membershipOffsetCents",
+          "membershipOffsetVatCents",
+          "refundClawbackCents",
+          "netPayoutCents",
+          "carriedShortfallCents",
+          "carriedExternalDemandCents",
+          "inheritedExternalDemandCents",
+          "createdAt",
+          "updatedAt",
+          "settlementLines",
+          "commissionInvoices",
+          "merchant"
+        ]
+      },
       "AdminSettlementActionDto": {
         "type": "object",
         "properties": {
@@ -6815,6 +8947,30 @@
             "maxLength": 2000
           }
         }
+      },
+      "PlatformPricingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bagFeeCents": {
+            "type": "number"
+          },
+          "membershipAnnualCents": {
+            "type": "number"
+          },
+          "effectiveFrom": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "bagFeeCents",
+          "membershipAnnualCents",
+          "effectiveFrom"
+        ]
       },
       "SchedulePricingDto": {
         "type": "object",
@@ -6836,6 +8992,322 @@
           "bagFeeCents",
           "membershipAnnualCents",
           "effectiveFrom"
+        ]
+      },
+      "SettlementBatchDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "periodStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "periodEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "CALCULATED",
+              "APPROVED",
+              "SENT",
+              "SETTLED",
+              "FAILED",
+              "HELD"
+            ]
+          },
+          "grossCents": {
+            "type": "number"
+          },
+          "bagFeeCents": {
+            "type": "number"
+          },
+          "bagFeeVatCents": {
+            "type": "number"
+          },
+          "withholdingCents": {
+            "type": "number"
+          },
+          "membershipOffsetCents": {
+            "type": "number"
+          },
+          "membershipOffsetVatCents": {
+            "type": "number"
+          },
+          "refundClawbackCents": {
+            "type": "number"
+          },
+          "netPayoutCents": {
+            "type": "number"
+          },
+          "carriedShortfallCents": {
+            "type": "number"
+          },
+          "carriedExternalDemandCents": {
+            "type": "number"
+          },
+          "inheritedExternalDemandCents": {
+            "type": "number"
+          },
+          "shortfallResolvedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "payoutAttemptedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "holdReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "pspTransferRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "sentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "carriedDemandSourceBatchId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "periodStart",
+          "periodEnd",
+          "status",
+          "grossCents",
+          "bagFeeCents",
+          "bagFeeVatCents",
+          "withholdingCents",
+          "membershipOffsetCents",
+          "membershipOffsetVatCents",
+          "refundClawbackCents",
+          "netPayoutCents",
+          "carriedShortfallCents",
+          "carriedExternalDemandCents",
+          "inheritedExternalDemandCents",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "SettlementListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettlementBatchDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "SettlementDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "periodStart": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "periodEnd": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "CALCULATED",
+              "APPROVED",
+              "SENT",
+              "SETTLED",
+              "FAILED",
+              "HELD"
+            ]
+          },
+          "grossCents": {
+            "type": "number"
+          },
+          "bagFeeCents": {
+            "type": "number"
+          },
+          "bagFeeVatCents": {
+            "type": "number"
+          },
+          "withholdingCents": {
+            "type": "number"
+          },
+          "membershipOffsetCents": {
+            "type": "number"
+          },
+          "membershipOffsetVatCents": {
+            "type": "number"
+          },
+          "refundClawbackCents": {
+            "type": "number"
+          },
+          "netPayoutCents": {
+            "type": "number"
+          },
+          "carriedShortfallCents": {
+            "type": "number"
+          },
+          "carriedExternalDemandCents": {
+            "type": "number"
+          },
+          "inheritedExternalDemandCents": {
+            "type": "number"
+          },
+          "shortfallResolvedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "payoutAttemptedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "holdReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "dueAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "pspTransferRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "sentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "carriedDemandSourceBatchId": {
+            "type": "string",
+            "nullable": true
+          },
+          "settlementLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettlementLineDto"
+            }
+          },
+          "commissionInvoices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommissionInvoiceDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "periodStart",
+          "periodEnd",
+          "status",
+          "grossCents",
+          "bagFeeCents",
+          "bagFeeVatCents",
+          "withholdingCents",
+          "membershipOffsetCents",
+          "membershipOffsetVatCents",
+          "refundClawbackCents",
+          "netPayoutCents",
+          "carriedShortfallCents",
+          "carriedExternalDemandCents",
+          "inheritedExternalDemandCents",
+          "createdAt",
+          "updatedAt",
+          "settlementLines",
+          "commissionInvoices"
+        ]
+      },
+      "FavoriteAddResponseDto": {
+        "type": "object",
+        "properties": {
+          "favorited": {
+            "type": "number",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "favorited"
+        ]
+      },
+      "FavoriteRemoveResponseDto": {
+        "type": "object",
+        "properties": {
+          "favorited": {
+            "type": "number",
+            "enum": [
+              false
+            ]
+          }
+        },
+        "required": [
+          "favorited"
         ]
       },
       "FavoriteStoreSummaryDto": {
@@ -6955,6 +9427,205 @@
           "overallStars"
         ]
       },
+      "RatingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reservationId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "storeId": {
+            "type": "string"
+          },
+          "overallStars": {
+            "type": "number"
+          },
+          "foodQuality": {
+            "type": "number",
+            "nullable": true
+          },
+          "service": {
+            "type": "number",
+            "nullable": true
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true
+          },
+          "moderationStatus": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "reservationId",
+          "userId",
+          "storeId",
+          "overallStars",
+          "moderationStatus",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "RatingDistributionDto": {
+        "type": "object",
+        "properties": {
+          "1": {
+            "type": "number"
+          },
+          "2": {
+            "type": "number"
+          },
+          "3": {
+            "type": "number"
+          },
+          "4": {
+            "type": "number"
+          },
+          "5": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+        ]
+      },
+      "RatingsMineItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "overallStars": {
+            "type": "number"
+          },
+          "foodQuality": {
+            "type": "number",
+            "nullable": true
+          },
+          "service": {
+            "type": "number",
+            "nullable": true
+          },
+          "comment": {
+            "type": "string",
+            "nullable": true
+          },
+          "moderationStatus": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "overallStars",
+          "moderationStatus",
+          "createdAt"
+        ]
+      },
+      "RatingsMineResponseDto": {
+        "type": "object",
+        "properties": {
+          "storeId": {
+            "type": "string"
+          },
+          "avgStars": {
+            "type": "number"
+          },
+          "ratingCount": {
+            "type": "number"
+          },
+          "distribution": {
+            "$ref": "#/components/schemas/RatingDistributionDto"
+          },
+          "pendingCount": {
+            "type": "number",
+            "description": "Count of PENDING (commented, unmoderated) ratings for this store."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RatingsMineItemDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "storeId",
+          "avgStars",
+          "ratingCount",
+          "distribution",
+          "pendingCount",
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "AdminRatingListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RatingDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
       "ImpactTotalsDto": {
         "type": "object",
         "properties": {
@@ -7004,40 +9675,6 @@
           "moneySavedCents",
           "count",
           "generatedAt"
-        ]
-      },
-      "CreateComplaintDto": {
-        "type": "object",
-        "properties": {
-          "category": {
-            "type": "string",
-            "enum": [
-              "FOOD_QUALITY",
-              "MISSING_ITEMS",
-              "WRONG_ITEMS",
-              "STORE_CLOSED_NO_SHOW",
-              "RUDE_STAFF",
-              "PAYMENT_BILLING",
-              "SAFETY_HYGIENE",
-              "OTHER"
-            ]
-          },
-          "description": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4000
-          },
-          "reservationId": {
-            "type": "string",
-            "description": "If set, merchantId is derived from the reservation's store (any client-supplied merchantId is ignored)."
-          },
-          "merchantId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "category",
-          "description"
         ]
       },
       "ComplaintTicketDto": {
@@ -7140,6 +9777,40 @@
           "total",
           "page",
           "pageSize"
+        ]
+      },
+      "CreateComplaintDto": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "FOOD_QUALITY",
+              "MISSING_ITEMS",
+              "WRONG_ITEMS",
+              "STORE_CLOSED_NO_SHOW",
+              "RUDE_STAFF",
+              "PAYMENT_BILLING",
+              "SAFETY_HYGIENE",
+              "OTHER"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "reservationId": {
+            "type": "string",
+            "description": "If set, merchantId is derived from the reservation's store (any client-supplied merchantId is ignored)."
+          },
+          "merchantId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "description"
         ]
       },
       "ComplaintMessageDto": {
@@ -7417,6 +10088,171 @@
           "targetType",
           "targetId",
           "reason"
+        ]
+      },
+      "ContentReportDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "STORE",
+              "OFFER",
+              "RATING"
+            ]
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "ACTIONED",
+              "DISMISSED"
+            ]
+          },
+          "takedownDeadlineAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "resolvedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "takedownWarningSentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "takedownBreachedSentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "targetType",
+          "targetId",
+          "reason",
+          "status",
+          "takedownDeadlineAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AdminReportListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "targetType": {
+            "type": "string",
+            "enum": [
+              "STORE",
+              "OFFER",
+              "RATING"
+            ]
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "ACTIONED",
+              "DISMISSED"
+            ]
+          },
+          "takedownDeadlineAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "resolvedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "takedownWarningSentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "takedownBreachedSentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "takedownCountdownMs": {
+            "type": "number",
+            "description": "Milliseconds until takedownDeadlineAt — negative once breached."
+          }
+        },
+        "required": [
+          "id",
+          "targetType",
+          "targetId",
+          "reason",
+          "status",
+          "takedownDeadlineAt",
+          "createdAt",
+          "updatedAt",
+          "takedownCountdownMs"
+        ]
+      },
+      "AdminReportListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminReportListItemDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
         ]
       },
       "AdminReportActionDto": {

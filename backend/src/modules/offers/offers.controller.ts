@@ -1,5 +1,11 @@
 import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { AllowUnapprovedMerchant } from "../auth/decorators/allow-unapproved-merchant.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -8,6 +14,14 @@ import { CreateOfferDto } from "./dto/create-offer.dto";
 import { ListOffersMineQueryDto } from "./dto/list-offers-mine-query.dto";
 import { ScheduleOfferDto } from "./dto/schedule-offer.dto";
 import { OffersService } from "./offers.service";
+import {
+  DailyOfferDto,
+  OfferCancelResponseDto,
+  OfferCloseResponseDto,
+  OfferMineItemDto,
+  OfferPublishResponseDto,
+  OfferScheduleResponseDto,
+} from "./dto/offer-response.dto";
 
 @ApiTags("offers")
 @ApiBearerAuth()
@@ -22,6 +36,7 @@ export class OffersController {
   @ApiOperation({
     summary: "Create a DailyOffer from one of the merchant's bag templates.",
   })
+  @ApiCreatedResponse({ type: DailyOfferDto })
   @Post()
   create(
     @CurrentUser("merchantId") merchantId: string,
@@ -34,6 +49,7 @@ export class OffersController {
   @ApiOperation({
     summary: "List the calling merchant's own offers for a given date.",
   })
+  @ApiOkResponse({ type: OfferMineItemDto, isArray: true })
   @Get("mine")
   @AllowUnapprovedMerchant()
   listMine(
@@ -46,6 +62,7 @@ export class OffersController {
   @ApiOperation({
     summary: "Publish an offer, making it visible on discovery.",
   })
+  @ApiCreatedResponse({ type: OfferPublishResponseDto })
   @Post(":id/publish")
   publish(
     @CurrentUser("merchantId") merchantId: string,
@@ -57,6 +74,7 @@ export class OffersController {
   @ApiOperation({
     summary: "Schedule an offer to auto-publish at a future instant.",
   })
+  @ApiCreatedResponse({ type: OfferScheduleResponseDto })
   @Post(":id/schedule")
   schedule(
     @CurrentUser("merchantId") merchantId: string,
@@ -69,6 +87,7 @@ export class OffersController {
   @ApiOperation({
     summary: "Close an offer (no more reservations, existing ones unaffected).",
   })
+  @ApiCreatedResponse({ type: OfferCloseResponseDto })
   @Post(":id/close")
   close(
     @CurrentUser("merchantId") merchantId: string,
@@ -81,6 +100,7 @@ export class OffersController {
     summary:
       "Cancel an offer — cancels its live reservations and refunds them.",
   })
+  @ApiCreatedResponse({ type: OfferCancelResponseDto })
   @Post(":id/cancel")
   cancel(
     @CurrentUser("merchantId") merchantId: string,
