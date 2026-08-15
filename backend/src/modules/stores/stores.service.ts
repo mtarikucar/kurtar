@@ -157,4 +157,36 @@ export class StoresService {
       return updated;
     });
   }
+
+  /**
+   * [Task 9] Admin/content-report entry point — sets `active: false` (the
+   * same visibility toggle this doc comment's own paragraph above
+   * describes: hides it from discovery, does NOT touch its offers/
+   * reservations), no ownership check, with an AuditLog row in the SAME
+   * transaction (brief §5: "every admin moderation action writes an
+   * AuditLog row in the same transaction"). Reused by
+   * modules/moderation's content-report "action" on a STORE target.
+   */
+  async adminDeactivate(adminId: string, id: string): Promise<Store> {
+    return this.prisma.$transaction(async (tx) => {
+      const store = await tx.store.findUnique({ where: { id } });
+      if (!store) throw storeNotFoundError();
+
+      const updated = await tx.store.update({
+        where: { id },
+        data: { active: false },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId: adminId,
+          action: "store.admin_deactivate",
+          entity: "Store",
+          entityId: id,
+          diffJson: { previousActive: store.active },
+        },
+      });
+      return updated;
+    });
+  }
 }

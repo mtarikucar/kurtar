@@ -400,19 +400,45 @@ export class OffersService {
   }
 
   /**
-   * The composite "cancel" operation both cancel() and
-   * cancelAllActiveForMerchant() funnel into: guarded DailyOffer status
-   * transition + the reservation-level fan-out
-   * (ReservationsService.cancelAllForOffer) + the offer.cancelled.v1
-   * outbox row, all in ONE transaction (all three commit or roll back
-   * together — an offer that turns out not to be cancellable never
-   * reaches the fan-out at all, since the guarded update runs FIRST in the
-   * same tx and throws before cancelAllForOffer is even called). Refund
-   * provider I/O runs strictly AFTER that transaction commits.
+   * [Task 9] Admin/content-report entry point — reuses cancelOne exactly
+   * like cancel()/cancelAllActiveForMerchant() do (never a second copy of
+   * the fan-out), no ownership check (an admin isn't the store's owner),
+   * with an AuditLog row written in the SAME transaction as the cancel
+   * (see cancelOne's `auditActorId` parameter). The one entity a content-
+   * report "action" on an OFFER target actually mutates
+   * (modules/moderation/moderation.service.ts).
+   */
+  async adminCancel(
+    adminId: string,
+    offerId: string,
+  ): Promise<OfferCancelResult> {
+    return this.cancelOne(offerId, "ADMIN", adminId);
+  }
+
+  /**
+   * The composite "cancel" operation cancel()/cancelAllActiveForMerchant()/
+   * adminCancel() all funnel into: guarded DailyOffer status transition +
+   * the reservation-level fan-out (ReservationsService.cancelAllForOffer)
+   * + the offer.cancelled.v1 outbox row, all in ONE transaction (all
+   * three commit or roll back together — an offer that turns out not to
+   * be cancellable never reaches the fan-out at all, since the guarded
+   * update runs FIRST in the same tx and throws before cancelAllForOffer
+   * is even called). Refund provider I/O runs strictly AFTER that
+   * transaction commits.
+   *
+   * `auditActorId` is optional and ONLY set by adminCancel() — a plain
+   * merchant self-cancel already has its own audit trail (the merchant IS
+   * the actor, nothing to attribute), so cancel()/
+   * cancelAllActiveForMerchant() never pass it and never write an
+   * AuditLog row. When set, the write happens inside THIS SAME
+   * transaction (brief §5: "every admin moderation action writes an
+   * AuditLog row in the same transaction") — an additive instrumentation
+   * parameter, not a second copy of the cancel logic.
    */
   private async cancelOne(
     offerId: string,
     reason: OfferCancelReason,
+    auditActorId?: string,
   ): Promise<OfferCancelResult> {
     const { expiredCount, cancelledCount, toRefund } =
       await this.prisma.$transaction(async (tx) => {
@@ -470,6 +496,19 @@ export class OffersService {
           },
           idempotencyKey: `offer-cancelled-merchant-email:${offerId}`,
         });
+
+        if (auditActorId) {
+          await tx.auditLog.create({
+            data: {
+              actorType: "ADMIN",
+              actorId: auditActorId,
+              action: "offer.admin_cancel",
+              entity: "DailyOffer",
+              entityId: offerId,
+              diffJson: { reason },
+            },
+          });
+        }
 
         return fanOut;
       });

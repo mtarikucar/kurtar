@@ -7,6 +7,14 @@ import { AppModule } from "../../app.module";
  * settlement/membership cron is actually REGISTERED with Nest's scheduler
  * at boot — by booting the REAL `AppModule`, not a hand-assembled stand-in.
  *
+ * [Task 9] Extended (not duplicated into a second file) to also cover the
+ * complaint SLA sweep and content-report takedown sweep — this file's own
+ * name predates that scope, but it is the SAME standing gate the earlier
+ * incident (a settlement cron shipped undecorated and passed 625 green
+ * tests) established; a new SLA/takedown cron shipping unregistered
+ * should fail here exactly the same way.
+ *
+
  * [Fix round #2] The FIRST version of this spec constructed
  * SettlementBatchBuilderService/SettlementPayoutService/
  * MembershipRenewalCronService directly as bare providers with fake
@@ -55,7 +63,7 @@ const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const d = TEST_DATABASE_URL ? describe : describe.skip;
 
 d("Settlement/membership cron registration — real AppModule boot", () => {
-  it("registers settlement-nightly-batch, settlement-payout-execute, settlement-reconciliation, and membership-renewal", async () => {
+  it("registers settlement-nightly-batch, settlement-payout-execute, settlement-reconciliation, membership-renewal, complaint-sla-sweep, and moderation-takedown-sweep", async () => {
     const module = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -81,6 +89,14 @@ d("Settlement/membership cron registration — real AppModule boot", () => {
       expect(names.has("settlement-payout-execute")).toBe(true);
       expect(names.has("settlement-reconciliation")).toBe(true);
       expect(names.has("membership-renewal")).toBe(true);
+      // [Task 9] The complaint SLA sweep (complaints/complaint-sla-cron.
+      // service.ts) and content-report takedown sweep
+      // (moderation/moderation-takedown-cron.service.ts) — added to this
+      // SAME standing gate per the dispatch note ("ADD your SLA/takedown
+      // crons to that gate"), rather than a second, easy-to-forget-to-run
+      // registration spec.
+      expect(names.has("complaint-sla-sweep")).toBe(true);
+      expect(names.has("moderation-takedown-sweep")).toBe(true);
     } finally {
       await app.close();
     }
