@@ -291,3 +291,40 @@ describe("ComplaintsService admin transitions", () => {
     expect(err.response.errorCode).toBe("COMPLAINT_TRANSITION_INVALID");
   });
 });
+
+describe("ComplaintsService.adminList — filters", () => {
+  it("[Important 3] the category filter is genuinely applied to the query, not silently dropped", async () => {
+    const { prisma } = buildDeps();
+    const service = new ComplaintsService(prisma as any);
+
+    await service.adminList("OPEN", "merchant-1", "SAFETY_HYGIENE", 1, 20);
+
+    expect(prisma.complaintTicket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          status: "OPEN",
+          merchantId: "merchant-1",
+          category: "SAFETY_HYGIENE",
+        },
+      }),
+    );
+    expect(prisma.complaintTicket.count).toHaveBeenCalledWith({
+      where: {
+        status: "OPEN",
+        merchantId: "merchant-1",
+        category: "SAFETY_HYGIENE",
+      },
+    });
+  });
+
+  it("omits the category key entirely when not provided (never filters on an undefined value)", async () => {
+    const { prisma } = buildDeps();
+    const service = new ComplaintsService(prisma as any);
+
+    await service.adminList(undefined, undefined, undefined, 1, 20);
+
+    expect(prisma.complaintTicket.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: {} }),
+    );
+  });
+});

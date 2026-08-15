@@ -180,6 +180,104 @@ describe("ModerationService.adminAction — dispatches to the ONE reused entry p
     // The claim transaction (updateMany -> ACTIONED) is never reached.
     expect(deps.prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  describe("[Fix round, Minor] OFFER_NOT_CANCELLABLE retry hazard", () => {
+    function offerNotCancellableError() {
+      return new ConflictException({
+        statusCode: 409,
+        errorCode: "OFFER_NOT_CANCELLABLE",
+        message: "Offer is in CANCELLED, which cannot be cancelled.",
+      });
+    }
+
+    it("an already-terminal offer (OFFER_NOT_CANCELLABLE) does NOT block the report from being claimed as ACTIONED", async () => {
+      const deps = buildDeps({
+        contentReportRoot: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: "r1",
+            status: "OPEN",
+            targetType: "OFFER",
+            targetId: "offer-1",
+          }),
+        },
+        offers: {
+          adminCancel: jest.fn().mockRejectedValue(offerNotCancellableError()),
+        },
+      });
+      deps.tx.contentReport.findUniqueOrThrow.mockResolvedValue({
+        id: "r1",
+        status: "ACTIONED",
+      });
+      const service = buildService(deps);
+
+      // Must NOT throw — this is exactly the retry that used to get
+      // permanently stuck.
+      const result = await service.adminAction("admin1", "r1", undefined);
+      expect(result).toEqual({ id: "r1", status: "ACTIONED" });
+
+      // The claim transaction DID run this time (unlike the generic-error
+      // test above), and it claimed the report as ACTIONED.
+      expect(deps.prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(deps.tx.contentReport.updateMany).toHaveBeenCalledWith({
+        where: { id: "r1", status: "OPEN" },
+        data: expect.objectContaining({ status: "ACTIONED" }),
+      });
+    });
+
+    it("a DIFFERENT ConflictException from adminCancel (not OFFER_NOT_CANCELLABLE) still propagates and still leaves the report unclaimed", async () => {
+      const deps = buildDeps({
+        contentReportRoot: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: "r1",
+            status: "OPEN",
+            targetType: "OFFER",
+            targetId: "offer-1",
+          }),
+        },
+        offers: {
+          adminCancel: jest.fn().mockRejectedValue(
+            new ConflictException({
+              statusCode: 409,
+              errorCode: "SOME_OTHER_CONFLICT",
+              message: "unrelated conflict",
+            }),
+          ),
+        },
+      });
+      const service = buildService(deps);
+
+      await expect(
+        service.adminAction("admin1", "r1", undefined),
+      ).rejects.toMatchObject({
+        response: { errorCode: "SOME_OTHER_CONFLICT" },
+      });
+      expect(deps.prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it("a NotFoundException from adminCancel (offer genuinely missing) still propagates unaffected", async () => {
+      const deps = buildDeps({
+        contentReportRoot: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: "r1",
+            status: "OPEN",
+            targetType: "OFFER",
+            targetId: "offer-1",
+          }),
+        },
+        offers: {
+          adminCancel: jest
+            .fn()
+            .mockRejectedValue(new NotFoundException("offer not found")),
+        },
+      });
+      const service = buildService(deps);
+
+      await expect(
+        service.adminAction("admin1", "r1", undefined),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(deps.prisma.$transaction).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe("ModerationService.adminDismiss", () => {

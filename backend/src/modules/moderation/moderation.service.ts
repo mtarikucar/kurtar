@@ -104,10 +104,15 @@ export class ModerationService {
 
   /**
    * Dispatches the actual moderation action, THEN claims the report as
-   * ACTIONED. Order matters: if the target mutation throws (e.g. the
-   * offer is already terminal), the report stays OPEN so an admin can
-   * retry or dismiss instead — the report is never marked "handled" for
-   * an action that didn't actually happen.
+   * ACTIONED. Order matters: if the target mutation throws, the report
+   * stays OPEN so an admin can retry or dismiss instead — the report is
+   * never marked "handled" for an action that didn't actually happen.
+   *
+   * [Fix round, Minor] The OFFER branch is the one exception to "throws
+   * leave the report OPEN for a retry": tryAdminCancelOffer below treats
+   * an already-terminal offer (OFFER_NOT_CANCELLABLE) as an acceptable
+   * no-op rather than a failure, specifically so a genuine retry after a
+   * partial success doesn't get stuck forever — see its own doc comment.
    */
   async adminAction(
     adminId: string,
@@ -129,7 +134,7 @@ export class ModerationService {
         await this.stores.adminDeactivate(adminId, report.targetId);
         break;
       case "OFFER":
-        await this.offers.adminCancel(adminId, report.targetId);
+        await this.tryAdminCancelOffer(adminId, report.targetId, reportId);
         break;
     }
 
@@ -165,6 +170,55 @@ export class ModerationService {
       }
       return tx.contentReport.findUniqueOrThrow({ where: { id: reportId } });
     });
+  }
+
+  /**
+   * [Fix round, Minor] adminCancel -> cancelOne throws OFFER_NOT_CANCELLABLE
+   * once an offer is already in a terminal state (CANCELLED or CLOSED —
+   * offer-transitions.ts's OFFER_TRANSITIONS has both mapped to `[]`, no
+   * further transitions). Unlike RatingsService.rejectRating (an explicit
+   * `if (rating.moderationStatus === to) return rating;` idempotent
+   * no-op) and StoresService.adminDeactivate (unconditionally re-settable,
+   * never throws), OffersService's guarded transition update was the ONE
+   * of the three target-type handlers that could throw on a repeat call —
+   * and that throw used to propagate straight out of adminAction BEFORE
+   * the report's own status transaction ran below. That is a genuine
+   * retry hazard: a transient failure strictly BETWEEN a successful
+   * cancel and the report-claim transaction (a dropped DB connection, a
+   * pod restart) left the report stuck OPEN forever — every retry hits
+   * the exact same "already cancelled" 409, and the only way an admin
+   * could clear it was `dismiss`, which is semantically wrong (the
+   * report was never actually invalid; the target action just already
+   * happened). Both CANCELLED and CLOSED mean the offer is no longer
+   * live on the platform either way, which is the actual outcome a
+   * content report against an OFFER exists to achieve — so this treats
+   * ONLY that specific error as an acceptable no-op and lets adminAction
+   * continue on to claim the report. Any OTHER failure (offer not found,
+   * a genuine DB error, etc.) still propagates normally and still leaves
+   * the report OPEN for a real retry, exactly as before.
+   */
+  private async tryAdminCancelOffer(
+    adminId: string,
+    offerId: string,
+    reportId: string,
+  ): Promise<void> {
+    try {
+      await this.offers.adminCancel(adminId, offerId);
+    } catch (err) {
+      const response =
+        err instanceof ConflictException ? err.getResponse() : undefined;
+      const errorCode =
+        typeof response === "object" && response !== null
+          ? (response as { errorCode?: string }).errorCode
+          : undefined;
+      if (errorCode === "OFFER_NOT_CANCELLABLE") {
+        this.logger.warn(
+          `report ${reportId}: offer ${offerId} is already in a terminal (non-cancellable) state — treating as already-actioned instead of blocking the report from being claimed.`,
+        );
+        return;
+      }
+      throw err;
+    }
   }
 
   async adminDismiss(

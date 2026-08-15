@@ -1,10 +1,19 @@
 import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { AdminComplaintActionDto } from "./dto/admin-complaint-action.dto";
 import { AdminListComplaintsQueryDto } from "./dto/admin-list-complaints-query.dto";
+import {
+  AdminComplaintListResponseDto,
+  ComplaintDetailResponseDto,
+} from "./dto/complaint-response.dto";
 import { ComplaintsService } from "./complaints.service";
 
 @ApiTags("admin")
@@ -17,13 +26,15 @@ export class AdminComplaintsController {
 
   @ApiOperation({
     summary:
-      "List complaints with SLA countdown, filterable by status/merchant.",
+      "List complaints with SLA countdown, filterable by status/merchant/category.",
   })
+  @ApiOkResponse({ type: AdminComplaintListResponseDto })
   @Get()
   list(@Query() query: AdminListComplaintsQueryDto) {
     return this.complaints.adminList(
       query.status,
       query.merchantId,
+      query.category,
       query.page,
       query.pageSize,
     );
@@ -32,6 +43,7 @@ export class AdminComplaintsController {
   @ApiOperation({
     summary: "Get one complaint (full detail + message thread).",
   })
+  @ApiOkResponse({ type: ComplaintDetailResponseDto })
   @Get(":id")
   get(@Param("id") id: string) {
     return this.complaints.adminGet(id);

@@ -44,7 +44,19 @@ export class ComplaintSlaCronService {
 
   @Cron(CronExpression.EVERY_HOUR, { name: "complaint-sla-sweep" })
   async runCron(): Promise<void> {
-    await this.runOnce();
+    // [Fix round, Important 8] The cron entry point itself must never let
+    // an uncaught rejection vanish into whatever @nestjs/schedule does
+    // internally with a failed tick — log loud, let the NEXT hourly tick
+    // retry (every guarded UPDATE below is naturally idempotent, so a
+    // partially-failed run costs nothing to simply re-attempt).
+    try {
+      await this.runOnce();
+    } catch (err) {
+      this.logger.error(
+        `complaint-sla-sweep: tick failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
   }
 
   async runOnce(
@@ -53,11 +65,23 @@ export class ComplaintSlaCronService {
     const warned = await this.warnApproaching(now);
     const escalated = await this.escalateBreached(now);
 
+    // [Fix round, Important 8] Each branch's error-log line runs
+    // UNCONDITIONALLY, and each branch's digest email is wrapped
+    // INDEPENDENTLY (trySendDigest never throws) — EmailService.sendEmail
+    // THROWS (not returns false) on a template-compile failure, and
+    // before this fix that throw inside the WARN branch's digest call
+    // aborted the whole method, skipping the BREACH branch entirely: its
+    // error log (the actual "never silently pass a deadline" record) and
+    // its own digest attempt never ran, even though the escalation
+    // itself had already committed to the database. Mirrors
+    // settlement-batch-builder.service.ts's "log rather than propagate"
+    // discipline for a per-item failure that must not take down the rest
+    // of the sweep.
     if (warned.length > 0) {
       this.logger.error(
         `complaint-sla-sweep: ${warned.length} complaint(s) within ${COMPLAINT_SLA_WARNING_WINDOW_MS / 3_600_000}h of their ETAHS deadline: ${warned.map((w) => w.id).join(", ")}`,
       );
-      await this.sendDigest(
+      await this.trySendDigest(
         "Şikayet SLA süresi yaklaşıyor",
         `${warned.length} şikayet, ETAHS 15 günlük yanıt süresinin son ${COMPLAINT_SLA_WARNING_WINDOW_MS / 3_600_000} saatine girdi:`,
         warned.map(
@@ -70,7 +94,7 @@ export class ComplaintSlaCronService {
       this.logger.error(
         `complaint-sla-sweep: ${escalated.length} complaint(s) BREACHED their ETAHS deadline and were auto-escalated: ${escalated.map((e) => e.id).join(", ")}`,
       );
-      await this.sendDigest(
+      await this.trySendDigest(
         "Şikayet SLA süresi doldu — ESCALATED",
         `${escalated.length} şikayet, ETAHS 15 günlük yanıt süresini aştığı için otomatik olarak yükseltildi:`,
         escalated.map((e) => `#${e.id}`),
@@ -109,33 +133,60 @@ export class ComplaintSlaCronService {
 
   /** Breach -> ESCALATED. Same atomic-UPDATE-RETURNING shape as above —
    * idempotent across any number of ticks, since a row that is already
-   * ESCALATED never matches the WHERE again. */
+   * ESCALATED never matches the WHERE again.
+   *
+   * [Fix round, Minor] The escalation UPDATE and its AuditLog rows now
+   * commit or roll back together, inside one `$transaction` — previously
+   * these were two separate top-level statements, so a crash strictly
+   * between them left a complaint permanently ESCALATED with NO audit
+   * trail (the guarded WHERE never re-matches an already-ESCALATED row,
+   * so no later retry could ever backfill the missing AuditLog rows). */
   private async escalateBreached(now: Date): Promise<EscalatedRow[]> {
-    const escalated = await this.prisma.$queryRaw<EscalatedRow[]>`
-      UPDATE "complaint_tickets"
-      SET "status" = 'ESCALATED', "updatedAt" = ${now}
-      WHERE "id" IN (
-        SELECT "id" FROM "complaint_tickets"
-        WHERE "status" IN ('OPEN', 'MERCHANT_RESPONDED')
-          AND "slaDeadlineAt" <= ${now}
-        ORDER BY "slaDeadlineAt" ASC
-        LIMIT ${BATCH_LIMIT}
-      )
-      RETURNING "id"
-    `;
-    if (escalated.length > 0) {
-      await this.prisma.auditLog.createMany({
-        data: escalated.map((row) => ({
-          actorType: "SYSTEM",
-          actorId: null,
-          action: "complaint.sla_breach_escalate",
-          entity: "ComplaintTicket",
-          entityId: row.id,
-          diffJson: { slaBreachedAt: now.toISOString() },
-        })),
-      });
+    return this.prisma.$transaction(async (tx) => {
+      const escalated = await tx.$queryRaw<EscalatedRow[]>`
+        UPDATE "complaint_tickets"
+        SET "status" = 'ESCALATED', "updatedAt" = ${now}
+        WHERE "id" IN (
+          SELECT "id" FROM "complaint_tickets"
+          WHERE "status" IN ('OPEN', 'MERCHANT_RESPONDED')
+            AND "slaDeadlineAt" <= ${now}
+          ORDER BY "slaDeadlineAt" ASC
+          LIMIT ${BATCH_LIMIT}
+        )
+        RETURNING "id"
+      `;
+      if (escalated.length > 0) {
+        await tx.auditLog.createMany({
+          data: escalated.map((row) => ({
+            actorType: "SYSTEM",
+            actorId: null,
+            action: "complaint.sla_breach_escalate",
+            entity: "ComplaintTicket",
+            entityId: row.id,
+            diffJson: { slaBreachedAt: now.toISOString() },
+          })),
+        });
+      }
+      return escalated;
+    });
+  }
+
+  /** [Fix round, Important 8] Never throws — a digest failure (including
+   * EmailService.sendEmail throwing outright on a template-compile
+   * error, not just returning false) is caught and logged here so it can
+   * never abort runOnce's OTHER branch. */
+  private async trySendDigest(
+    subject: string,
+    intro: string,
+    items: string[],
+  ): Promise<void> {
+    try {
+      await this.sendDigest(subject, intro, items);
+    } catch (err) {
+      this.logger.error(
+        `complaint-sla-sweep: digest email threw for "${subject}": ${(err as Error).message}`,
+      );
     }
-    return escalated;
   }
 
   private async sendDigest(

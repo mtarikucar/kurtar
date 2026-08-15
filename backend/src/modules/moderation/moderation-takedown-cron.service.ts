@@ -42,7 +42,17 @@ export class ModerationTakedownCronService {
 
   @Cron(CronExpression.EVERY_30_MINUTES, { name: "moderation-takedown-sweep" })
   async runCron(): Promise<void> {
-    await this.runOnce();
+    // [Fix round, Important 8] See complaint-sla-cron.service.ts's
+    // identical guard for the full reasoning — a failed tick must log
+    // loud and let the next 30-minute tick retry, never vanish silently.
+    try {
+      await this.runOnce();
+    } catch (err) {
+      this.logger.error(
+        `moderation-takedown-sweep: tick failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
   }
 
   async runOnce(
@@ -54,11 +64,16 @@ export class ModerationTakedownCronService {
     );
     const breached = await this.warnBreached(now);
 
+    // [Fix round, Important 8] Each branch's error log is unconditional
+    // and each branch's digest is wrapped independently — see
+    // complaint-sla-cron.service.ts's identical fix for why a throw from
+    // EmailService.sendEmail (not just a false return) in the WARNED
+    // branch must never suppress the BREACHED branch's own error log.
     if (warned.length > 0) {
       this.logger.error(
         `moderation-takedown-sweep: ${warned.length} report(s) within ${TAKEDOWN_WARNING_WINDOW_MS / 3_600_000}h of their 48h takedown deadline: ${warned.map((w) => w.id).join(", ")}`,
       );
-      await this.sendDigest(
+      await this.trySendDigest(
         "İçerik raporu SLA süresi yaklaşıyor",
         `${warned.length} rapor, 48 saatlik değerlendirme süresinin son ${TAKEDOWN_WARNING_WINDOW_MS / 3_600_000} saatine girdi:`,
         warned.map(
@@ -71,7 +86,7 @@ export class ModerationTakedownCronService {
       this.logger.error(
         `moderation-takedown-sweep: ${breached.length} report(s) BREACHED their 48h takedown deadline (still OPEN — no automatic action taken): ${breached.map((b) => b.id).join(", ")}`,
       );
-      await this.sendDigest(
+      await this.trySendDigest(
         "İçerik raporu SLA süresi doldu",
         `${breached.length} rapor, 48 saatlik değerlendirme süresini aştı ve hâlâ işlem bekliyor:`,
         breached.map((b) => `#${b.id} — ${b.targetType}/${b.targetId}`),
@@ -119,6 +134,22 @@ export class ModerationTakedownCronService {
       )
       RETURNING "id", "targetType", "targetId", "takedownDeadlineAt"
     `;
+  }
+
+  /** [Fix round, Important 8] Never throws — see complaint-sla-cron.
+   * service.ts's identical helper for the full reasoning. */
+  private async trySendDigest(
+    subject: string,
+    intro: string,
+    items: string[],
+  ): Promise<void> {
+    try {
+      await this.sendDigest(subject, intro, items);
+    } catch (err) {
+      this.logger.error(
+        `moderation-takedown-sweep: digest email threw for "${subject}": ${(err as Error).message}`,
+      );
+    }
   }
 
   private async sendDigest(

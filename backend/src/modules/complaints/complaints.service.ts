@@ -4,7 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { ComplaintStatus, ComplaintTicket } from "@prisma/client";
+import {
+  ComplaintCategory,
+  ComplaintStatus,
+  ComplaintTicket,
+} from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuthenticatedPrincipal } from "../auth/strategies/jwt.strategy";
 import { CreateComplaintDto } from "./dto/create-complaint.dto";
@@ -215,12 +219,14 @@ export class ComplaintsService {
   async adminList(
     status: ComplaintStatus | undefined,
     merchantId: string | undefined,
+    category: ComplaintCategory | undefined,
     page: number,
     pageSize: number,
   ) {
     const where = {
       ...(status && { status }),
       ...(merchantId && { merchantId }),
+      ...(category && { category }),
     };
     const skip = (page - 1) * pageSize;
     const [rows, total] = await Promise.all([
