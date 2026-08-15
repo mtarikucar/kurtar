@@ -14,8 +14,9 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\"",
     "lint:fix": "eslint \"{src,test}/**/*.ts\" --fix",
-    "test": "jest --maxWorkers=2",
-    "test:watch": "jest --watch --maxWorkers=2",
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch --runInBand",
+    "test:fast": "jest --maxWorkers=2",
     "prisma:generate": "prisma generate",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:status": "prisma migrate status"

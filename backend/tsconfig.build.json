@@ -1,4 +1,5 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "test", "dist", "**/*spec.ts"]
+  "//": "\"test\" resolves to backend/test/**, which does not exist — the test helpers actually live in backend/src/test, so without the explicit \"src/test\" entry jest.setup.ts was compiled into dist/test/jest.setup.js and shipped in the production bundle. Dead code there (nothing preloads it), but it assigns fallback JWT_SECRET/WEBHOOK_SECRET values that are public in this repo: if anything ever did preload it, production would boot with a known secret instead of failing fast, defeating jwt.strategy.ts's startup check. Verified with `npx tsc -p tsconfig.build.json --listFilesOnly`.",
+  "exclude": ["node_modules", "test", "src/test", "dist", "**/*spec.ts"]
 }
