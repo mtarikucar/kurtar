@@ -1,5 +1,10 @@
 import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { AllowUnapprovedMerchant } from "../auth/decorators/allow-unapproved-merchant.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -8,6 +13,11 @@ import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.deco
 import { CreateComplaintDto } from "./dto/create-complaint.dto";
 import { CreateComplaintMessageDto } from "./dto/create-complaint-message.dto";
 import { ListComplaintsQueryDto } from "./dto/list-complaints-query.dto";
+import {
+  ComplaintDetailResponseDto,
+  ComplaintListResponseDto,
+  ComplaintTicketDto,
+} from "./dto/complaint-response.dto";
 import { ComplaintsService } from "./complaints.service";
 
 @ApiTags("complaints")
@@ -21,12 +31,14 @@ export class ComplaintsController {
   @ApiOperation({
     summary: "File a complaint (ETAHS 15-calendar-day SLA starts now).",
   })
+  @ApiOkResponse({ type: ComplaintTicketDto })
   @Post()
   create(@CurrentUser("id") userId: string, @Body() dto: CreateComplaintDto) {
     return this.complaints.create(userId, dto);
   }
 
   @ApiOperation({ summary: "List the caller's own complaints, paginated." })
+  @ApiOkResponse({ type: ComplaintListResponseDto })
   @Get("mine")
   listMine(
     @CurrentUser("id") userId: string,
@@ -38,6 +50,7 @@ export class ComplaintsController {
   @ApiOperation({
     summary: "Get one of the caller's own complaints, with its message thread.",
   })
+  @ApiOkResponse({ type: ComplaintDetailResponseDto })
   @Get(":id")
   getMine(@CurrentUser("id") userId: string, @Param("id") id: string) {
     return this.complaints.getMine(userId, id);

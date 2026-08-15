@@ -1,9 +1,15 @@
 import { Controller, Delete, Get, Param, Post, Query } from "@nestjs/common";
-import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { ListFavoritesQueryDto } from "./dto/list-favorites-query.dto";
+import { FavoriteListResponseDto } from "./dto/favorite-list-response.dto";
 import { FavoritesService } from "./favorites.service";
 
 @ApiTags("favorites")
@@ -43,6 +49,7 @@ export class MyFavoritesController {
     summary:
       "List the caller's own favorited stores, each flagged with whether it has a live offer today.",
   })
+  @ApiOkResponse({ type: FavoriteListResponseDto })
   @Get()
   listMine(
     @CurrentUser("id") userId: string,
