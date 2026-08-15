@@ -59,6 +59,42 @@ function fullClawbackDemandCents(line: {
   );
 }
 
+/** A HELD batch's EXPORTABLE demand — what a successor may take over from
+ * it: its own fee deficit (its lines' fees + withholding + membership
+ * offset exceeded its gross) plus whatever it had itself inherited and not
+ * yet absorbed. A batch that is not HELD exports NOTHING: it either paid
+ * out or is still being computed, and in both cases it has no unresolved
+ * demand for anyone else to carry.
+ *
+ * [Fix round #5] The single definition. `resolveCarriedDemandFromSource`
+ * (what a successor may claim) and `assertIrrevocableClaimsHonoured` (what
+ * a source must still cover) both call it, so "how much does this batch
+ * owe forward" cannot be two different numbers depending on which side is
+ * asking — which is exactly how the frozen copy drifted from its source in
+ * the first place. */
+function exportableCarriedDemandCents(batch: {
+  status: string;
+  grossCents: number;
+  bagFeeCents: number;
+  bagFeeVatCents: number;
+  withholdingCents: number;
+  membershipOffsetCents: number;
+  carriedExternalDemandCents: number;
+}): number {
+  if (batch.status !== "HELD") return 0;
+  const ownFeeDeficitCents = Math.max(
+    0,
+    -(
+      batch.grossCents -
+      batch.bagFeeCents -
+      batch.bagFeeVatCents -
+      batch.withholdingCents -
+      batch.membershipOffsetCents
+    ),
+  );
+  return ownFeeDeficitCents + batch.carriedExternalDemandCents;
+}
+
 /**
  * The core "build/recompute a settlement batch" engine — the meaty half of
  * the batch lifecycle (brief §3's nightly cron + the clawback sweep).
@@ -477,45 +513,57 @@ export class SettlementBatchBuilderService {
         (l) => l.fullDemandCents - l.otherBatchesRecoveredCents > 0,
       );
 
-      // [Fix round, C2] Cross-batch shortfall inheritance happens EXACTLY
-      // ONCE per batch, on its first-ever recompute pass — every later
-      // pass (an admin retry on a HELD batch, or an "extend" adding new
-      // lines to one) consumes the batch's OWN currently-stored inherited
-      // amount instead of re-querying a sibling.
+      // [Fix round #5] THE OTHER HALF OF priorClawbackCents. What a HELD
+      // predecessor hands forward used to be an INFERRED COPY: read the
+      // predecessor's own fee deficit once, freeze it into this batch's
+      // inheritedExternalDemandCents, and record nothing on the
+      // predecessor. Unlike a settled line's demand, that deficit is
+      // MUTABLE — a HELD batch stays recomputable and `createOrExtendBatch`
+      // deliberately adds very-late lines to it — so a cured predecessor
+      // left this batch holding a claim on a demand that no longer existed
+      // and charging the merchant for it a second time. Same class as the
+      // four forgiveness bugs, opposite direction.
       //
-      // [Fix round #3, C2-residual — CRITICAL] `carriedFromPrior` (this
-      // pass's input into `priorClawbackCents`) now reads
-      // `inheritedExternalDemandCents` — the IMMUTABLE original amount
-      // inherited on the first pass — NOT `carriedExternalDemandCents`,
-      // the mutable residual. Reading the residual here was C2's exact
-      // shape one column over: a first pass that FULLY absorbs the
-      // inherited demand X correctly writes the residual down to 0
-      // (nothing left outstanding for a FUTURE batch to inherit) — but
-      // the very next routine recompute (adminApprove's pre-lock pass,
-      // or an admin retry) then read that same now-zero residual as ITS
-      // OWN starting point, rederiving refundClawbackCents down to
-      // whatever fresh line-clawback exists (often 0) and paying X back
-      // out — money already recovered, forgiven on the operator's next
-      // ordinary action, and genuinely unrecoverable afterward (a later
-      // batch's resolveCarriedShortfall only inherits from a HELD
-      // predecessor; this batch is APPROVED/SENT by then). Exactly the
-      // same fix as the settlement_line half of C2: add back this
-      // batch's own already-absorbed contribution before re-deriving.
-      // Since nothing besides this batch's own passes ever touches its
-      // private inherited amount, "add back what I absorbed" collapses
-      // to "always re-read the full original" — see schema.prisma's doc
-      // comment on `inheritedExternalDemandCents` for the algebra.
-      //
-      // `carriedExternalDemandCents` remains the mutable, every-pass-
-      // rederived RESIDUAL (`inheritedExternalDemandCents -
-      // externalAbsorbedThisPass` below) — what a FUTURE, DIFFERENT
-      // batch's resolveCarriedShortfall reads if this one stays HELD.
-      // That write is unchanged; only the READ that feeds THIS batch's
-      // own `priorClawbackCents` moved to the immutable column.
+      // Now it is a RECORDED, RETIRABLE claim, treated exactly like line
+      // attribution:
+      //   - the SOURCE is pinned once (`carriedDemandSourceBatchId`,
+      //     write-once, pure identity) so a later pass cannot silently
+      //     re-target a newer sibling;
+      //   - the AMOUNT is re-derived from that pinned predecessor on EVERY
+      //     pass and re-recorded as a claim row. This is not a bug-3
+      //     relapse: the value is read from the PREDECESSOR, never from
+      //     this batch's own earlier output, so R1 still holds;
+      //   - this batch DELETES its own claim before re-deriving, so the
+      //     "exclude everyone else's claims on the same source"
+      //     subtraction inside resolveCarriedDemandFromSource is
+      //     structural rather than arithmetic;
+      //   - a predecessor that resolves (leaves HELD) or is cured exports
+      //     0, so the claim is simply not re-created — retired, not
+      //     forgotten.
       const isFirstPass = batch.shortfallResolvedAt === null;
-      const carriedFromPrior = isFirstPass
-        ? await this.resolveCarriedShortfall(tx, batch.merchantId, batchId)
-        : batch.inheritedExternalDemandCents;
+      const carriedDemandSourceBatchId = isFirstPass
+        ? await this.discoverCarriedDemandSource(tx, batch.merchantId, batchId)
+        : batch.carriedDemandSourceBatchId;
+
+      await tx.settlementCarriedDemandClaim.deleteMany({
+        where: { claimantBatchId: batchId },
+      });
+      const carriedFromPrior = carriedDemandSourceBatchId
+        ? await this.resolveCarriedDemandFromSource(
+            tx,
+            carriedDemandSourceBatchId,
+            batchId,
+          )
+        : 0;
+      if (carriedFromPrior > 0) {
+        await tx.settlementCarriedDemandClaim.create({
+          data: {
+            claimantBatchId: batchId,
+            sourceBatchId: carriedDemandSourceBatchId!,
+            amountCents: carriedFromPrior,
+          },
+        });
+      }
 
       const priorClawbackCents =
         totalClawbackDemandCents(candidates) + carriedFromPrior;
@@ -565,14 +613,17 @@ export class SettlementBatchBuilderService {
           netPayoutCents: result.netPayoutCents,
           carriedShortfallCents: result.carriedShortfallCents,
           carriedExternalDemandCents: newCarriedExternalDemandCents,
-          // [Fix round #4, R1] WRITE-ONCE, structurally: the immutable
-          // inherited amount is in this payload on the first pass ONLY.
-          // Round #3 wrote the same value back on every pass and relied on
-          // it being identical; not offering the column to a later pass at
-          // all is the same guarantee with nothing left to get wrong.
-          ...(isFirstPass
-            ? { inheritedExternalDemandCents: carriedFromPrior }
-            : {}),
+          // [Fix round #5] A PROJECTION of the claim row, written every
+          // pass. Round #4 made this write-once to stop a batch reading
+          // back its own mutated residual (bug 3) — correct then, but
+          // freezing it is what let a claim outlive the demand that
+          // justified it. R1 is preserved by the value's SOURCE, not by
+          // freezing it: it comes from the pinned predecessor, never from
+          // this batch's own earlier output. assertLedgerIdentity
+          // cross-checks it against the persisted claim row.
+          inheritedExternalDemandCents: carriedFromPrior,
+          // The PIN is the write-once half: identity only, no money.
+          ...(isFirstPass ? { carriedDemandSourceBatchId } : {}),
           shortfallResolvedAt: batch.shortfallResolvedAt ?? now,
           status: result.held ? "HELD" : "CALCULATED",
           holdReason: result.held
@@ -629,6 +680,10 @@ export class SettlementBatchBuilderService {
         updated,
         lockedLines.map((l) => l.reservationId),
       );
+      // [Fix round #5, R3] ...and refuse to resolve away demand a
+      // successor has already irrevocably collected on this batch's
+      // behalf.
+      await this.assertIrrevocableClaimsHonoured(tx, updated);
 
       return updated;
     });
@@ -653,7 +708,9 @@ export class SettlementBatchBuilderService {
    *    idempotence half of this class of bug rather than the money half.
    *    (This test caught exactly that in review: `[m]`'s convergence
    *    assertion failed on a moving timestamp before the `??` below.)
-   *  - `clawbackBatchId` = the most recent allocating batch, or NULL. It
+   *  - `clawbackBatchId` = the greatest allocating batchId, or NULL — a
+   *    deterministic choice that does not depend on recompute order (see
+   *    the orderBy below). It
    *    is an AUDIT POINTER ONLY. Per-batch attribution lives in the
    *    allocation rows; treating this single pointer as attribution is
    *    what made a line touched by two batches unattributable, and is the
@@ -684,7 +741,19 @@ export class SettlementBatchBuilderService {
       }),
       tx.settlementClawbackAllocation.findMany({
         where: { reservationId: { in: reservationIds } },
-        orderBy: [{ createdAt: "asc" }, { batchId: "asc" }],
+        // [Fix round #5, LOW 1] Ordered by batchId ALONE — never by
+        // createdAt. A recompute deletes and RE-INSERTS its rows with a
+        // fresh CURRENT_TIMESTAMP, so a createdAt-first ordering made the
+        // pointer below depend on which batch happened to recompute most
+        // recently: recompute(b2),recompute(b3) and
+        // recompute(b2),recompute(b3),recompute(b2) left different line
+        // rows, contradicting "any order of operator actions produces
+        // byte-identical rows". batchId is stable under re-insertion and
+        // still meaningful (cuids are time-prefixed, so the greatest id is
+        // the most recently created batch). No production reader consumes
+        // this pointer — it is audit only — but an audit pointer that
+        // flaps is still a broken invariant.
+        orderBy: [{ batchId: "asc" }],
       }),
     ]);
 
@@ -696,7 +765,8 @@ export class SettlementBatchBuilderService {
       const current = byReservation.get(a.reservationId);
       byReservation.set(a.reservationId, {
         total: (current?.total ?? 0) + a.amountCents,
-        // Ordered ascending above, so the last one seen is the most recent.
+        // Ordered by batchId ascending above, so the last one seen is the
+        // greatest — order-independent, unlike "most recently written".
         lastBatchId: a.batchId,
       });
     }
@@ -751,6 +821,32 @@ export class SettlementBatchBuilderService {
       select: { reservationId: true, amountCents: true },
     });
     const allocatedToLines = mine.reduce((s, a) => s + a.amountCents, 0);
+
+    // [Fix round #5] The EXTERNAL half, now a genuine cross-representation
+    // check rather than a round-trip of the same in-memory variable:
+    // `inheritedExternalDemandCents` is a projection of the persisted
+    // carried-demand claim, so re-reading the claim and comparing catches
+    // a projection that drifted from its ledger exactly the way the line
+    // half catches a line column that drifted from its allocations.
+    const claim = await tx.settlementCarriedDemandClaim.findUnique({
+      where: { claimantBatchId: batchId },
+      select: { amountCents: true },
+    });
+    const claimedCents = claim?.amountCents ?? 0;
+    if (batch.inheritedExternalDemandCents !== claimedCents) {
+      throw new Error(
+        `SETTLEMENT_LEDGER_DIVERGENCE: batch ${batchId} stores inheritedExternalDemandCents=${batch.inheritedExternalDemandCents} but its carried-demand claim records ${claimedCents}`,
+      );
+    }
+    if (
+      batch.carriedExternalDemandCents < 0 ||
+      batch.carriedExternalDemandCents > batch.inheritedExternalDemandCents
+    ) {
+      throw new Error(
+        `SETTLEMENT_LEDGER_DIVERGENCE: batch ${batchId} has carriedExternalDemandCents=${batch.carriedExternalDemandCents} outside [0, ${batch.inheritedExternalDemandCents}]`,
+      );
+    }
+
     const externalAbsorbed =
       batch.inheritedExternalDemandCents - batch.carriedExternalDemandCents;
 
@@ -914,58 +1010,82 @@ export class SettlementBatchBuilderService {
     }));
   }
 
-  /** The merchant's single most-recently-CREATED batch, excluding the one
-   * currently being recomputed. Only inherits if that most-recent batch is
-   * still HELD (an already-resolved prior batch, HELD or not, must never
-   * be looked at again — see the class doc comment's "chain, one link at a
-   * time" reasoning). Called ONLY on a batch's first-ever recompute pass
-   * (see recomputeBatch's `isFirstPass` gate — [Fix round, C2]).
+  /**
+   * [Fix round #5] SOURCE DISCOVERY — identity only, no money, called on a
+   * batch's first-ever pass and never again (the result is pinned in
+   * `carriedDemandSourceBatchId`).
    *
-   * [Fix round, C2 — second-order fix] What gets inherited is NOT the
-   * predecessor's full `carriedShortfallCents`. That total is the SUM of
-   * two things with very different re-discoverability:
-   *   - the predecessor's OWN fee/withholding deficit (its lines' bagFee +
-   *     VAT + withholding simply exceeded its own gross) — this has NO
-   *     representation anywhere except this batch row; if not carried
-   *     forward explicitly here, it is gone for good.
-   *   - unresolved refund-clawback demand (fresh or itself inherited from
-   *     an earlier link in the chain) — this DOES have an independent
-   *     representation: every settlement_line with clawbackAppliedAt still
-   *     NULL stays visible to the candidate query (lockAndResetOwnClawbackLedger) for EVERY future batch
-   *     of this merchant, regardless of which batch is HELD in between.
-   * Inheriting the full total here double-counts that second component —
-   * proven by a real scenario built while writing this fix's test: two
-   * refunded lines from one SENT batch partially absorbed by a HELD
-   * successor (one line fully resolved, one left with a remainder); if the
-   * THIRD batch inherited the second batch's full carriedShortfallCents
-   * AND separately had the candidate query re-find that same still-open
-   * line, the remaining demand would be charged twice. So this method
-   * returns exactly:
-   *   predecessor's OWN fee deficit (re-derived here from its stored
-   *     totals — max(0, -(gross - bagFee - bagFeeVat - withholding -
-   *     membershipOffset)), the same "avail2 negative" case
-   *     computeSettlement treats as the deficit component of its own
-   *     shortfall output)
-   *   + predecessor.carriedExternalDemandCents (what THAT batch itself
-   *     still owed from ITS OWN predecessor, unresolved — recursing the
-   *     same split back through the chain; this is NOT the same as its
-   *     carriedShortfallCents, which also includes fresh line-attributable
-   *     clawback the predecessor happened to face on its own last pass).
-   * Verified by node simulation for a 3-batch chain mixing both fee-
-   * deficit-only and clawback-only links before writing this: sums
-   * correctly with no double count and no silent loss either way.
+   * The merchant's single most-recently-CREATED other batch, and only if
+   * that batch is still HELD — an already-resolved predecessor has nothing
+   * outstanding to hand forward, and the chain is walked one link at a
+   * time (this batch inherits from its immediate predecessor, which in
+   * turn inherited from its own). Pinning matters: without it, a later
+   * pass would re-run this query and could silently re-target a NEWER
+   * sibling created in the meantime, changing this batch's inherited
+   * amount for a reason that has nothing to do with it.
    *
-   * [Fix round, I5] Locks the candidate row (`FOR UPDATE`) — defense in
-   * depth against two DIFFERENT brand-new batches for the same merchant
-   * (different days) being first-computed concurrently and both reading
-   * the same predecessor before either commits; deterministic tie-break
-   * (`id DESC` after `createdAt DESC`) since two batches created within
-   * the same millisecond would otherwise order arbitrarily.
+   * `FOR UPDATE` on the candidate — defence in depth against two different
+   * brand-new batches for the same merchant being first-computed
+   * concurrently and both pinning the same predecessor before either
+   * commits. Deterministic tie-break (`id DESC` after `createdAt DESC`)
+   * since two batches created within the same millisecond would otherwise
+   * order arbitrarily.
+   *
+   * WHAT IS AND IS NOT INHERITED is unchanged from fix round #2's
+   * analysis, and still matters: the predecessor's `carriedShortfallCents`
+   * is the SUM of two things with very different re-discoverability, and
+   * only one of them may be carried here.
+   *   - its OWN fee/withholding deficit — no representation anywhere
+   *     except that batch row, so it must be handed forward explicitly;
+   *   - unresolved refund-clawback demand — which HAS an independent
+   *     representation: every settlement_line whose allocations do not yet
+   *     cover its demand stays visible to EVERY future batch's candidate
+   *     query. Carrying it here as well would charge it twice.
+   * `exportableCarriedDemandCents` therefore returns own-fee-deficit +
+   * the predecessor's own unabsorbed inherited residual, never its full
+   * carriedShortfallCents.
    */
-  private async resolveCarriedShortfall(
+  private async discoverCarriedDemandSource(
     tx: Prisma.TransactionClient,
     merchantId: string,
     excludeBatchId: string,
+  ): Promise<string | null> {
+    const rows = await tx.$queryRaw<{ id: string; status: string }[]>(
+      Prisma.sql`
+        SELECT "id", "status"
+        FROM "settlement_batches"
+        WHERE "merchantId" = ${merchantId} AND "id" != ${excludeBatchId}
+        ORDER BY "createdAt" DESC, "id" DESC
+        LIMIT 1
+        FOR UPDATE
+      `,
+    );
+    const mostRecent = rows[0];
+    return mostRecent?.status === "HELD" ? mostRecent.id : null;
+  }
+
+  /**
+   * [Fix round #5] How much of the pinned predecessor's demand this batch
+   * may take over, re-derived from the predecessor's CURRENT state on
+   * every pass.
+   *
+   * `FOR UPDATE` on the source serialises this against the source's own
+   * concurrent recompute, so a claim can never be sized against a state
+   * that is being rewritten underneath it.
+   *
+   * The subtraction of OTHER claims on the same source is structural, not
+   * defensive arithmetic: the caller has already DELETEd its own claim
+   * row, so everything this query still sees belongs to somebody else and
+   * has already been taken over by them. In the normal chain there is at
+   * most one claimant per source (once a successor exists it is the more
+   * recent batch, so the next batch pins IT, not the original), but the
+   * subtraction means two claimants racing the same predecessor cannot
+   * both take the whole amount.
+   */
+  private async resolveCarriedDemandFromSource(
+    tx: Prisma.TransactionClient,
+    sourceBatchId: string,
+    claimantBatchId: string,
   ): Promise<number> {
     const rows = await tx.$queryRaw<
       {
@@ -981,25 +1101,81 @@ export class SettlementBatchBuilderService {
       SELECT "status", "grossCents", "bagFeeCents", "bagFeeVatCents",
         "withholdingCents", "membershipOffsetCents", "carriedExternalDemandCents"
       FROM "settlement_batches"
-      WHERE "merchantId" = ${merchantId} AND "id" != ${excludeBatchId}
-      ORDER BY "createdAt" DESC, "id" DESC
-      LIMIT 1
+      WHERE "id" = ${sourceBatchId}
       FOR UPDATE
     `);
-    const mostRecent = rows[0];
-    if (mostRecent?.status !== "HELD") {
-      return 0;
-    }
-    const ownFeeDeficitCents = Math.max(
-      0,
-      -(
-        mostRecent.grossCents -
-        mostRecent.bagFeeCents -
-        mostRecent.bagFeeVatCents -
-        mostRecent.withholdingCents -
-        mostRecent.membershipOffsetCents
-      ),
+    const source = rows[0];
+    if (!source) return 0;
+
+    const exportable = exportableCarriedDemandCents(source);
+    if (exportable <= 0) return 0;
+
+    const others = await tx.settlementCarriedDemandClaim.findMany({
+      where: { sourceBatchId, claimantBatchId: { not: claimantBatchId } },
+      select: { amountCents: true },
+    });
+    const alreadyTaken = others.reduce((sum, c) => sum + c.amountCents, 0);
+    return Math.max(0, exportable - alreadyTaken);
+  }
+
+  /**
+   * [Fix round #5, R3] The SOURCE-side tripwire, the counterpart to
+   * assertLedgerIdentity's claimant-side one.
+   *
+   * A claim held by a batch that can still recompute is always retirable:
+   * the moment this batch's demand shrinks, that successor's next pass
+   * re-derives a smaller claim (or none). A claim held by a batch that can
+   * NO LONGER recompute — anything outside CALCULATED/HELD — is committed
+   * money: it was withheld from a payout that has been approved or already
+   * sent, and nothing can hand it back through the claimant.
+   *
+   * So if this batch's recompute would leave it exporting LESS than such a
+   * claim already collected, the two ledgers have genuinely parted company
+   * and the merchant has been charged for a demand that no longer exists.
+   * That cannot be corrected from inside this transaction — returning the
+   * difference means increasing a payout, which is a credit
+   * `computeSettlement` has no term for and which four audits have
+   * verified must not be reworked here. So this refuses to commit, with a
+   * named error, exactly as C3's `SETTLEMENT_PAYOUT_ALREADY_ATTEMPTED`
+   * refuses to re-open a batch whose money is already in flight: the batch
+   * keeps its previous, self-consistent state and an operator gets a loud,
+   * specific reconciliation signal instead of a silent under-payment.
+   *
+   * This is the one corner of the class that is contained rather than
+   * eliminated — see task-8-report.md §15 for the precise statement.
+   */
+  private async assertIrrevocableClaimsHonoured(
+    tx: Prisma.TransactionClient,
+    batch: SettlementBatch,
+  ): Promise<void> {
+    const claims = await tx.settlementCarriedDemandClaim.findMany({
+      where: { sourceBatchId: batch.id },
+      select: {
+        claimantBatchId: true,
+        amountCents: true,
+        claimantBatch: { select: { status: true } },
+      },
+    });
+    if (claims.length === 0) return;
+
+    const irrevocable = claims.filter(
+      (c) => !RECOMPUTABLE_SETTLEMENT_STATUSES.includes(c.claimantBatch.status),
     );
-    return ownFeeDeficitCents + mostRecent.carriedExternalDemandCents;
+    if (irrevocable.length === 0) return;
+
+    const collected = irrevocable.reduce((sum, c) => sum + c.amountCents, 0);
+    const exportable = exportableCarriedDemandCents(batch);
+    if (collected > exportable) {
+      throw new Error(
+        `SETTLEMENT_CARRIED_DEMAND_ALREADY_COLLECTED: batch ${batch.id} would export only ${exportable} kuruş after this recompute, but ${irrevocable
+          .map(
+            (c) =>
+              `${c.claimantBatchId} (${c.claimantBatch.status}, ${c.amountCents})`,
+          )
+          .join(
+            ", ",
+          )} already withheld ${collected} kuruş of its demand from a payout that can no longer be recomputed. Refusing to commit — the difference is owed back to the merchant and needs manual reconciliation, not a silent re-derivation.`,
+      );
+    }
   }
 }
