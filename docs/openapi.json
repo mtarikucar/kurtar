@@ -4711,7 +4711,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "",
             "content": {
               "application/json": {
@@ -4720,9 +4720,6 @@
                 }
               }
             }
-          },
-          "201": {
-            "description": ""
           },
           "400": {
             "description": "Validation failed.",

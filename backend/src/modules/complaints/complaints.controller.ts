@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
 import {
   ApiBearerAuth,
+  ApiCreatedResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -31,7 +32,12 @@ export class ComplaintsController {
   @ApiOperation({
     summary: "File a complaint (ETAHS 15-calendar-day SLA starts now).",
   })
-  @ApiOkResponse({ type: ComplaintTicketDto })
+  // [Fix round 2] A bare @Post() with no @HttpCode override returns 201 at
+  // runtime (Nest's own default) — @ApiOkResponse (a 200) described a
+  // status this route never actually sends, leaving the REAL 201 bare
+  // with no schema in the generated spec. @ApiCreatedResponse documents
+  // the response under the status code the server genuinely returns.
+  @ApiCreatedResponse({ type: ComplaintTicketDto })
   @Post()
   create(@CurrentUser("id") userId: string, @Body() dto: CreateComplaintDto) {
     return this.complaints.create(userId, dto);
