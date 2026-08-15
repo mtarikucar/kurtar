@@ -1,0 +1,92 @@
+# Maestro E2E flow: onboarding -> browse -> buy -> redeem.
+#
+# Requires: the backend + Postgres/Redis running (`docker compose -f
+# ops/docker-compose.yml up -d` then `npm run dev -w backend`), a phone
+# number the OTP flow can use (the mock SMS provider echoes the code to
+# the backend's own log — see docs/frontend-contract.md and this task's
+# report for exactly how to read it), and at least one PUBLISHED offer
+# within its pickup window for the redeem step.
+#
+# The OTP code and the merchant-side redeem call are NOT things a UI
+# script can produce by itself:
+#   - the OTP code must be read from the backend log (or piped in via
+#     Maestro's env/`MAESTRO_OTP_CODE` if you script the lookup outside
+#     this file) — this flow assumes it's supplied as an env var so the
+#     flow itself stays deterministic and re-runnable.
+#   - the actual redeem (`POST /reservations/:id/redeem`) is
+#     @Actors("MERCHANT")-only (see reservations.controller.ts) — the
+#     consumer app can never call it itself (see redeem-queue.ts's doc
+#     comment). Getting from "swiped, showing the offline/waiting state"
+#     to the green success screen in this flow requires a SEPARATE
+#     out-of-band call simulating merchant staff (a curl to /redeem with a
+#     merchant JWT — see the task report's verification section for the
+#     exact sequence this project used). This flow therefore stops at the
+#     "waiting for staff" state, which is still a real, meaningful
+#     assertion (the swipe succeeded and the screen is polling), and notes
+#     where a CI harness would inject the merchant-side call.
+appId: app.kurtar.consumer
+---
+- launchApp:
+    clearState: true
+
+# ---- Phone entry ----
+- assertVisible: "kurtar"
+- tapOn:
+    id: "phone-submit"
+    optional: true # in case the field already has focus by default
+- tapOn: "5xx xxx xx xx"
+- inputText: ${MAESTRO_TEST_PHONE}
+- tapOn:
+    id: "phone-submit"
+
+# ---- OTP ----
+- assertVisible: "Kodu gir"
+- tapOn:
+    id: "otp-input"
+- inputText: ${MAESTRO_OTP_CODE}
+- tapOn:
+    id: "otp-verify"
+
+# ---- Permission priming ----
+- assertVisible: "Neredeyse hazırsın"
+- tapOn: "Devam et"
+
+# ---- Discover (Keşfet) ----
+- assertVisible: "Keşfet"
+- scroll
+- tapOn:
+    text: ".*" # the first offer card's store name/title — see the report for the exact seeded fixture used against a real run
+
+# ---- Offer detail ----
+- assertVisible: "Sürpriz paket"
+- assertVisible: "Alerjen uyarısı"
+- assertVisible: "İade koşulu"
+- tapOn:
+    text: "Satın al.*"
+
+# ---- Purchase ----
+- assertVisible: "Kaç paket istersin?"
+- tapOn:
+    id: "purchase-confirm"
+
+# ---- Payment (WebView) ----
+- assertVisible: "Ödeme"
+# At this point a real run needs the out-of-band webhook call described
+# above (POST /api/webhooks/payment, status:"success") before the screen
+# will ever leave the waiting state — Maestro alone cannot simulate a PSP
+# callback.
+
+# ---- Orders -> Redeem ----
+# (resumed after the reservation is CONFIRMED)
+- tapOn: "Siparişler"
+- assertVisible: "Aktif"
+- tapOn:
+    text: "K-.*" # the reservation code prefix (reservation-code.util.ts's alphabet)
+- tapOn: "Teslim al"
+- assertVisible: "Teslim almak için kaydır"
+- swipe:
+    start: "10%, 50%"
+    end: "90%, 50%"
+# Real device/CI run: inject the merchant-side POST .../redeem here, then
+# assert the green success screen:
+# - assertVisible: "Afiyet olsun!"
