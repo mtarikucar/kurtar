@@ -1,0 +1,92 @@
+/* Global reset + base typography. Colors/spacing/type always come from the
+   CSS custom properties theme.ts injects from @kurtar/ui-tokens — never a
+   hardcoded hex/px here. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  /* Respect the OS text-size setting; every rem below scales with it. */
+  font-size: 100%;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--color-neutral-50);
+  color: var(--color-neutral-900);
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  /* Mobile-first: the app must never require horizontal scrolling. */
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1,
+h2,
+h3,
+p,
+figure {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Visible focus rings everywhere — never `outline: none` without a
+   replacement. Uses :focus-visible so a mouse click doesn't ring a button,
+   but Tab navigation always does. */
+:focus-visible {
+  outline: 3px solid var(--color-info-500);
+  outline-offset: 2px;
+}
+
+/* Any element that opts out of the native outline (custom controls) must
+   supply its own focus style — enforced by convention in each component's
+   module.css, this rule is the fallback net. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--color-info-500);
+  outline-offset: 2px;
+}

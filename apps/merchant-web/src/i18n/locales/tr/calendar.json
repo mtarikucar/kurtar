@@ -1,0 +1,22 @@
+{
+  "title": "Takvim & Teklifler",
+  "weekPrev": "Önceki hafta",
+  "weekNext": "Sonraki hafta",
+  "dayEmpty": "Bugün için teklif yok",
+  "listingLimitedNotice": "Bu ekran şu anda yalnızca bugünün tekliflerini listeleyebiliyor. Diğer günler için yine de teklif oluşturabilir ya da zamanlayabilirsiniz.",
+  "todayGapWarning": "Bugün için henüz bir teklif yok.",
+  "otherDayNotice": "Bu tarih için mevcut teklifler burada görüntülenemiyor — yeni bir teklif oluşturabilirsiniz.",
+  "addOffer": "Bu güne teklif ekle",
+  "createSheet": {
+    "heading": "{{date}} için teklif oluştur",
+    "template": "Paket şablonu",
+    "qty": "Adet",
+    "start": "Teslim başlangıcı",
+    "end": "Teslim bitişi",
+    "publishNow": "Hemen yayınla",
+    "scheduleFor": "İleri tarihte otomatik yayınla",
+    "publishAt": "Yayın saati",
+    "submit": "Teklifi oluştur",
+    "submitting": "Oluşturuluyor…"
+  }
+}

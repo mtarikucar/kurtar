@@ -1,0 +1,40 @@
+{
+  "title": "Hesabınızı satışa hazırlayın",
+  "draft": {
+    "heading": "Başvurunuzu tamamlayın",
+    "body": "Satışa başlamadan önce başvurunuzu gözden geçirip onaya göndermeniz gerekiyor. Bu son bir adım — bilgileriniz zaten kayıtlı."
+  },
+  "submitted": {
+    "heading": "Başvurunuz incelemede",
+    "body": "Ekibimiz bilgilerinizi kontrol ediyor. Onaylandığında buradan bildirim alacak ve mağaza eklemeye başlayabileceksiniz.",
+    "eta": "İnceleme genellikle 1-2 iş günü sürer."
+  },
+  "underReview": {
+    "heading": "Başvurunuz inceleniyor",
+    "body": "Ekibimiz belgelerinizi değerlendiriyor. Kısa süre içinde sonuçlanacak."
+  },
+  "rejected": {
+    "heading": "Başvurunuz onaylanmadı",
+    "body": "Başvurunuzla ilgili bir sorun tespit edildi. Detaylar için bizimle iletişime geçin."
+  },
+  "suspended": {
+    "heading": "Hesabınız askıya alındı",
+    "body": "Hesabınızla ilgili bir işlem yapıldı. Detaylar için bizimle iletişime geçin."
+  },
+  "checklist": {
+    "heading": "Onaydan sonra sırasıyla:",
+    "store": "Mağazanızı ekleyin",
+    "template": "Paket şablonu oluşturun",
+    "publish": "Bugünün paketini tek dokunuşla yayınlayın"
+  },
+  "attestation": {
+    "heading": "Onaya göndermeden önce",
+    "stt": "Satış Sözleşmesi ve Teslim Taahhüdü'nü okudum ve kabul ediyorum.",
+    "intermediation": "kurtar Aracılık Sözleşmesi'ni okudum ve kabul ediyorum.",
+    "contractVersion": "Sözleşme sürümü",
+    "notesLabel": "Notlar (opsiyonel)",
+    "submit": "Onaya gönder",
+    "submitting": "Gönderiliyor…"
+  },
+  "logout": "Çıkış yap"
+}

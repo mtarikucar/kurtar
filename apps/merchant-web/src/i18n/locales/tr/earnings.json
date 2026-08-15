@@ -1,0 +1,48 @@
+{
+  "title": "Kazanç",
+  "membership": {
+    "heading": "Üyelik",
+    "statusRowLabel": "Durum",
+    "outstanding": "Kalan üyelik bakiyesi",
+    "nextAnniversary": "Sonraki yıl dönümü",
+    "clear": "Üyelik bakiyeniz kapalı — bir sonraki hakedişiniz doğrudan hesabınıza yatar.",
+    "statusLabel": {
+      "TRIAL": "Deneme",
+      "ACTIVE": "Aktif",
+      "PAST_DUE": "Vadesi geçmiş",
+      "CANCELLED": "İptal edildi"
+    }
+  },
+  "statements": {
+    "heading": "Hakediş dönemleri",
+    "empty": "Henüz bir hakediş döneminiz yok.",
+    "period": "{{start}} – {{end}}",
+    "net": "Net ödeme",
+    "due": "Ödeme tarihi",
+    "statusLabel": {
+      "PENDING": "Beklemede",
+      "CALCULATED": "Hesaplandı",
+      "APPROVED": "Onaylandı",
+      "SENT": "Gönderildi",
+      "SETTLED": "Ödendi",
+      "FAILED": "Başarısız",
+      "HELD": "Beklemede tutuluyor"
+    }
+  },
+  "detail": {
+    "heading": "Hakediş dökümü",
+    "gross": "Brüt satış",
+    "bagFee": "Platform hizmet bedeli",
+    "bagFeeVat": "Hizmet bedeli KDV (%20)",
+    "withholding": "Stopaj (%1)",
+    "membershipOffset": "Üyelik bakiyesi mahsubu",
+    "clawback": "İade geri talebi",
+    "carriedShortfall": "Sonraki döneme devreden bakiye",
+    "net": "Net ödemeniz",
+    "due": "Ödeme tarihi",
+    "held": "Bu dönem beklemede — brüt tutar, kesintileri karşılamaya yetmedi. Fark bir sonraki döneme devrediyor.",
+    "explainer": "Brüt satıştan platform hizmet bedeli ve KDV'si, %1 stopaj ve varsa üyelik bakiyeniz düşülerek net ödemeniz hesaplanır.",
+    "lineCount_one": "{{count}} rezervasyon",
+    "lineCount_other": "{{count}} rezervasyon"
+  }
+}

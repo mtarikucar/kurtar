@@ -1,0 +1,70 @@
+{
+  "title": "Mağazalar & Paketler",
+  "tabs": {
+    "stores": "Mağazalar",
+    "templates": "Paketler"
+  },
+  "stores": {
+    "addCta": "Yeni mağaza ekle",
+    "empty": {
+      "heading": "Henüz mağazanız yok",
+      "body": "Paket yayınlamak için önce bir mağaza eklemelisiniz."
+    },
+    "form": {
+      "titleNew": "Yeni mağaza",
+      "titleEdit": "Mağazayı düzenle",
+      "name": "Mağaza adı",
+      "address": "Adres",
+      "district": "İlçe",
+      "city": "İl",
+      "latitude": "Enlem",
+      "longitude": "Boylam",
+      "coordinatesHint": "Örn. İstanbul için enlem ~41.0, boylam ~28.9. Harita seçici bu sürümde yok — koordinatları doğrudan girin.",
+      "active": "Mağaza aktif",
+      "activeHint": "Pasif mağazalar için yeni teklif oluşturulamaz.",
+      "save": "Mağazayı kaydet",
+      "saving": "Kaydediliyor…"
+    }
+  },
+  "templates": {
+    "addCta": "Yeni paket şablonu",
+    "empty": {
+      "heading": "Henüz paket şablonunuz yok",
+      "body": "Bir şablon oluşturduktan sonra Bugün ekranından tek dokunuşla yayınlayabilirsiniz."
+    },
+    "priceFloorNote": "Platform kuralı gereği sürpriz paket fiyatı en az {{floor}} olmalı.",
+    "form": {
+      "titleNew": "Yeni paket şablonu",
+      "titleEdit": "Paket şablonunu düzenle",
+      "store": "Mağaza",
+      "titleField": "Paket adı",
+      "category": "Kategori",
+      "dietFlags": "Diyet etiketleri",
+      "allergenDisclaimer": "Alerjen bilgisi",
+      "allergenRequired": "Yasal olarak zorunludur",
+      "allergenHint": "Pakette bulunabilecek alerjenleri (gluten, fındık, süt vb.) müşteriye açıkça belirtin.",
+      "valueMin": "Tahmini değer (alt sınır)",
+      "valueMax": "Tahmini değer (üst sınır)",
+      "price": "Satış fiyatı",
+      "priceHint": "En az {{floor}} olmalı ve tahmini değerin altında kalmalı.",
+      "description": "Açıklama (opsiyonel)",
+      "active": "Şablon aktif",
+      "save": "Şablonu kaydet",
+      "saving": "Kaydediliyor…",
+      "deactivate": "Pasifleştir"
+    },
+    "categories": {
+      "MEAL": "Hazır yemek",
+      "BAKERY": "Fırın",
+      "GROCERY": "Market",
+      "PRODUCE": "Manav",
+      "OTHER": "Diğer"
+    },
+    "diet": {
+      "VEGETARIAN": "Vejetaryen",
+      "VEGAN": "Vegan",
+      "GLUTEN_FREE": "Glutensiz",
+      "LACTOSE_FREE": "Laktozsuz"
+    }
+  }
+}
