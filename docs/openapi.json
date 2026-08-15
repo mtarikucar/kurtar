@@ -2534,7 +2534,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/DiscoveryOffersResponseDto"
                 }
               }
             }
@@ -2618,7 +2618,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object"
+                    "$ref": "#/components/schemas/DiscoveryMapPinDto"
                   }
                 }
               }
@@ -2658,7 +2658,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscoveryStoreProfileResponseDto"
+                }
+              }
+            }
           }
         },
         "summary": "A store's public profile — today's offers + rating aggregate. No auth required.",
@@ -3935,7 +3942,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/FavoriteListResponseDto"
                 }
               }
             }
@@ -4496,7 +4503,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ImpactTotalsDto"
                 }
               }
             }
@@ -4566,7 +4573,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/PublicImpactTotalsDto"
                 }
               }
             }
@@ -4575,6 +4582,104 @@
         "summary": "Platform-wide impact totals for the landing page. No auth required; served from a 5-minute Redis cache.",
         "tags": [
           "impact"
+        ]
+      }
+    },
+    "/api/complaints/assigned": {
+      "get": {
+        "operationId": "MerchantComplaintsController_listAssigned",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "OPEN",
+                "MERCHANT_RESPONDED",
+                "RESOLVED",
+                "ESCALATED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "X-Client-Transport",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cookie"
+              ]
+            },
+            "description": "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List complaints assigned to the caller's own merchant.",
+        "tags": [
+          "complaints"
         ]
       }
     },
@@ -4606,6 +4711,16 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplaintTicketDto"
+                }
+              }
+            }
+          },
           "201": {
             "description": ""
           },
@@ -4705,7 +4820,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplaintListResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -4780,7 +4902,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ComplaintDetailResponseDto"
                 }
               }
             }
@@ -4908,104 +5030,6 @@
         ]
       }
     },
-    "/api/complaints/assigned": {
-      "get": {
-        "operationId": "MerchantComplaintsController_listAssigned",
-        "parameters": [
-          {
-            "name": "status",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "enum": [
-                "OPEN",
-                "MERCHANT_RESPONDED",
-                "RESOLVED",
-                "ESCALATED"
-              ],
-              "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "default": 1,
-              "type": "number"
-            }
-          },
-          {
-            "name": "pageSize",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20,
-              "type": "number"
-            }
-          },
-          {
-            "name": "X-Client-Transport",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "cookie"
-              ]
-            },
-            "description": "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body)."
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "description": "Validation failed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid access token.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List complaints assigned to the caller's own merchant.",
-        "tags": [
-          "complaints"
-        ]
-      }
-    },
     "/api/admin/complaints": {
       "get": {
         "operationId": "AdminComplaintsController_list",
@@ -5086,7 +5110,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminComplaintListResponseDto"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
@@ -5124,7 +5155,7 @@
             "bearer": []
           }
         ],
-        "summary": "List complaints with SLA countdown, filterable by status/merchant.",
+        "summary": "List complaints with SLA countdown, filterable by status/merchant/category.",
         "tags": [
           "admin"
         ]
@@ -5161,7 +5192,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/ComplaintDetailResponseDto"
                 }
               }
             }
@@ -5703,7 +5734,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AdminDashboardResponseDto"
                 }
               }
             }
@@ -5785,12 +5816,20 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "A streamed complaints.csv file.",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
             "content": {
-              "text/csv": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelopeDto"
                 }
@@ -5800,7 +5839,7 @@
           "401": {
             "description": "Missing or invalid access token.",
             "content": {
-              "text/csv": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelopeDto"
                 }
@@ -5810,7 +5849,7 @@
           "403": {
             "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
             "content": {
-              "text/csv": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelopeDto"
                 }
@@ -5864,12 +5903,20 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "A streamed settlements.csv file.",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
             "content": {
-              "text/csv": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelopeDto"
                 }
@@ -5879,7 +5926,7 @@
           "401": {
             "description": "Missing or invalid access token.",
             "content": {
-              "text/csv": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelopeDto"
                 }
@@ -5889,7 +5936,7 @@
           "403": {
             "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
             "content": {
-              "text/csv": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelopeDto"
                 }
@@ -5943,12 +5990,20 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "A streamed merchants.csv file.",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
           },
           "400": {
             "description": "Validation failed.",
             "content": {
-              "text/csv": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelopeDto"
                 }
@@ -5958,7 +6013,7 @@
           "401": {
             "description": "Missing or invalid access token.",
             "content": {
-              "text/csv": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelopeDto"
                 }
@@ -5968,7 +6023,7 @@
           "403": {
             "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
             "content": {
-              "text/csv": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelopeDto"
                 }
@@ -6454,6 +6509,263 @@
           }
         }
       },
+      "DiscoveryOfferStoreDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "district": {
+            "type": "string"
+          },
+          "distanceM": {
+            "type": "number",
+            "description": "Meters from the query's lat/lng."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "district",
+          "distanceM"
+        ]
+      },
+      "DiscoveryOfferTemplateDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "dietFlags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "priceCents": {
+            "type": "number"
+          },
+          "originalValueCentsMin": {
+            "type": "number"
+          },
+          "originalValueCentsMax": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "title",
+          "category",
+          "dietFlags",
+          "priceCents",
+          "originalValueCentsMin",
+          "originalValueCentsMax"
+        ]
+      },
+      "DiscoveryOfferItemDto": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string"
+          },
+          "store": {
+            "$ref": "#/components/schemas/DiscoveryOfferStoreDto"
+          },
+          "template": {
+            "$ref": "#/components/schemas/DiscoveryOfferTemplateDto"
+          },
+          "pickupStartAt": {
+            "type": "string"
+          },
+          "pickupEndAt": {
+            "type": "string"
+          },
+          "qtyLeft": {
+            "type": "number"
+          },
+          "coverImageUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "offerId",
+          "store",
+          "template",
+          "pickupStartAt",
+          "pickupEndAt",
+          "qtyLeft",
+          "coverImageUrl"
+        ]
+      },
+      "DiscoveryOffersResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryOfferItemDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "DiscoveryMapPinDto": {
+        "type": "object",
+        "properties": {
+          "storeId": {
+            "type": "string"
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          },
+          "minPriceCents": {
+            "type": "number"
+          },
+          "offersCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "storeId",
+          "lat",
+          "lng",
+          "minPriceCents",
+          "offersCount"
+        ]
+      },
+      "DiscoveryStorePublicDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "district": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "coverImageUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "categoryTags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "openingHoursJson": {
+            "type": "object",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "address",
+          "district",
+          "city",
+          "coverImageUrl",
+          "categoryTags",
+          "openingHoursJson"
+        ]
+      },
+      "DiscoveryTodaysOfferDto": {
+        "type": "object",
+        "properties": {
+          "offerId": {
+            "type": "string"
+          },
+          "template": {
+            "$ref": "#/components/schemas/DiscoveryOfferTemplateDto"
+          },
+          "pickupStartAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "pickupEndAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "qtyLeft": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "offerId",
+          "template",
+          "pickupStartAt",
+          "pickupEndAt",
+          "qtyLeft"
+        ]
+      },
+      "DiscoveryStoreRatingDto": {
+        "type": "object",
+        "properties": {
+          "average": {
+            "type": "number"
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "average",
+          "count"
+        ]
+      },
+      "DiscoveryStoreProfileResponseDto": {
+        "type": "object",
+        "properties": {
+          "store": {
+            "$ref": "#/components/schemas/DiscoveryStorePublicDto"
+          },
+          "todaysOffers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryTodaysOfferDto"
+            }
+          },
+          "rating": {
+            "$ref": "#/components/schemas/DiscoveryStoreRatingDto"
+          }
+        },
+        "required": [
+          "store",
+          "todaysOffers",
+          "rating"
+        ]
+      },
       "UpdateNotificationPreferencesDto": {
         "type": "object",
         "properties": {
@@ -6529,6 +6841,96 @@
           "effectiveFrom"
         ]
       },
+      "FavoriteStoreSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "district": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "coverImageUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "avgStars": {
+            "type": "number"
+          },
+          "ratingCount": {
+            "type": "number"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "district",
+          "city",
+          "coverImageUrl",
+          "avgStars",
+          "ratingCount",
+          "active"
+        ]
+      },
+      "FavoriteListItemDto": {
+        "type": "object",
+        "properties": {
+          "storeId": {
+            "type": "string"
+          },
+          "favoritedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "store": {
+            "$ref": "#/components/schemas/FavoriteStoreSummaryDto"
+          },
+          "hasLiveOfferToday": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "storeId",
+          "favoritedAt",
+          "store",
+          "hasLiveOfferToday"
+        ]
+      },
+      "FavoriteListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FavoriteListItemDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
       "CreateRatingDto": {
         "type": "object",
         "properties": {
@@ -6554,6 +6956,57 @@
         },
         "required": [
           "overallStars"
+        ]
+      },
+      "ImpactTotalsDto": {
+        "type": "object",
+        "properties": {
+          "mealsSaved": {
+            "type": "number"
+          },
+          "co2eGrams": {
+            "type": "number"
+          },
+          "moneySavedCents": {
+            "type": "number"
+          },
+          "count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "mealsSaved",
+          "co2eGrams",
+          "moneySavedCents",
+          "count"
+        ]
+      },
+      "PublicImpactTotalsDto": {
+        "type": "object",
+        "properties": {
+          "mealsSaved": {
+            "type": "number"
+          },
+          "co2eGrams": {
+            "type": "number"
+          },
+          "moneySavedCents": {
+            "type": "number"
+          },
+          "count": {
+            "type": "number"
+          },
+          "generatedAt": {
+            "type": "string",
+            "description": "ISO instant this cached aggregate was computed."
+          }
+        },
+        "required": [
+          "mealsSaved",
+          "co2eGrams",
+          "moneySavedCents",
+          "count",
+          "generatedAt"
         ]
       },
       "CreateComplaintDto": {
@@ -6590,6 +7043,228 @@
           "description"
         ]
       },
+      "ComplaintTicketDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "reservationId": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "FOOD_QUALITY",
+              "MISSING_ITEMS",
+              "WRONG_ITEMS",
+              "STORE_CLOSED_NO_SHOW",
+              "RUDE_STAFF",
+              "PAYMENT_BILLING",
+              "SAFETY_HYGIENE",
+              "OTHER"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "MERCHANT_RESPONDED",
+              "RESOLVED",
+              "ESCALATED"
+            ]
+          },
+          "slaDeadlineAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "resolvedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "slaWarningSentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "category",
+          "description",
+          "status",
+          "slaDeadlineAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ComplaintListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComplaintTicketDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "ComplaintMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "complaintId": {
+            "type": "string"
+          },
+          "authorType": {
+            "type": "string",
+            "enum": [
+              "CONSUMER",
+              "MERCHANT",
+              "ADMIN"
+            ]
+          },
+          "authorId": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "complaintId",
+          "authorType",
+          "authorId",
+          "body",
+          "createdAt"
+        ]
+      },
+      "ComplaintDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "reservationId": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "FOOD_QUALITY",
+              "MISSING_ITEMS",
+              "WRONG_ITEMS",
+              "STORE_CLOSED_NO_SHOW",
+              "RUDE_STAFF",
+              "PAYMENT_BILLING",
+              "SAFETY_HYGIENE",
+              "OTHER"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "MERCHANT_RESPONDED",
+              "RESOLVED",
+              "ESCALATED"
+            ]
+          },
+          "slaDeadlineAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "resolvedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "slaWarningSentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComplaintMessageDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "category",
+          "description",
+          "status",
+          "slaDeadlineAt",
+          "createdAt",
+          "updatedAt",
+          "messages"
+        ]
+      },
       "CreateComplaintMessageDto": {
         "type": "object",
         "properties": {
@@ -6601,6 +7276,113 @@
         },
         "required": [
           "body"
+        ]
+      },
+      "AdminComplaintListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "reservationId": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "FOOD_QUALITY",
+              "MISSING_ITEMS",
+              "WRONG_ITEMS",
+              "STORE_CLOSED_NO_SHOW",
+              "RUDE_STAFF",
+              "PAYMENT_BILLING",
+              "SAFETY_HYGIENE",
+              "OTHER"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "MERCHANT_RESPONDED",
+              "RESOLVED",
+              "ESCALATED"
+            ]
+          },
+          "slaDeadlineAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "resolvedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "slaWarningSentAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "slaCountdownMs": {
+            "type": "number",
+            "description": "Milliseconds until slaDeadlineAt — negative once breached."
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "category",
+          "description",
+          "status",
+          "slaDeadlineAt",
+          "createdAt",
+          "updatedAt",
+          "slaCountdownMs"
+        ]
+      },
+      "AdminComplaintListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminComplaintListItemDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
         ]
       },
       "AdminComplaintActionDto": {
@@ -6648,6 +7430,52 @@
             "maxLength": 2000
           }
         }
+      },
+      "AdminDashboardTodayDto": {
+        "type": "object",
+        "properties": {
+          "gmvCents": {
+            "type": "number"
+          },
+          "redeemedCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "gmvCents",
+          "redeemedCount"
+        ]
+      },
+      "AdminDashboardResponseDto": {
+        "type": "object",
+        "properties": {
+          "pendingMerchantApprovals": {
+            "type": "number"
+          },
+          "openComplaints": {
+            "type": "number"
+          },
+          "complaintsSlaAtRisk": {
+            "type": "number"
+          },
+          "openReports": {
+            "type": "number"
+          },
+          "settlementBatchesNeedingAttention": {
+            "type": "number"
+          },
+          "today": {
+            "$ref": "#/components/schemas/AdminDashboardTodayDto"
+          }
+        },
+        "required": [
+          "pendingMerchantApprovals",
+          "openComplaints",
+          "complaintsSlaAtRisk",
+          "openReports",
+          "settlementBatchesNeedingAttention",
+          "today"
+        ]
       }
     }
   }
