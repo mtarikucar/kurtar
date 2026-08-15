@@ -1,13 +1,12 @@
 /** Formatting helpers — Turkish locale throughout (₺ money, tr-TR dates/times). */
+import { formatMoneyCents } from "@kurtar/ui-tokens";
 
-/** Cents (kuruş) -> "₺49,90". Every price in the API is an integer cents field. */
-export function formatPriceCents(cents: number): string {
-  const lira = cents / 100;
-  return `${lira.toLocaleString("tr-TR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} ₺`;
-}
+/** Cents (kuruş) -> "₺49,90". Every price in the API is an integer cents
+ * field. Re-exported from the shared `@kurtar/ui-tokens` formatter — this
+ * app's own hand-rolled version used to suffix the symbol ("49,90 ₺"),
+ * diverging from merchant-web/admin-web/landing's shared "₺49,90" prefix
+ * convention (Task 14's consistency sweep found the mismatch). */
+export const formatPriceCents = formatMoneyCents;
 
 /** A rounded value-band, e.g. "150–200 ₺" — original value min/max are always whole-lira-ish cents. */
 export function formatValueBand(minCents: number, maxCents: number): string {

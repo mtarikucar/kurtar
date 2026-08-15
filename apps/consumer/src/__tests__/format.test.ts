@@ -7,10 +7,10 @@ import {
 } from "../lib/format";
 
 describe("format.ts — impact/money/distance number formatting", () => {
-  it("formats kuruş as Turkish lira with 2 decimals", () => {
-    expect(formatPriceCents(4990)).toBe("49,90 ₺");
-    expect(formatPriceCents(0)).toBe("0,00 ₺");
-    expect(formatPriceCents(100000)).toBe("1.000,00 ₺");
+  it("formats kuruş as Turkish lira with 2 decimals (shared @kurtar/ui-tokens formatter — see that package's money.ts)", () => {
+    expect(formatPriceCents(4990)).toBe("₺49,90");
+    expect(formatPriceCents(0)).toBe("₺0,00");
+    expect(formatPriceCents(100000)).toBe("₺1.000,00");
   });
 
   it("formats a value band as a range, collapsing equal min/max", () => {

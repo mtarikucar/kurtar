@@ -1,18 +1,15 @@
 /** Money/date formatting helpers — the ONE place each format is defined, so
  * every screen renders kuruş/dates identically. */
-
-const currencyFormatter = new Intl.NumberFormat("tr-TR", {
-  style: "currency",
-  currency: "TRY",
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+import { formatMoneyCents } from "@kurtar/ui-tokens";
 
 /** Kuruş (Int, always the wire unit — see backend/prisma/schema.prisma's
- * money convention) -> a formatted "₺59,00" string. */
-export function formatKurus(cents: number): string {
-  return currencyFormatter.format(cents / 100);
-}
+ * money convention) -> a formatted "₺59,00" string. Re-exported under this
+ * app's existing name from the shared `@kurtar/ui-tokens` formatter (Task
+ * 14's consistency sweep found admin-web and this app had independently
+ * converged on the identical Intl.NumberFormat shape, while the consumer
+ * app's own copy had drifted to a different symbol placement — now one
+ * formatter, three call sites). */
+export const formatKurus = formatMoneyCents;
 
 const timeFormatter = new Intl.DateTimeFormat("tr-TR", {
   timeZone: "Europe/Istanbul",

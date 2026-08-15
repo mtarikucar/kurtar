@@ -47,7 +47,11 @@
   },
   "pickup": {
     "heading": "Teslim listesi",
-    "unavailable": "Rezervasyon bazında teslim listesi şu anda görüntülenemiyor. Müşteriler kendi telefonlarından teslim alabilir.",
+    "empty": "Bugün için henüz rezervasyon yok.",
+    "unknownCustomer": "Müşteri",
+    "qty_one": "{{count}} adet",
+    "qty_other": "{{count}} adet",
+    "redeemCta": "Teslim et",
     "manualHeading": "Manuel teslim",
     "manualBody": "Müşterinin telefonu çalışmıyorsa, rezervasyon kimliğini girerek teslim edildi olarak işaretleyebilirsiniz.",
     "manualLabel": "Rezervasyon kimliği",

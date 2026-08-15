@@ -13,3 +13,4 @@ export type { ColorRamp } from "./colors";
 export { spacing, radii } from "./spacing";
 export { typeScale } from "./typography";
 export type { TypeScaleToken } from "./typography";
+export { formatMoneyCents } from "./money";
