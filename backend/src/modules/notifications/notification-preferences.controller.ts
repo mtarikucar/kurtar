@@ -1,19 +1,31 @@
 import { Body, Controller, Get, Patch } from "@nestjs/common";
+import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { UpdateNotificationPreferencesDto } from "./dto/update-notification-preferences.dto";
 import { NotificationPreferencesService } from "./notification-preferences.service";
 
+@ApiTags("notifications")
+@ApiBearerAuth()
+@ApiStandardErrors()
 @Controller("me/notification-preferences")
 export class NotificationPreferencesController {
   constructor(private readonly preferences: NotificationPreferencesService) {}
 
+  @ApiOperation({
+    summary:
+      "Get the caller's own notification preferences (created with defaults on first read).",
+  })
   @Actors("CONSUMER")
   @Get()
   get(@CurrentUser("id") userId: string) {
     return this.preferences.getOrCreate(userId);
   }
 
+  @ApiOperation({
+    summary: "Update the caller's own notification preferences.",
+  })
   @Actors("CONSUMER")
   @Patch()
   update(

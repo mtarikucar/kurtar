@@ -6,6 +6,7 @@ import {
   RawBodyRequest,
   Req,
 } from "@nestjs/common";
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Request } from "express";
 import { Public } from "../auth/decorators/public.decorator";
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
@@ -28,6 +29,7 @@ import { PaymentSettleService } from "./payment-settle.service";
  * service's "unknown_merchant_oid" / "amount_mismatch" outcomes and their
  * own log lines).
  */
+@ApiTags("payments")
 @Controller("webhooks/payment")
 export class PaymentsWebhookController {
   private readonly logger = new Logger(PaymentsWebhookController.name);
@@ -37,6 +39,10 @@ export class PaymentsWebhookController {
     private readonly settle: PaymentSettleService,
   ) {}
 
+  @ApiOperation({
+    summary:
+      "Payment provider webhook callback. No bearer auth — verified by a provider-specific signature/shared-secret instead (see PaymentsFacadeService.parseWebhook). Always returns 200.",
+  })
   @Public()
   @Post()
   @HttpCode(200)

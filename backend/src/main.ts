@@ -4,6 +4,7 @@ import { NestExpressApplication } from "@nestjs/platform-express";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
+import { buildOpenApiDocument, setupSwaggerUi } from "./openapi.setup";
 
 async function bootstrap() {
   // rawBody: true additionally populates req.rawBody (a Buffer) alongside
@@ -41,6 +42,11 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  // [Task 9] Built AFTER setGlobalPrefix so every documented path already
+  // carries "/api" — see openapi.setup.ts's own doc comment.
+  const openApiDocument = buildOpenApiDocument(app);
+  setupSwaggerUi(app, openApiDocument);
 
   // Nest calls onModuleDestroy on SIGTERM/SIGINT so connections (DB, Redis —
   // added in later tasks) drain cleanly instead of being cut mid-request.

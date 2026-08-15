@@ -1,7 +1,9 @@
 import { Body, Controller, Post } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
+import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { UpdateLocationDto } from "./dto/update-location.dto";
 import { UserLocationService } from "./user-location.service";
 
@@ -10,10 +12,17 @@ import { UserLocationService } from "./user-location.service";
 // but loose enough not to fight normal foreground usage.
 const LOCATION_UPDATE_THROTTLE = { default: { limit: 20, ttl: 60_000 } };
 
+@ApiTags("notifications")
+@ApiBearerAuth()
+@ApiStandardErrors()
 @Controller("me")
 export class UserLocationController {
   constructor(private readonly userLocation: UserLocationService) {}
 
+  @ApiOperation({
+    summary:
+      "Report the caller's last-known device location (feeds the nearby-offer push fan-out).",
+  })
   @Actors("CONSUMER")
   @Throttle(LOCATION_UPDATE_THROTTLE)
   @Post("location")

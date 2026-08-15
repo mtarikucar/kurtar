@@ -1,5 +1,6 @@
 import { Type } from "class-transformer";
 import { IsEnum, IsLatitude, IsLongitude, IsOptional } from "class-validator";
+import { ApiPropertyOptional } from "@nestjs/swagger";
 import { BagCategory } from "@prisma/client";
 
 export class DiscoveryMapQueryDto {
@@ -19,6 +20,7 @@ export class DiscoveryMapQueryDto {
   @IsLatitude()
   north!: number;
 
+  @ApiPropertyOptional({ enum: BagCategory })
   @IsOptional()
   @IsEnum(BagCategory)
   category?: BagCategory;

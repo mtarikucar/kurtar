@@ -323,6 +323,79 @@ jobs:
           echo "Every migration folder has a down.sql."
 
   # -----------------------------------------------------------------
+  # [Task 9] OpenAPI contract-drift — docs/openapi.json (the committed
+  # spec Tasks 10-13's four frontends read as their contract) must always
+  # be exactly what `npm run openapi:generate` produces from the current
+  # source. Mirrors migrations-parity's own shape immediately above:
+  # regenerate into a throwaway location, diff against the committed
+  # file, fail loud on any divergence — a controller/DTO change that
+  # forgot to re-run the generator is caught here instead of silently
+  # shipping a stale contract to the frontend teams.
+  #
+  # Needs a reachable Postgres (PrismaService.onModuleInit eagerly
+  # $connect()s during NestFactory.create, and Prisma's own client
+  # requires DATABASE_URL to parse to a real connection string) — no
+  # migrations need to be applied first, since building the OpenAPI
+  # document never queries the database, only introspects route/DTO
+  # metadata. Same postgis image as every other job for consistency,
+  # even though PostGIS itself is never touched here.
+  # -----------------------------------------------------------------
+  openapi-contract-drift:
+    name: OpenAPI contract drift (docs/openapi.json)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: kurtar
+          POSTGRES_PASSWORD: kurtar
+          POSTGRES_DB: kurtar_openapi_ci
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U kurtar -d kurtar_openapi_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://kurtar:kurtar@localhost:5434/kurtar_openapi_ci
+      JWT_SECRET: openapi-ci-jwt-secret-32-chars-min
+      WEBHOOK_SECRET: openapi-ci-webhook-secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        working-directory: .
+        run: npm ci --no-audit --no-fund
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Regenerate docs/openapi.json and diff against the committed copy
+        run: |
+          set -euo pipefail
+          cp ../docs/openapi.json /tmp/openapi.committed.json
+          npm run openapi:generate
+          if ! diff -u /tmp/openapi.committed.json ../docs/openapi.json; then
+            echo "::error::docs/openapi.json is out of date — run 'npm run openapi:generate' in backend/ and commit the result."
+            exit 1
+          fi
+          echo "docs/openapi.json matches the current source — no drift."
+
+  # -----------------------------------------------------------------
   # Project hard rule: zero AI/Claude traces in commit messages, ever.
   # Greps the commit range this workflow run covers (PR base..head, or
   # the pushed range on a plain push) rather than any single commit.

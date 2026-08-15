@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Request, Response } from "express";
 import { AuthService } from "./auth.service";
 import { TokenService, IssuedTokens } from "./services/token.service";
@@ -83,6 +84,7 @@ function stripRefreshToken<T extends { refreshToken: string }>(
   return rest;
 }
 
+@ApiTags("auth")
 @Controller("auth")
 export class AuthController {
   constructor(
@@ -110,6 +112,9 @@ export class AuthController {
     return stripBody ? stripRefreshToken(result) : result;
   }
 
+  @ApiOperation({
+    summary: "Request a consumer OTP code by phone. No auth required.",
+  })
   @Public()
   @Throttle(OTP_REQUEST_THROTTLE)
   @Post("otp/request")
@@ -117,6 +122,10 @@ export class AuthController {
     return this.authService.requestConsumerOtp(dto.phone);
   }
 
+  @ApiOperation({
+    summary:
+      "Verify a consumer OTP code and issue a token pair. No auth required.",
+  })
   @Public()
   @Throttle(OTP_VERIFY_THROTTLE)
   @Post("otp/verify")
@@ -132,6 +141,7 @@ export class AuthController {
     return this.respond(res, result, wantsCookieOnlyTransport(req));
   }
 
+  @ApiOperation({ summary: "Merchant email/password login. No auth required." })
   @Public()
   @Throttle(LOGIN_THROTTLE)
   @Post("merchant/login")
@@ -147,6 +157,7 @@ export class AuthController {
     return this.respond(res, result, wantsCookieOnlyTransport(req));
   }
 
+  @ApiOperation({ summary: "Admin email/password login. No auth required." })
   @Public()
   @Throttle(LOGIN_THROTTLE)
   @Post("admin/login")
@@ -159,6 +170,10 @@ export class AuthController {
     return this.respond(res, result, wantsCookieOnlyTransport(req));
   }
 
+  @ApiOperation({
+    summary:
+      "Rotate a refresh token for a fresh token pair. No auth required (the refresh token IS the credential).",
+  })
   @Public()
   @Throttle(REFRESH_THROTTLE)
   @Post("refresh")
@@ -194,6 +209,10 @@ export class AuthController {
   // both pointless (that mints a token pair only to immediately destroy
   // it) and not meaningfully more secure: anyone holding a still-valid
   // refresh token could get a fresh access token via /refresh anyway.
+  @ApiOperation({
+    summary:
+      "Revoke a refresh token's whole family. No auth required (the refresh token IS the credential).",
+  })
   @Public()
   @Throttle(REFRESH_THROTTLE)
   @Post("logout")

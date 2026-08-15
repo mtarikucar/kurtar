@@ -8,14 +8,19 @@ import {
   Post,
   Query,
 } from "@nestjs/common";
+import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
 import { AllowUnapprovedMerchant } from "../auth/decorators/allow-unapproved-merchant.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { BagTemplatesService } from "./bag-templates.service";
 import { CreateBagTemplateDto } from "./dto/create-bag-template.dto";
 import { ListBagTemplatesQueryDto } from "./dto/list-bag-templates-query.dto";
 import { UpdateBagTemplateDto } from "./dto/update-bag-template.dto";
 
+@ApiTags("offers")
+@ApiBearerAuth()
+@ApiStandardErrors()
 @Controller("bag-templates")
 @Actors("MERCHANT")
 export class BagTemplatesController {
@@ -23,6 +28,10 @@ export class BagTemplatesController {
 
   // Writes (create/update/deactivate) require APPROVED by default —
   // MerchantApprovalGuard (modules/auth/guards/merchant-approval.guard.ts).
+  @ApiOperation({
+    summary:
+      "Create a bag template (the reusable listing template offers are created from).",
+  })
   @Post()
   create(
     @CurrentUser("merchantId") merchantId: string,
@@ -33,6 +42,7 @@ export class BagTemplatesController {
 
   // Reads stay available regardless of status — same reasoning as
   // StoresController's list/get.
+  @ApiOperation({ summary: "List the calling merchant's own bag templates." })
   @Get()
   @AllowUnapprovedMerchant()
   list(
@@ -42,12 +52,16 @@ export class BagTemplatesController {
     return this.bagTemplates.list(merchantId, query.storeId);
   }
 
+  @ApiOperation({
+    summary: "Get one of the calling merchant's own bag templates.",
+  })
   @Get(":id")
   @AllowUnapprovedMerchant()
   get(@CurrentUser("merchantId") merchantId: string, @Param("id") id: string) {
     return this.bagTemplates.get(merchantId, id);
   }
 
+  @ApiOperation({ summary: "Update a bag template." })
   @Patch(":id")
   update(
     @CurrentUser("merchantId") merchantId: string,
@@ -57,6 +71,9 @@ export class BagTemplatesController {
     return this.bagTemplates.update(merchantId, id, dto);
   }
 
+  @ApiOperation({
+    summary: "Deactivate a bag template (existing offers unaffected).",
+  })
   @Delete(":id")
   deactivate(
     @CurrentUser("merchantId") merchantId: string,
