@@ -1,10 +1,8 @@
 import { useEffect, useRef } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { client } from "../lib/api-client";
-import { RESERVATIONS_QUERY_KEY } from "./use-reservations";
+import { RESERVATIONS_QUERY_KEY, fetchMyReservations } from "./use-reservations";
 import { clearQueuedConfirmation, getAllQueuedConfirmations } from "../lib/redeem-queue";
-import type { ReservationListResponse } from "../lib/api-types";
 
 const FOREGROUND_SYNC_INTERVAL_MS = 20_000;
 
@@ -34,7 +32,7 @@ export function useGlobalRedeemSync(enabled: boolean) {
       const pending = await getAllQueuedConfirmations();
       if (pending.length === 0) return;
       try {
-        const result = (await client.reservations.listMine()) as unknown as ReservationListResponse;
+        const result = await fetchMyReservations();
         queryClient.setQueryData(RESERVATIONS_QUERY_KEY, result);
         for (const entry of pending) {
           const match = result.items.find((r) => r.id === entry.reservationId);

@@ -168,7 +168,13 @@ export type ReservationStatus =
 
 /** backend/src/modules/reservations/dto/reservation-response.dto.ts's
  * `ReservationDto` (the raw Reservation Prisma model, scalar columns
- * only; Date fields arrive as ISO strings over JSON). */
+ * only; Date fields arrive as ISO strings over JSON). The nullable fields
+ * below are typed `| undefined` too because the committed OpenAPI schema
+ * doesn't list them in `required` (a nullable `@ApiProperty()` without an
+ * explicit `required: true`) even though the backend always serializes
+ * them (as `null` or a real value, never an absent key) — matching the
+ * real, now-correctly-typed `@kurtar/api-client` response shape exactly,
+ * rather than a narrower hand guess that a real response can violate. */
 export interface ReservationItem {
   id: string;
   code: string;
@@ -180,9 +186,11 @@ export interface ReservationItem {
   totalCents: number;
   status: ReservationStatus;
   cancelDeadlineAt: string;
-  redeemedAt: string | null;
-  redeemedByMerchantUserId: string | null;
-  pickupReminderSentAt: string | null;
+  redeemedAt?: string | null;
+  redeemedByActorType?: "CONSUMER" | "MERCHANT" | "ADMIN" | null;
+  redeemedByUserId?: string | null;
+  redeemedByMerchantUserId?: string | null;
+  pickupReminderSentAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

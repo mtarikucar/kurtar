@@ -1,8 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client } from "../../api/client";
-import { castAdminResponse } from "../../api/admin-types";
 import type {
-  AdminSettlementDetail,
   AdminSettlementListResponse,
   SettlementStatus,
 } from "../../api/admin-types";
@@ -32,11 +30,7 @@ export function useSettlementsList(
         // 400 "pageSize must not be greater than 100".
         const pages = await Promise.all(
           NEEDS_ATTENTION_STATUSES.map((status) =>
-            client.admin.settlements
-              .list({ status, page: 1, pageSize: 100 })
-              .then((res) =>
-                castAdminResponse<AdminSettlementListResponse>(res),
-              ),
+            client.admin.settlements.list({ status, page: 1, pageSize: 100 }),
           ),
         );
         const merged = pages
@@ -51,12 +45,11 @@ export function useSettlementsList(
           pageSize,
         };
       }
-      const res = await client.admin.settlements.list({
+      return client.admin.settlements.list({
         status: filter === "ALL" ? undefined : filter,
         page,
         pageSize,
       });
-      return castAdminResponse<AdminSettlementListResponse>(res);
     },
   });
 }
@@ -64,10 +57,7 @@ export function useSettlementsList(
 export function useSettlementDetail(id: string | undefined) {
   return useQuery({
     queryKey: ["admin", "settlements", "detail", id],
-    queryFn: () =>
-      client.admin.settlements
-        .get(id as string)
-        .then((res) => castAdminResponse<AdminSettlementDetail>(res)),
+    queryFn: () => client.admin.settlements.get(id as string),
     enabled: Boolean(id),
   });
 }
@@ -86,10 +76,7 @@ function useInvalidateSettlements(id: string) {
 export function useApproveSettlement(id: string) {
   const invalidate = useInvalidateSettlements(id);
   return useMutation({
-    mutationFn: () =>
-      client.admin.settlements
-        .approve(id)
-        .then((res) => castAdminResponse<AdminSettlementDetail>(res)),
+    mutationFn: () => client.admin.settlements.approve(id),
     onSuccess: invalidate,
   });
 }
@@ -98,9 +85,7 @@ export function useHoldSettlement(id: string) {
   const invalidate = useInvalidateSettlements(id);
   return useMutation({
     mutationFn: (note: string | undefined) =>
-      client.admin.settlements
-        .hold(id, { note })
-        .then((res) => castAdminResponse<AdminSettlementDetail>(res)),
+      client.admin.settlements.hold(id, { note }),
     onSuccess: invalidate,
   });
 }
@@ -108,10 +93,7 @@ export function useHoldSettlement(id: string) {
 export function useRetrySettlement(id: string) {
   const invalidate = useInvalidateSettlements(id);
   return useMutation({
-    mutationFn: () =>
-      client.admin.settlements
-        .retry(id)
-        .then((res) => castAdminResponse<AdminSettlementDetail>(res)),
+    mutationFn: () => client.admin.settlements.retry(id),
     onSuccess: invalidate,
   });
 }

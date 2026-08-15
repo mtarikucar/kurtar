@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { KurtarClient } from "@kurtar/api-client";
-import type { SettlementDetail as SettlementDetailShape } from "../api/response-types";
+import type { SettlementDetailResponse as SettlementDetailShape } from "../api/response-types";
 import { SettlementDetail } from "./SettlementDetail";
 
 const getSettlementMine = vi.fn();

@@ -1,14 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client } from "../../api/client";
-import { castAdminResponse } from "../../api/admin-types";
 import type {
   AdminComplaintListItem,
   AdminComplaintListResponse,
   ComplaintCategory,
   ComplaintDetail,
-  ComplaintMessage,
   ComplaintStatus,
-  ComplaintTicket,
 } from "../../api/admin-types";
 import {
   COMPLAINT_SLA_THRESHOLDS,
@@ -61,14 +58,12 @@ export function useComplaintsList(
         // fetch is status-unfiltered, so category/merchant narrowing has
         // to happen client-side here too, on the SAME already-fetched
         // page (no extra request).
-        const res = castAdminResponse<AdminComplaintListResponse>(
-          await client.admin.complaints.list({
-            category,
-            merchantId,
-            page: 1,
-            pageSize: PAGE_SIZE_FOR_SYNTHETIC_FILTER,
-          }),
-        );
+        const res = await client.admin.complaints.list({
+          category,
+          merchantId,
+          page: 1,
+          pageSize: PAGE_SIZE_FOR_SYNTHETIC_FILTER,
+        });
         let items: AdminComplaintListItem[] = res.items.filter(
           (item) =>
             item.status === "OPEN" || item.status === "MERCHANT_RESPONDED",
@@ -90,15 +85,13 @@ export function useComplaintsList(
           pageSize,
         };
       }
-      return castAdminResponse<AdminComplaintListResponse>(
-        await client.admin.complaints.list({
-          status: status === "ALL" ? undefined : status,
-          category,
-          merchantId,
-          page,
-          pageSize,
-        }),
-      );
+      return client.admin.complaints.list({
+        status: status === "ALL" ? undefined : status,
+        category,
+        merchantId,
+        page,
+        pageSize,
+      });
     },
   });
 }
@@ -107,9 +100,7 @@ export function useComplaintDetail(id: string | undefined) {
   return useQuery({
     queryKey: ["admin", "complaints", "detail", id],
     queryFn: async (): Promise<ComplaintDetail> =>
-      castAdminResponse<ComplaintDetail>(
-        await client.admin.complaints.get(id as string),
-      ),
+      client.admin.complaints.get(id as string),
     enabled: Boolean(id),
   });
 }
@@ -129,9 +120,7 @@ export function useResolveComplaint(id: string) {
   const invalidate = useInvalidateComplaints(id);
   return useMutation({
     mutationFn: (note: string | undefined) =>
-      client.admin.complaints
-        .resolve(id, { note })
-        .then((res) => castAdminResponse<ComplaintTicket>(res)),
+      client.admin.complaints.resolve(id, { note }),
     onSuccess: invalidate,
   });
 }
@@ -149,10 +138,7 @@ export function useResolveComplaint(id: string) {
 export function useEscalateComplaint(id: string) {
   const invalidate = useInvalidateComplaints(id);
   return useMutation({
-    mutationFn: () =>
-      client.admin.complaints
-        .escalate(id)
-        .then((res) => castAdminResponse<ComplaintTicket>(res)),
+    mutationFn: () => client.admin.complaints.escalate(id),
     onSuccess: invalidate,
   });
 }
@@ -160,10 +146,7 @@ export function useEscalateComplaint(id: string) {
 export function usePostComplaintMessage(id: string) {
   const invalidate = useInvalidateComplaints(id);
   return useMutation({
-    mutationFn: (body: string) =>
-      client.complaints
-        .addMessage(id, { body })
-        .then((res) => castAdminResponse<ComplaintMessage>(res)),
+    mutationFn: (body: string) => client.complaints.addMessage(id, { body }),
     onSuccess: invalidate,
   });
 }

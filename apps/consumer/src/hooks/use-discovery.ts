@@ -1,10 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { client } from "../lib/api-client";
-import type {
-  DiscoveryMapResponse,
-  DiscoveryOffersResponse,
-  DiscoveryStoreProfile,
-} from "../lib/api-types";
 
 export interface DiscoveryFilters {
   lat: number;
@@ -31,7 +26,7 @@ export function useDiscoveryOffers(filters: DiscoveryFilters | null) {
     queryKey: ["discovery", "offers", filters],
     queryFn: async () => {
       if (!filters) throw new Error("filters required");
-      return (await client.discovery.offers({
+      return client.discovery.offers({
         lat: filters.lat,
         lng: filters.lng,
         radiusM: filters.radiusM,
@@ -42,7 +37,7 @@ export function useDiscoveryOffers(filters: DiscoveryFilters | null) {
         pickupAfter: filters.pickupAfter,
         page: filters.page ?? 1,
         pageSize: filters.pageSize ?? 20,
-      })) as DiscoveryOffersResponse;
+      });
     },
     enabled: filters !== null,
     staleTime: 20_000,
@@ -65,13 +60,13 @@ export function useDiscoveryMap(
     queryKey: ["discovery", "map", bbox, category],
     queryFn: async () => {
       if (!bbox) throw new Error("bbox required");
-      return (await client.discovery.map({
+      return client.discovery.map({
         west: bbox.west,
         south: bbox.south,
         east: bbox.east,
         north: bbox.north,
         category,
-      })) as DiscoveryMapResponse;
+      });
     },
     enabled: bbox !== null,
     staleTime: 20_000,
@@ -83,7 +78,7 @@ export function useStoreProfile(storeId: string | null) {
     queryKey: ["discovery", "store", storeId],
     queryFn: async () => {
       if (!storeId) throw new Error("storeId required");
-      return (await client.discovery.store(storeId)) as DiscoveryStoreProfile;
+      return client.discovery.store(storeId);
     },
     enabled: storeId !== null,
     staleTime: 15_000,

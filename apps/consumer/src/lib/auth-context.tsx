@@ -9,7 +9,6 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { AuthTokens } from "@kurtar/api-client";
 import { client, onClientUnauthorized, tokenStore } from "./api-client";
 import {
   clearStoredRefreshToken,
@@ -28,25 +27,6 @@ export interface ConsumerUser {
   status: string;
   name: string | null;
 }
-
-/**
- * `POST /auth/otp/verify` really does return `{..., user: {...}}` at
- * runtime — see backend/src/modules/auth/dto/auth-response.dto.ts's
- * `ConsumerAuthResponseDto`/`ConsumerAuthUserDto` and auth.service.ts's
- * `verifyConsumerOtp`'s literal return object. `@kurtar/api-client`'s own
- * `auth.verifyOtp()` narrows its declared return type to the hand-typed
- * `AuthTokens` (no `user`) via its own `asAuthTokens` cast — a documented,
- * deliberate override in that package for the (now stale) reason that none
- * of the four auth-issuing operations used to have a declared response
- * schema. `docs/openapi.json` has since gained real schemas for all four
- * (see ConsumerAuthResponseDto in the committed spec) but
- * `@kurtar/api-client`'s generated types/AuthTokens override were not
- * regenerated to match — flagged as a minor contract-package drift in the
- * task report; not fixed here (packages/api-client is out of this app's
- * scope). This is this app's OWN cast of the real runtime shape, per
- * docs/frontend-contract.md §9's sanctioned pattern for exactly this case.
- */
-type ConsumerAuthResult = AuthTokens & { user: ConsumerUser };
 
 interface AuthContextValue {
   status: "loading" | "signedOut" | "signedIn";
@@ -133,15 +113,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const verifyOtp = useCallback(async (phone: string, code: string) => {
-    const result = (await client.auth.verifyOtp({
-      phone,
-      code,
-    })) as ConsumerAuthResult;
+    const result = await client.auth.verifyOtp({ phone, code });
     const nextUser: ConsumerUser = {
       id: result.user.id,
       phone: result.user.phone,
       status: result.user.status,
-      name: result.user.name,
+      name: result.user.name ?? null,
     };
     setUser(nextUser);
     setStatus("signedIn");

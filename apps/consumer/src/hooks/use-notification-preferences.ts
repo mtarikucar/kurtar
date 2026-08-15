@@ -1,14 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client } from "../lib/api-client";
-import type { NotificationPreferences } from "../lib/api-types";
 
 const KEY = ["me", "notification-preferences"] as const;
 
 export function useNotificationPreferences() {
   return useQuery({
     queryKey: KEY,
-    queryFn: async () =>
-      (await client.account.notificationPreferences.get()) as unknown as NotificationPreferences,
+    queryFn: async () => client.account.notificationPreferences.get(),
     staleTime: 60_000,
   });
 }
@@ -23,10 +21,7 @@ export function useUpdateNotificationPreferences() {
       marketingEnabled?: boolean;
       quietHoursStart?: number;
       quietHoursEnd?: number;
-    }) =>
-      (await client.account.notificationPreferences.update(
-        patch,
-      )) as unknown as NotificationPreferences,
+    }) => client.account.notificationPreferences.update(patch),
     onSuccess: (updated) => {
       queryClient.setQueryData(KEY, updated);
     },

@@ -14,7 +14,13 @@ export function RatingsPanel() {
   const { t } = useTranslation(["reputation", "common"]);
   const ratingsQuery = useRatings();
 
-  if (ratingsQuery.isPending) return <Spinner />;
+  // `enabled: false` (no store yet, see hooks.ts) leaves the query
+  // permanently `isPending` with `fetchStatus: "idle"` — checking
+  // `fetchStatus` too keeps a brand-new, storeless merchant from seeing an
+  // infinite spinner; it falls through to the `!data` -> null case below.
+  if (ratingsQuery.isPending && ratingsQuery.fetchStatus !== "idle") {
+    return <Spinner />;
+  }
   if (ratingsQuery.isError) {
     return (
       <Banner

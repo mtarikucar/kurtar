@@ -7,6 +7,11 @@ import type {
   Rating,
 } from "../../api/admin-types";
 
+// NOTE: unlike every other feature's useXyz.ts, this file's `.approve()`/
+// `.reject()` mutations below still cast — see admin-types.ts's "Ratings"
+// section for why (a separate, out-of-scope generated-client staleness
+// bug, not the SuccessBody bug this whole cleanup removes elsewhere).
+
 export type RatingStatusFilter = ModerationStatus | "ALL";
 
 export function useRatingsList(

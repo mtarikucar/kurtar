@@ -1,7 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { client } from "../api/client";
-import { asResponse } from "../api/response-types";
-import type { BagTemplate, Store } from "../api/response-types";
 
 /**
  * Entity reads shared by more than one screen (Today's quick-publish needs
@@ -22,8 +20,7 @@ export const offersForDateKey = (dateKey: string) =>
 export function useStores() {
   return useQuery({
     queryKey: storesKey,
-    queryFn: async () =>
-      asResponse<Store[]>(await client.merchant.stores.list()),
+    queryFn: async () => client.merchant.stores.list(),
     staleTime: 60_000,
   });
 }
@@ -31,8 +28,7 @@ export function useStores() {
 export function useBagTemplates() {
   return useQuery({
     queryKey: bagTemplatesKey,
-    queryFn: async () =>
-      asResponse<BagTemplate[]>(await client.merchant.bagTemplates.list()),
+    queryFn: async () => client.merchant.bagTemplates.list(),
     staleTime: 60_000,
   });
 }

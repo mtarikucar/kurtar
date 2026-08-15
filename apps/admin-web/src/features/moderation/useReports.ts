@@ -1,9 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client } from "../../api/client";
-import { castAdminResponse } from "../../api/admin-types";
 import type {
   AdminReportListResponse,
-  ContentReport,
   DiscoveryStoreProfile,
   ReportStatus,
   ReportTargetType,
@@ -20,13 +18,12 @@ export function useReportsList(
   return useQuery({
     queryKey: ["admin", "reports", statusFilter, targetType, page, pageSize],
     queryFn: async (): Promise<AdminReportListResponse> => {
-      const res = await client.admin.reports.list({
+      return client.admin.reports.list({
         status: statusFilter === "ALL" ? undefined : statusFilter,
         targetType: targetType === "ALL" ? undefined : targetType,
         page,
         pageSize,
       });
-      return castAdminResponse<AdminReportListResponse>(res);
     },
   });
 }
@@ -45,9 +42,7 @@ export function useStoreTargetPreview(
   return useQuery({
     queryKey: ["discovery", "store", targetId],
     queryFn: async (): Promise<DiscoveryStoreProfile> =>
-      castAdminResponse<DiscoveryStoreProfile>(
-        await client.discovery.store(targetId),
-      ),
+      client.discovery.store(targetId),
     enabled: targetType === "STORE",
     retry: false,
   });
@@ -65,9 +60,7 @@ export function useActionReport() {
   const invalidate = useInvalidateReports();
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) =>
-      client.admin.reports
-        .action(id, { note })
-        .then((res) => castAdminResponse<ContentReport>(res)),
+      client.admin.reports.action(id, { note }),
     onSuccess: invalidate,
   });
 }
@@ -76,9 +69,7 @@ export function useDismissReport() {
   const invalidate = useInvalidateReports();
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) =>
-      client.admin.reports
-        .dismiss(id, { note })
-        .then((res) => castAdminResponse<ContentReport>(res)),
+      client.admin.reports.dismiss(id, { note }),
     onSuccess: invalidate,
   });
 }

@@ -1,35 +1,31 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client } from "../api/client";
-import { asResponse } from "../api/response-types";
-import type {
-  DailyOffer,
-  OfferMineItem,
-  OfferPublishResponse,
-  OfferScheduleResponse,
-} from "../api/response-types";
 import { offersForDateKey } from "../shared/entityQueries";
 import { istanbulDateKey } from "../shared/format";
 
 /**
  * `client.offers.listMine()` (packages/api-client/src/domains/offers.ts)
- * never forwards a `date` query parameter to the request, even though the
- * backend operation accepts one and defaults to TODAY when it's absent
- * (backend/src/modules/offers/offers.service.ts's `listMine`: `date ??
- * istanbulDateKey(new Date())`). That means this call can only ever return
- * TODAY's offers, no matter which day is actually wanted — a confirmed
- * api-client gap (flagged in this task's report; see that report for the
- * other three of the same shape). Per docs/frontend-contract.md §2, this is
- * NOT worked around with a hand-rolled fetch call here — the week view
- * below only ever shows REAL per-offer data for today's cell as a result;
- * other days can still have offers CREATED (POST /offers takes `offerDate`
- * in its body, unaffected by this gap) but not LISTED through this screen.
+ * DOES forward an optional `date` query param today (the api-client fix
+ * that resolved the compiled `Promise<never>` bug also fixed query
+ * parameters silently being dropped — see packages/api-client's
+ * core-types.ts/engine.ts) — but this hook still never passes one, so it
+ * can only ever return TODAY's offers no matter which day is actually
+ * selected in the week view below. That's now an app-level gap in this
+ * hook, not an api-client one; flagged in this task's report as a
+ * follow-up rather than fixed here (out of scope for a cast-removal pass:
+ * wiring a per-day `date` through this hook and CalendarPage's week strip
+ * is a small feature change, not a type fix). Per docs/frontend-contract.md
+ * §2, this is NOT worked around with a hand-rolled fetch call here — the
+ * week view below only ever shows REAL per-offer data for today's cell as
+ * a result; other days can still have offers CREATED (POST /offers takes
+ * `offerDate` in its body, unaffected by this gap) but not LISTED through
+ * this screen.
  */
 export function useTodayOffersForWeek() {
   const dateKey = istanbulDateKey();
   return useQuery({
     queryKey: offersForDateKey(dateKey),
-    queryFn: async () =>
-      asResponse<OfferMineItem[]>(await client.offers.listMine()),
+    queryFn: async () => client.offers.listMine(),
     staleTime: 15_000,
   });
 }
@@ -46,10 +42,8 @@ export function useCreateAndPublishOffer() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: CreateOfferInput) => {
-      const offer = asResponse<DailyOffer>(await client.offers.create(input));
-      const published = asResponse<OfferPublishResponse>(
-        await client.offers.publish(offer.id),
-      );
+      const offer = await client.offers.create(input);
+      const published = await client.offers.publish(offer.id);
       return { offer, published };
     },
     onSuccess: (_result, variables) => {
@@ -67,10 +61,8 @@ export function useCreateAndScheduleOffer() {
       publishAt,
       ...input
     }: CreateOfferInput & { publishAt: string }) => {
-      const offer = asResponse<DailyOffer>(await client.offers.create(input));
-      const scheduled = asResponse<OfferScheduleResponse>(
-        await client.offers.schedule(offer.id, { publishAt }),
-      );
+      const offer = await client.offers.create(input);
+      const scheduled = await client.offers.schedule(offer.id, { publishAt });
       return { offer, scheduled };
     },
     onSuccess: (_result, variables) => {

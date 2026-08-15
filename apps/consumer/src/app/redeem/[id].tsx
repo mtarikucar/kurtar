@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -12,25 +13,41 @@ import { SwipeToConfirm } from "../../components/SwipeToConfirm";
 import { useOrderDetails } from "../../hooks/use-order-details";
 import { useRedeemReconciliation } from "../../hooks/use-redeem-reconciliation";
 import { formatClockTime } from "../../lib/format";
+import { getErrorMessage } from "../../lib/errors";
 
 /**
  * The redeem screen's own state machine, layered on top of
- * use-redeem-reconciliation.ts's queued/reconciled model:
+ * use-redeem-reconciliation.ts's redeem/queued/reconciled model:
  *
  *   not CONFIRMED yet / already terminal (cancelled/expired) -> notRedeemable
  *   CONFIRMED, not yet redeemed, not swiped -> ready (swipe control shown)
- *   CONFIRMED, swiped, server unreachable -> offline (orange)
- *   CONFIRMED, swiped, server reachable but staff hasn't acted yet -> waiting
- *   status is REDEEMED (via reconciliation OR because the screen was
- *     reopened after an earlier successful pickup) -> success (green)
+ *   swiped, mid-flight (POST /reservations/:id/redeem in progress) -> swipe disabled
+ *   swiped, server rejected for a real reason -> error shown inline, swipe re-enabled
+ *   swiped, server unreachable -> offline fallback queued (orange)
+ *   swiped, offline fallback queued, server reachable but not yet flipped -> waiting
+ *   status is REDEEMED (direct success, reconciled via polling, OR because
+ *     the screen was reopened after an earlier successful pickup) -> success (green)
  */
 export default function RedeemScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading } = useOrderDetails(id ?? "");
-  const { queued, queueChecked, confirm, reconciled, redeemedAt, isOffline } =
-    useRedeemReconciliation(id ?? "");
+  const {
+    queued,
+    queueChecked,
+    confirm,
+    redeeming,
+    reconciled,
+    redeemedAt,
+    isOffline,
+  } = useRedeemReconciliation(id ?? "");
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  const handleConfirm = () => {
+    setConfirmError(null);
+    confirm().catch((err: unknown) => setConfirmError(getErrorMessage(err, t)));
+  };
 
   if (isLoading || !queueChecked) {
     return (
@@ -133,13 +150,17 @@ export default function RedeemScreen() {
         ) : (
           <SwipeToConfirm
             label={t("redeem.swipeCta")}
-            onConfirm={confirm}
-            disabled={queued !== null}
+            onConfirm={handleConfirm}
+            disabled={queued !== null || redeeming}
           />
         )}
 
         {!waiting && !offline ? (
           <Text style={styles.swipeHint}>{t("redeem.swipeHint")}</Text>
+        ) : null}
+
+        {confirmError ? (
+          <Text style={styles.errorText}>{confirmError}</Text>
         ) : null}
       </View>
     </Screen>
@@ -227,6 +248,16 @@ const styles = StyleSheet.create({
     fontSize: typeScale.caption.size,
     color: colors.neutral[0],
     opacity: 0.85,
+    textAlign: "center",
+    marginTop: spacing.sm,
+  },
+  errorText: {
+    fontSize: typeScale.caption.size,
+    color: colors.neutral[0],
+    backgroundColor: "rgba(0,0,0,0.25)",
+    borderRadius: 8,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
     textAlign: "center",
     marginTop: spacing.sm,
   },

@@ -7,23 +7,22 @@
 # report for exactly how to read it), and at least one PUBLISHED offer
 # within its pickup window for the redeem step.
 #
-# The OTP code and the merchant-side redeem call are NOT things a UI
-# script can produce by itself:
-#   - the OTP code must be read from the backend log (or piped in via
-#     Maestro's env/`MAESTRO_OTP_CODE` if you script the lookup outside
-#     this file) — this flow assumes it's supplied as an env var so the
-#     flow itself stays deterministic and re-runnable.
-#   - the actual redeem (`POST /reservations/:id/redeem`) is
-#     @Actors("MERCHANT")-only (see reservations.controller.ts) — the
-#     consumer app can never call it itself (see redeem-queue.ts's doc
-#     comment). Getting from "swiped, showing the offline/waiting state"
-#     to the green success screen in this flow requires a SEPARATE
-#     out-of-band call simulating merchant staff (a curl to /redeem with a
-#     merchant JWT — see the task report's verification section for the
-#     exact sequence this project used). This flow therefore stops at the
-#     "waiting for staff" state, which is still a real, meaningful
-#     assertion (the swipe succeeded and the screen is polling), and notes
-#     where a CI harness would inject the merchant-side call.
+# The OTP code is NOT something a UI script can produce by itself: it must
+# be read from the backend log (or piped in via Maestro's env/
+# `MAESTRO_OTP_CODE` if you script the lookup outside this file) — this
+# flow assumes it's supplied as an env var so the flow itself stays
+# deterministic and re-runnable.
+#
+# The redeem swipe itself IS a real, direct `POST /reservations/:id/redeem`
+# call from this app (`@Actors("CONSUMER", "MERCHANT")` — see
+# reservations.controller.ts/.service.ts's `redeem()` doc comment, plan
+# §4.6: the phone swipe is the redemption). No out-of-band merchant call is
+# needed to reach the green success screen — a real device/CI run inside
+# the reservation's pickup window goes straight from the swipe to "Afiyet
+# olsun!". The offline-queue-plus-poll fallback (redeem-queue.ts,
+# hooks/use-redeem-reconciliation.ts) only engages when the direct call
+# can't reach the server at all, which this flow — run against a reachable
+# backend — never exercises.
 appId: app.kurtar.consumer
 ---
 - launchApp:
@@ -87,6 +86,7 @@ appId: app.kurtar.consumer
 - swipe:
     start: "10%, 50%"
     end: "90%, 50%"
-# Real device/CI run: inject the merchant-side POST .../redeem here, then
-# assert the green success screen:
-# - assertVisible: "Afiyet olsun!"
+# The swipe above calls POST /reservations/:id/redeem directly — inside
+# the reservation's pickup window this resolves immediately, no
+# out-of-band merchant action required.
+- assertVisible: "Afiyet olsun!"

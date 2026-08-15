@@ -1,10 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client } from "../../api/client";
-import { castAdminResponse } from "../../api/admin-types";
 import type {
   AdminMerchantListResponse,
-  MerchantSuspendResponse,
-  MerchantTransitionResponse,
   MerchantVerificationStatus,
 } from "../../api/admin-types";
 
@@ -44,9 +41,7 @@ export function useMerchantsList(
         // in the Task 11 report regardless.
         const pages = await Promise.all(
           PENDING_STATUSES.map((status) =>
-            client.admin.merchants
-              .list({ status, page: 1, pageSize: 100 })
-              .then((res) => castAdminResponse<AdminMerchantListResponse>(res)),
+            client.admin.merchants.list({ status, page: 1, pageSize: 100 }),
           ),
         );
         const merged = pages
@@ -61,12 +56,11 @@ export function useMerchantsList(
           pageSize,
         };
       }
-      const res = await client.admin.merchants.list({
+      return client.admin.merchants.list({
         status: filter === "ALL" ? undefined : filter,
         page,
         pageSize,
       });
-      return castAdminResponse<AdminMerchantListResponse>(res);
     },
   });
 }
@@ -80,12 +74,11 @@ export function useApprovedMerchantsForReverify() {
   return useQuery({
     queryKey: ["admin", "merchants", "approved-for-reverify"],
     queryFn: async (): Promise<AdminMerchantListResponse> => {
-      const res = await client.admin.merchants.list({
+      return client.admin.merchants.list({
         status: "APPROVED",
         page: 1,
         pageSize: 100,
       });
-      return castAdminResponse<AdminMerchantListResponse>(res);
     },
   });
 }
@@ -102,9 +95,7 @@ export function useApproveMerchant() {
   const invalidate = useInvalidateMerchants();
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) =>
-      client.admin.merchants
-        .approve(id, { note })
-        .then((res) => castAdminResponse<MerchantTransitionResponse>(res)),
+      client.admin.merchants.approve(id, { note }),
     onSuccess: invalidate,
   });
 }
@@ -113,9 +104,7 @@ export function useRejectMerchant() {
   const invalidate = useInvalidateMerchants();
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note: string }) =>
-      client.admin.merchants
-        .reject(id, { note })
-        .then((res) => castAdminResponse<MerchantTransitionResponse>(res)),
+      client.admin.merchants.reject(id, { note }),
     onSuccess: invalidate,
   });
 }
@@ -124,9 +113,7 @@ export function useSuspendMerchant() {
   const invalidate = useInvalidateMerchants();
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note?: string }) =>
-      client.admin.merchants
-        .suspend(id, { note })
-        .then((res) => castAdminResponse<MerchantSuspendResponse>(res)),
+      client.admin.merchants.suspend(id, { note }),
     onSuccess: invalidate,
   });
 }

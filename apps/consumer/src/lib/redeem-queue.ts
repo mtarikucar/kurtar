@@ -1,22 +1,23 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 /**
- * The offline-tolerant half of the redeem screen (task brief: "a
- * merchant's till queue is exactly where signal dies"). Redemption itself
- * is authorized server-side ONLY by merchant staff (`POST
- * /reservations/:id/redeem` is `@Actors("MERCHANT")` — see
- * backend/src/modules/reservations/reservations.controller.ts; there is no
- * consumer-callable redeem endpoint, by design: a self-serve consumer
- * redeem would be trivially exploitable, and the controller's own comment
- * confirms this is "staff scan at the counter", not the app itself). So
- * what THIS app can reliably persist is the consumer's own swipe — the
- * physical "I am here, showing this to staff" gesture — not a completed
- * server transaction. That local swipe is queued here and reconciled by
- * polling `GET /reservations/mine` (the one consumer-reachable read) in
- * the background until the reservation's status flips to REDEEMED, which
- * is what staff's own action on their side produces. See
- * hooks/use-redeem-reconciliation.ts for the poll loop and
- * src/app/redeem/[id].tsx's doc comment for the full state-machine
+ * The offline-tolerant FALLBACK half of the redeem screen (task brief: "a
+ * merchant's till queue is exactly where signal dies"). The PRIMARY path
+ * is a direct `POST /reservations/:id/redeem` call from the consumer's own
+ * phone (`@Actors("CONSUMER", "MERCHANT")` — see
+ * backend/src/modules/reservations/reservations.controller.ts and
+ * .service.ts's `redeem()` doc comment for the approved product design,
+ * plan §4.6). This queue only exists for when that call can't even reach
+ * the server: offline, DNS failure, a dead signal bar at the counter. In
+ * that case the consumer's own swipe — the physical "I am here, showing
+ * this to staff" gesture — is the only thing durable to persist locally,
+ * since no server transaction happened yet. That local swipe is queued
+ * here and reconciled by polling `GET /reservations/mine` (the one
+ * consumer-reachable read) in the background until the reservation's
+ * status flips to REDEEMED — by staff acting on their side, or by a later
+ * retry of the direct call succeeding once the connection returns. See
+ * hooks/use-redeem-reconciliation.ts for the full confirm/poll logic and
+ * src/app/redeem/[id].tsx's doc comment for the screen's state-machine
  * writeup; this file only owns the durable queue.
  */
 export interface QueuedRedeemConfirmation {

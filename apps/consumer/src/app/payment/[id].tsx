@@ -10,9 +10,7 @@ import { Screen } from "../../components/Screen";
 import { IconButton } from "../../components/IconButton";
 import { Button } from "../../components/Button";
 import { LoadingState } from "../../components/LoadingState";
-import { client } from "../../lib/api-client";
-import { RESERVATIONS_QUERY_KEY } from "../../hooks/use-reservations";
-import type { ReservationListResponse } from "../../lib/api-types";
+import { RESERVATIONS_QUERY_KEY, fetchMyReservations } from "../../hooks/use-reservations";
 
 const POLL_INTERVAL_MS = 3000;
 const TERMINAL_FAILURE_STATUSES = new Set([
@@ -47,8 +45,7 @@ export default function PaymentScreen() {
 
   const pollQuery = useQuery({
     queryKey: RESERVATIONS_QUERY_KEY,
-    queryFn: async () =>
-      (await client.reservations.listMine()) as unknown as ReservationListResponse,
+    queryFn: fetchMyReservations,
     refetchInterval: (query) => {
       const items = query.state.data?.items ?? [];
       const mine = items.find((r) => r.id === id);

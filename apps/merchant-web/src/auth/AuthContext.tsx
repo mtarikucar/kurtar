@@ -13,11 +13,7 @@ import {
   clearAccessToken,
   subscribeUnauthorized,
 } from "../api/client";
-import {
-  asResponse,
-  type MerchantMe,
-  type MerchantSignupResponse,
-} from "../api/response-types";
+import type { MerchantMe } from "../api/response-types";
 
 export const MERCHANT_ME_KEY = ["merchant", "me"] as const;
 
@@ -45,7 +41,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 async function fetchMe(): Promise<MerchantMe> {
-  return asResponse<MerchantMe>(await client.merchant.getMe());
+  return client.merchant.getMe();
 }
 
 /**
@@ -114,9 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = useCallback(
     async (input: SignupInput): Promise<MerchantMe> => {
-      const result = asResponse<MerchantSignupResponse>(
-        await client.merchant.signup(input),
-      );
+      const result = await client.merchant.signup(input);
       setAccessToken(result.accessToken);
       const merchant = await refreshMerchant();
       if (!merchant) {

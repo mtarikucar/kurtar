@@ -13,6 +13,7 @@ import { KurtarApiError } from "@kurtar/api-client";
 import type { ReservationItem, ReservationListResponse } from "../lib/api-types";
 
 const mockListMine = client.reservations.listMine as jest.Mock;
+const mockRedeem = client.reservations.redeem as jest.Mock;
 
 function reservation(overrides: Partial<ReservationItem>): ReservationItem {
   return {
@@ -45,10 +46,14 @@ describe("useRedeemReconciliation — the defining redeem interaction's state ma
     jest.clearAllMocks();
   });
 
-  it("happy path: swipe queues locally, then reconciles once GET /reservations/mine reports REDEEMED", async () => {
-    mockListMine.mockResolvedValueOnce(listResponse(reservation({ status: "CONFIRMED" })));
+  it("happy path: swipe calls POST /reservations/:id/redeem directly and reconciles immediately, with no local queue and no polling", async () => {
+    mockRedeem.mockResolvedValueOnce({
+      reservationId: "resv-1",
+      status: "REDEEMED",
+      redeemedAt: "2026-08-15T18:30:00.000Z",
+    });
 
-    const { result, queryClient } = await renderHookWithProviders(() =>
+    const { result } = await renderHookWithProviders(() =>
       useRedeemReconciliation("resv-1"),
     );
 
@@ -56,13 +61,70 @@ describe("useRedeemReconciliation — the defining redeem interaction's state ma
     expect(result.current.queued).toBeNull();
     expect(result.current.reconciled).toBe(false);
 
-    // The swipe — this is a LOCAL commit only (see redeem-queue.ts's doc
-    // comment: the consumer can never call the merchant-only redeem
-    // endpoint itself).
+    await act(async () => {
+      await result.current.confirm();
+    });
+
+    expect(mockRedeem).toHaveBeenCalledWith("resv-1");
+    expect(result.current.reconciled).toBe(true);
+    expect(result.current.redeemedAt).toBe("2026-08-15T18:30:00.000Z");
+    // Never fell back to the offline queue — a real server round trip
+    // succeeded, so there was never anything to poll for.
+    expect(result.current.queued).toBeNull();
+    expect(mockListMine).not.toHaveBeenCalled();
+    expect(await getQueuedConfirmation("resv-1")).toBeNull();
+  });
+
+  it("a real server rejection (e.g. outside the pickup window) is surfaced to the caller and never queued", async () => {
+    mockRedeem.mockRejectedValueOnce(
+      new KurtarApiError({
+        statusCode: 409,
+        errorCode: "RESERVATION_NOT_REDEEMABLE",
+        message: "This reservation cannot be redeemed right now.",
+        isBackendErrorCode: true,
+      }),
+    );
+
+    const { result } = await renderHookWithProviders(() =>
+      useRedeemReconciliation("resv-1"),
+    );
+    await waitFor(() => expect(result.current.queueChecked).toBe(true));
+
+    await expect(
+      act(async () => {
+        await result.current.confirm();
+      }),
+    ).rejects.toThrow("This reservation cannot be redeemed right now.");
+
+    // A real rejection is not a connectivity problem — nothing queued,
+    // nothing polled (queuing a rejection the server will keep rejecting
+    // would just hide it, not fix it).
+    expect(result.current.queued).toBeNull();
+    expect(result.current.reconciled).toBe(false);
+    expect(mockListMine).not.toHaveBeenCalled();
+  });
+
+  it("offline fallback: a network failure on the direct call queues the swipe locally and reconciles once GET /reservations/mine reports REDEEMED", async () => {
+    mockRedeem.mockRejectedValueOnce(
+      new KurtarApiError({
+        statusCode: 0,
+        errorCode: "NETWORK_ERROR",
+        message: "Network request failed.",
+        isBackendErrorCode: false,
+      }),
+    );
+    mockListMine.mockResolvedValueOnce(listResponse(reservation({ status: "CONFIRMED" })));
+
+    const { result, queryClient } = await renderHookWithProviders(() =>
+      useRedeemReconciliation("resv-1"),
+    );
+    await waitFor(() => expect(result.current.queueChecked).toBe(true));
+
     await act(async () => {
       await result.current.confirm();
     });
     expect(result.current.queued).not.toBeNull();
+    expect(result.current.reconciled).toBe(false);
 
     // First poll (triggered by `enabled` flipping true) reports still
     // CONFIRMED — staff hasn't acted yet.
@@ -88,6 +150,14 @@ describe("useRedeemReconciliation — the defining redeem interaction's state ma
   });
 
   it("offline-retry path: a failed poll shows the offline state, not a blank screen, and a later successful poll still reconciles", async () => {
+    mockRedeem.mockRejectedValueOnce(
+      new KurtarApiError({
+        statusCode: 0,
+        errorCode: "NETWORK_ERROR",
+        message: "Network request failed.",
+        isBackendErrorCode: false,
+      }),
+    );
     mockListMine.mockResolvedValueOnce(listResponse(reservation({ status: "CONFIRMED" })));
 
     const { result, queryClient } = await renderHookWithProviders(() =>
@@ -147,5 +217,6 @@ describe("useRedeemReconciliation — the defining redeem interaction's state ma
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
     expect(mockListMine).not.toHaveBeenCalled();
+    expect(mockRedeem).not.toHaveBeenCalled();
   });
 });

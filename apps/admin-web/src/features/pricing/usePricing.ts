@@ -1,15 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client } from "../../api/client";
-import { castAdminResponse } from "../../api/admin-types";
 import type { PlatformPricing } from "../../api/admin-types";
 
 export function usePricingList() {
   return useQuery({
     queryKey: ["admin", "pricing"],
-    queryFn: async (): Promise<PlatformPricing[]> => {
-      const res = await client.admin.pricing.list();
-      return castAdminResponse<PlatformPricing[]>(res);
-    },
+    queryFn: async (): Promise<PlatformPricing[]> =>
+      client.admin.pricing.list(),
   });
 }
 
@@ -25,9 +22,7 @@ export function useSchedulePricing() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: SchedulePricingInput) =>
-      client.admin.pricing
-        .schedule(input)
-        .then((res) => castAdminResponse<PlatformPricing>(res)),
+      client.admin.pricing.schedule(input),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["admin", "pricing"] }),
   });

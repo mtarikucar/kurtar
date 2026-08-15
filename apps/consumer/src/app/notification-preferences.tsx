@@ -95,8 +95,8 @@ export default function NotificationPreferencesScreen() {
     setNearbyEnabled(prefsQuery.data.nearbyEnabled);
     setNearbyRadiusM(prefsQuery.data.nearbyRadiusM);
     setMarketingEnabled(prefsQuery.data.marketingEnabled);
-    setQuietHoursStart(prefsQuery.data.quietHoursStart);
-    setQuietHoursEnd(prefsQuery.data.quietHoursEnd);
+    setQuietHoursStart(prefsQuery.data.quietHoursStart ?? null);
+    setQuietHoursEnd(prefsQuery.data.quietHoursEnd ?? null);
   }, [prefsQuery.data]);
 
   const handleSave = async () => {

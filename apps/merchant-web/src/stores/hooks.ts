@@ -1,12 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { client } from "../api/client";
-import { asResponse } from "../api/response-types";
-import type {
-  BagCategory,
-  BagTemplate,
-  DietFlag,
-  Store,
-} from "../api/response-types";
+import type { BagCategory, DietFlag } from "../api/response-types";
 import { bagTemplatesKey, storesKey } from "../shared/entityQueries";
 
 export interface StoreFormValues {
@@ -23,7 +17,7 @@ export function useCreateStore() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (values: Omit<StoreFormValues, "active">) =>
-      asResponse<Store>(await client.merchant.stores.create(values)),
+      client.merchant.stores.create(values),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: storesKey }),
   });
@@ -38,7 +32,7 @@ export function useUpdateStore() {
     }: {
       id: string;
       values: StoreFormValues;
-    }) => asResponse<Store>(await client.merchant.stores.update(id, values)),
+    }) => client.merchant.stores.update(id, values),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: storesKey }),
   });
@@ -60,9 +54,7 @@ export function useCreateBagTemplate() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (values: BagTemplateFormValues) =>
-      asResponse<BagTemplate>(
-        await client.merchant.bagTemplates.create(values),
-      ),
+      client.merchant.bagTemplates.create(values),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: bagTemplatesKey }),
   });
@@ -77,10 +69,7 @@ export function useUpdateBagTemplate() {
     }: {
       id: string;
       values: BagTemplateFormValues & { active: boolean };
-    }) =>
-      asResponse<BagTemplate>(
-        await client.merchant.bagTemplates.update(id, values),
-      ),
+    }) => client.merchant.bagTemplates.update(id, values),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: bagTemplatesKey }),
   });
@@ -90,9 +79,7 @@ export function useDeactivateBagTemplate() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) =>
-      asResponse<BagTemplate>(
-        await client.merchant.bagTemplates.deactivate(id),
-      ),
+      client.merchant.bagTemplates.deactivate(id),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: bagTemplatesKey }),
   });

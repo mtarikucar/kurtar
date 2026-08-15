@@ -14,11 +14,7 @@ import {
   setStoredAccessToken,
   setUnauthorizedListener,
 } from "../api/client";
-import {
-  castAdminResponse,
-  type AdminAuthUser,
-  type AdminLoginResult,
-} from "../api/admin-types";
+import type { AdminAuthUser } from "../api/admin-types";
 
 /**
  * Non-sensitive profile cache (id/email/name only — NEVER a token) so the
@@ -129,13 +125,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const result = await client.auth.adminLogin({ email, password });
-    // See api/admin-types.ts's AdminLoginResult doc comment: the real
-    // response has `user` on it even though the client's own AuthTokens
-    // type doesn't declare it.
-    const full = castAdminResponse<AdminLoginResult>(result);
     sessionSettledRef.current = true;
-    writeCachedProfile(full.user);
-    setUser(full.user);
+    writeCachedProfile(result.user);
+    setUser(result.user);
     setStatus("authenticated");
   }, []);
 

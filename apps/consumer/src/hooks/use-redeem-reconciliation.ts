@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { KurtarApiError } from "@kurtar/api-client";
 import { client } from "../lib/api-client";
-import { RESERVATIONS_QUERY_KEY } from "./use-reservations";
-import type { ReservationListResponse } from "../lib/api-types";
+import { RESERVATIONS_QUERY_KEY, fetchMyReservations } from "./use-reservations";
 import {
   clearQueuedConfirmation,
   getQueuedConfirmation,
@@ -14,24 +14,40 @@ const POLL_INTERVAL_MS = 4000;
 
 /**
  * The redeem screen's state machine (see src/app/redeem/[id].tsx for the
- * screen itself, redeem-queue.ts for why a CONSUMER-side "confirm" can
- * only ever be a locally-queued swipe, never the actual
- * `POST /reservations/:id/redeem` call):
+ * screen itself, redeem-queue.ts for the offline fallback's own doc
+ * comment). `POST /reservations/:id/redeem` accepts the CONSUMER owner
+ * directly now (a product fix landed after this screen was first built —
+ * see reservations.controller.ts's `@Actors("CONSUMER", "MERCHANT")` and
+ * reservations.service.ts's `redeem()` doc comment for the approved
+ * design, plan §4.6: the phone swipe IS the redemption, not a request for
+ * staff to redeem on their own device). So the PRIMARY path is now a real
+ * network call, not a local queue:
  *
- *   idle -> (swipe) -> queued, not yet reconciled -> [poll GET /reservations/mine]
- *     -> reconciled (status flipped to REDEEMED, presumably by staff
- *        scanning/keying the code on their own device while looking at
- *        this screen's live clock) -> queue entry cleared.
+ *   idle -> (swipe) -> POST /reservations/:id/redeem
+ *     -> success -> reconciled immediately (green), no polling needed
+ *     -> rejected for a REAL reason (wrong pickup window, not yours, ...)
+ *        -> surfaced as an error, nothing queued (queuing a rejection the
+ *           server will keep rejecting forever would just hide it)
+ *     -> the call never reached the server at all (`KurtarApiError.
+ *        isNetworkError` — offline, DNS, timeout) -> FALLBACK: the swipe
+ *        is queued locally and reconciliation falls back to polling
+ *        `GET /reservations/mine` (the one consumer-reachable read, same
+ *        one useGlobalRedeemSync uses in the background) until the
+ *        reservation's status flips to REDEEMED — by staff acting on
+ *        their side, or by this same screen's own retry succeeding once
+ *        the connection returns.
  *
- * While queued and unreconciled, `isOffline` distinguishes "still waiting
- * for staff to act" (poll succeeds, status just isn't REDEEMED yet) from
- * "we can't even reach the server right now" (poll itself is failing) —
- * only the latter drives the screen's orange "çevrimdışı onaylandı"
- * treatment; the former is the calmer "waiting for staff" state.
+ * While queued and unreconciled, `isOffline` distinguishes "still waiting"
+ * (poll succeeds, status just isn't REDEEMED yet) from "we can't even
+ * reach the server right now" (poll itself is failing) — only the latter
+ * drives the screen's orange "çevrimdışı onaylandı" treatment.
  */
 export function useRedeemReconciliation(reservationId: string) {
+  const queryClient = useQueryClient();
   const [queued, setQueued] = useState<QueuedRedeemConfirmation | null>(null);
   const [queueChecked, setQueueChecked] = useState(false);
+  const [redeeming, setRedeeming] = useState(false);
+  const [redeemedAtDirect, setRedeemedAtDirect] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,16 +61,36 @@ export function useRedeemReconciliation(reservationId: string) {
     };
   }, [reservationId]);
 
+  /**
+   * Called on swipe. Resolves normally for BOTH a real success and an
+   * offline fallback (nothing left for the caller to do in either case —
+   * the screen just re-renders off `reconciled`/`queued`); rejects only
+   * for a genuine server-side refusal, which the caller is expected to
+   * show to the user (see redeem/[id].tsx's own try/catch).
+   */
   const confirm = useCallback(async () => {
-    const entry = await queueLocalConfirmation(reservationId);
-    setQueued(entry);
-  }, [reservationId]);
+    setRedeeming(true);
+    try {
+      const result = await client.reservations.redeem(reservationId);
+      setRedeemedAtDirect(result.redeemedAt);
+      await clearQueuedConfirmation(reservationId);
+      void queryClient.invalidateQueries({ queryKey: RESERVATIONS_QUERY_KEY });
+    } catch (err) {
+      if (err instanceof KurtarApiError && err.isNetworkError) {
+        const entry = await queueLocalConfirmation(reservationId);
+        setQueued(entry);
+        return;
+      }
+      throw err;
+    } finally {
+      setRedeeming(false);
+    }
+  }, [reservationId, queryClient]);
 
   const reservationsQuery = useQuery({
     queryKey: RESERVATIONS_QUERY_KEY,
-    queryFn: async () =>
-      (await client.reservations.listMine()) as unknown as ReservationListResponse,
-    enabled: queued !== null,
+    queryFn: fetchMyReservations,
+    enabled: queued !== null && redeemedAtDirect === null,
     refetchInterval: (query) => {
       const items = query.state.data?.items ?? [];
       const mine = items.find((r) => r.id === reservationId);
@@ -64,17 +100,19 @@ export function useRedeemReconciliation(reservationId: string) {
 
   const mine =
     reservationsQuery.data?.items.find((r) => r.id === reservationId) ?? null;
-  const reconciled = mine?.status === "REDEEMED";
+  const reconciledViaPoll = mine?.status === "REDEEMED";
+  const reconciled = redeemedAtDirect !== null || reconciledViaPoll;
 
   useEffect(() => {
-    if (reconciled) {
+    if (reconciledViaPoll) {
       clearQueuedConfirmation(reservationId).catch(() => undefined);
     }
-  }, [reconciled, reservationId]);
+  }, [reconciledViaPoll, reservationId]);
 
   // "Offline" only once we've actually tried and failed to reach the
-  // server at least once since swiping — not on the very first render
-  // before the first poll has had a chance to run.
+  // server at least once since queuing — not on the very first render
+  // before the first poll has had a chance to run, and never once a
+  // direct success has already reconciled this reservation.
   const isOffline =
     queued !== null &&
     !reconciled &&
@@ -85,8 +123,9 @@ export function useRedeemReconciliation(reservationId: string) {
     queued,
     queueChecked,
     confirm,
+    redeeming,
     reconciled,
-    redeemedAt: mine?.redeemedAt ?? null,
+    redeemedAt: redeemedAtDirect ?? mine?.redeemedAt ?? null,
     isOffline,
     isPolling: reservationsQuery.isFetching,
   };

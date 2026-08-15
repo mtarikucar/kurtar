@@ -1,28 +1,20 @@
 import { useQuery } from "@tanstack/react-query";
 import { client } from "../../api/client";
-import { castAdminResponse } from "../../api/admin-types";
 import type {
   AdminComplaintListItem,
-  AdminComplaintListResponse,
   AdminDashboardSummary,
   AdminReportListItem,
-  AdminReportListResponse,
   AdminSettlementListItem,
-  AdminSettlementListResponse,
 } from "../../api/admin-types";
 
 const REFRESH_INTERVAL_MS = 60_000;
 
-/** GET /admin/dashboard. Cast per api/admin-types.ts's header comment
- * (problem 1 — every client.* call needs this, not only the operations
- * docs/frontend-contract.md §9 flags as gaps). */
+/** GET /admin/dashboard. */
 export function useDashboardSummary() {
   return useQuery({
     queryKey: ["admin", "dashboard", "summary"],
     queryFn: async (): Promise<AdminDashboardSummary> =>
-      castAdminResponse<AdminDashboardSummary>(
-        await client.admin.getDashboard(),
-      ),
+      client.admin.getDashboard(),
     refetchInterval: REFRESH_INTERVAL_MS,
   });
 }
@@ -39,9 +31,10 @@ export function useUrgentComplaints(previewSize = 5) {
   return useQuery({
     queryKey: ["admin", "dashboard", "complaints-preview"],
     queryFn: async (): Promise<AdminComplaintListItem[]> => {
-      const res = castAdminResponse<AdminComplaintListResponse>(
-        await client.admin.complaints.list({ page: 1, pageSize: 50 }),
-      );
+      const res = await client.admin.complaints.list({
+        page: 1,
+        pageSize: 50,
+      });
       return res.items
         .filter(
           (item) =>
@@ -54,19 +47,16 @@ export function useUrgentComplaints(previewSize = 5) {
 }
 
 /** GET /admin/reports?status=OPEN — a single real status value, no client
- * filtering needed. Response cast per api/admin-types.ts (see its header
- * comment for why). */
+ * filtering needed. */
 export function useUrgentReports(previewSize = 5) {
   return useQuery({
     queryKey: ["admin", "dashboard", "reports-preview"],
     queryFn: async (): Promise<AdminReportListItem[]> => {
-      const res = castAdminResponse<AdminReportListResponse>(
-        await client.admin.reports.list({
-          status: "OPEN",
-          page: 1,
-          pageSize: previewSize,
-        }),
-      );
+      const res = await client.admin.reports.list({
+        status: "OPEN",
+        page: 1,
+        pageSize: previewSize,
+      });
       return res.items;
     },
     refetchInterval: REFRESH_INTERVAL_MS,
@@ -97,8 +87,8 @@ export function useSettlementsNeedingAttention(previewSize = 5) {
         }),
       ]);
       return {
-        held: castAdminResponse<AdminSettlementListResponse>(held).items,
-        failed: castAdminResponse<AdminSettlementListResponse>(failed).items,
+        held: held.items,
+        failed: failed.items,
       };
     },
     refetchInterval: REFRESH_INTERVAL_MS,

@@ -1,6 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
 import { client } from "../lib/api-client";
-import type { ComplaintTicket } from "../lib/api-types";
 
 export function useCreateComplaint() {
   return useMutation({
@@ -16,6 +15,6 @@ export function useCreateComplaint() {
         | "OTHER";
       description: string;
       reservationId?: string;
-    }) => (await client.complaints.create(body)) as ComplaintTicket,
+    }) => client.complaints.create(body),
   });
 }
