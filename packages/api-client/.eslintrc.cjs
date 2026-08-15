@@ -13,7 +13,11 @@ module.exports = {
     node: true,
     jest: true,
   },
-  ignorePatterns: ["dist", "src/generated/**"],
+  // test-types/ is a tsc-only fixture (npm run typecheck:build) checked
+  // against tsconfig.build-types.json, not this ESLint project's
+  // tsconfig.test.json — linting it would need a second TS project
+  // wired into parserOptions.project for one rarely-touched file.
+  ignorePatterns: ["dist", "src/generated/**", "test-types/**"],
   rules: {
     "@typescript-eslint/explicit-function-return-type": "off",
     "@typescript-eslint/no-explicit-any": "off",

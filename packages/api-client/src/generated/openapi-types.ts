@@ -174,6 +174,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reservations/for-merchant": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List reservations for the caller's own offers — the merchant's pickup list, paginated. */
+        get: operations["ReservationsController_listForMerchant"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reservations/{id}/redeem": {
         parameters: {
             query?: never;
@@ -545,6 +562,23 @@ export interface paths {
         };
         /** Nearby live offers, paginated. No auth required. */
         get: operations["DiscoveryController_offers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/discovery/offers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A single offer's public share preview (the universal-link bridge page /o/[id]). Same visibility rules as the list — a non-visible or nonexistent offer 404s identically. No auth required. */
+        get: operations["DiscoveryController_offer"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1257,20 +1291,96 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        HealthResponseDto: {
+            /** @enum {string} */
+            status: "ok";
+            /** @enum {string} */
+            service: "kurtar-api";
+            uptimeSec: number;
+        };
         OtpRequestDto: {
             phone: string;
+        };
+        OtpRequestResponseDto: {
+            /** Format: date-time */
+            expiresAt: string;
         };
         OtpVerifyDto: {
             phone: string;
             code: string;
+        };
+        ConsumerAuthUserDto: {
+            id: string;
+            phone: string;
+            /** @enum {string} */
+            status: "ACTIVE" | "BANNED" | "DELETED";
+            name?: string | null;
+        };
+        ConsumerAuthResponseDto: {
+            accessToken: string;
+            /** @description Omitted when the caller declared cookie transport (X-Client-Transport: cookie) — the refresh token went out as an httpOnly cookie instead. */
+            refreshToken?: string;
+            /**
+             * Format: date-time
+             * @description Omitted under the same condition as refreshToken.
+             */
+            refreshTokenExpiresAt?: string;
+            user: components["schemas"]["ConsumerAuthUserDto"];
         };
         LoginDto: {
             /** Format: email */
             email: string;
             password: string;
         };
+        MerchantAuthUserDto: {
+            id: string;
+            email: string;
+            /** @enum {string} */
+            role: "OWNER" | "STAFF";
+            merchantId: string;
+        };
+        MerchantAuthResponseDto: {
+            accessToken: string;
+            /** @description Omitted when the caller declared cookie transport (X-Client-Transport: cookie) — the refresh token went out as an httpOnly cookie instead. */
+            refreshToken?: string;
+            /**
+             * Format: date-time
+             * @description Omitted under the same condition as refreshToken.
+             */
+            refreshTokenExpiresAt?: string;
+            user: components["schemas"]["MerchantAuthUserDto"];
+        };
+        AdminAuthUserDto: {
+            id: string;
+            email: string;
+            name: string;
+        };
+        AdminAuthResponseDto: {
+            accessToken: string;
+            /** @description Omitted when the caller declared cookie transport (X-Client-Transport: cookie) — the refresh token went out as an httpOnly cookie instead. */
+            refreshToken?: string;
+            /**
+             * Format: date-time
+             * @description Omitted under the same condition as refreshToken.
+             */
+            refreshTokenExpiresAt?: string;
+            user: components["schemas"]["AdminAuthUserDto"];
+        };
         RefreshTokenBodyDto: {
             refreshToken?: string;
+        };
+        AuthTokensDto: {
+            accessToken: string;
+            /** @description Omitted when the caller declared cookie transport (X-Client-Transport: cookie) — the refresh token went out as an httpOnly cookie instead. */
+            refreshToken?: string;
+            /**
+             * Format: date-time
+             * @description Omitted under the same condition as refreshToken.
+             */
+            refreshTokenExpiresAt?: string;
+        };
+        LogoutResponseDto: {
+            success: boolean;
         };
         ErrorEnvelopeDto: {
             /**
@@ -1293,10 +1403,96 @@ export interface components {
             offerId: string;
             qty: number;
         };
+        ReservationPaymentDto: {
+            merchantOid: string;
+            redirectUrl?: string;
+        };
+        ReservationCreateResponseDto: {
+            reservationId: string;
+            code: string;
+            totalCents: number;
+            payment: components["schemas"]["ReservationPaymentDto"];
+        };
+        ReservationCancelResponseDto: {
+            reservationId: string;
+            /** @enum {string} */
+            status: "PENDING_PAYMENT" | "CONFIRMED" | "REDEEMED" | "CANCELLED_BY_USER" | "CANCELLED_BY_MERCHANT" | "NO_SHOW" | "EXPIRED";
+        };
+        ReservationDto: {
+            id: string;
+            code: string;
+            userId: string;
+            offerId: string;
+            storeId: string;
+            qty: number;
+            unitPriceCents: number;
+            totalCents: number;
+            /** @enum {string} */
+            status: "PENDING_PAYMENT" | "CONFIRMED" | "REDEEMED" | "CANCELLED_BY_USER" | "CANCELLED_BY_MERCHANT" | "NO_SHOW" | "EXPIRED";
+            /** Format: date-time */
+            cancelDeadlineAt: string;
+            /** Format: date-time */
+            redeemedAt?: string | null;
+            redeemedByMerchantUserId?: string | null;
+            /** Format: date-time */
+            pickupReminderSentAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ReservationListResponseDto: {
+            items: components["schemas"]["ReservationDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
+        ReservationForMerchantItemDto: {
+            id: string;
+            storeId: string;
+            offerId: string;
+            code: string;
+            qty: number;
+            /** @enum {string} */
+            status: "PENDING_PAYMENT" | "CONFIRMED" | "REDEEMED" | "CANCELLED_BY_USER" | "CANCELLED_BY_MERCHANT" | "NO_SHOW" | "EXPIRED";
+            /** Format: date-time */
+            pickupStartAt: string;
+            /** Format: date-time */
+            pickupEndAt: string;
+            /** Format: date-time */
+            redeemedAt?: string | null;
+            /** @description First whitespace-separated token of the customer's name — null if they never set one. No phone/email/surname/userId. */
+            customerFirstName?: string | null;
+        };
+        ReservationForMerchantListResponseDto: {
+            items: components["schemas"]["ReservationForMerchantItemDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
+        ReservationRedeemResponseDto: {
+            reservationId: string;
+            /** @enum {string} */
+            status: "REDEEMED";
+            /** Format: date-time */
+            redeemedAt: string;
+        };
         RegisterPushTokenDto: {
             expoPushToken: string;
             /** @enum {string} */
             platform: "IOS" | "ANDROID";
+        };
+        PushTokenRegisterResponseDto: {
+            /** @enum {number} */
+            ok: true;
+        };
+        PushTokenRemoveResponseDto: {
+            /** @description True if a token matching this user+value was actually removed. */
+            deleted: boolean;
+        };
+        WebhookAckResponseDto: {
+            /** @enum {number} */
+            received: true;
         };
         CreateBagTemplateDto: {
             /** @enum {string} */
@@ -1309,6 +1505,24 @@ export interface components {
             originalValueCentsMax: number;
             priceCents: number;
             description?: string;
+        };
+        BagTemplateDto: {
+            id: string;
+            storeId: string;
+            title: string;
+            /** @enum {string} */
+            category: "MEAL" | "BAKERY" | "GROCERY" | "PRODUCE" | "OTHER";
+            dietFlags: ("VEGETARIAN" | "VEGAN" | "GLUTEN_FREE" | "LACTOSE_FREE")[];
+            allergenDisclaimer: string;
+            originalValueCentsMin: number;
+            originalValueCentsMax: number;
+            priceCents: number;
+            description?: string | null;
+            active: boolean;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
         };
         UpdateBagTemplateDto: {
             /** @enum {string} */
@@ -1329,8 +1543,86 @@ export interface components {
             pickupStartAt: string;
             pickupEndAt: string;
         };
+        DailyOfferDto: {
+            id: string;
+            bagTemplateId: string;
+            storeId: string;
+            /** Format: date-time */
+            offerDate: string;
+            qtyTotal: number;
+            qtyReserved: number;
+            qtyRedeemed: number;
+            /** Format: date-time */
+            pickupStartAt: string;
+            /** Format: date-time */
+            pickupEndAt: string;
+            /** @enum {string} */
+            status: "DRAFT" | "SCHEDULED" | "PUBLISHED" | "SOLD_OUT" | "CLOSED" | "CANCELLED";
+            /** Format: date-time */
+            publishAt?: string | null;
+            /** Format: date-time */
+            publishedAt?: string | null;
+            version: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        OfferMineItemDto: {
+            id: string;
+            storeId: string;
+            storeName: string;
+            bagTemplateId: string;
+            title: string;
+            priceCents: number;
+            /** @description YYYY-MM-DD, Istanbul calendar day. */
+            offerDate: string;
+            /** @enum {string} */
+            status: "DRAFT" | "SCHEDULED" | "PUBLISHED" | "SOLD_OUT" | "CLOSED" | "CANCELLED";
+            qtyTotal: number;
+            qtyReserved: number;
+            qtyRedeemed: number;
+            qtyLeft: number;
+            /** Format: date-time */
+            pickupStartAt: string;
+            /** Format: date-time */
+            pickupEndAt: string;
+        };
+        OfferPublishResponseDto: {
+            offerId: string;
+            /** @enum {string} */
+            status: "PUBLISHED";
+            /** Format: date-time */
+            publishedAt: string;
+        };
         ScheduleOfferDto: {
             publishAt: string;
+        };
+        OfferScheduleResponseDto: {
+            offerId: string;
+            /** @enum {string} */
+            status: "SCHEDULED";
+            /** Format: date-time */
+            publishAt: string;
+        };
+        OfferCloseResponseDto: {
+            offerId: string;
+            /** @enum {string} */
+            status: "CLOSED";
+        };
+        RefundBatchOutcomeDto: {
+            reservationId: string;
+            ok: boolean;
+            refundRef?: string;
+            error?: string;
+        };
+        OfferCancelResponseDto: {
+            offerId: string;
+            /** @enum {string} */
+            status: "CANCELLED";
+            expiredCount: number;
+            cancelledCount: number;
+            refundResults: components["schemas"]["RefundBatchOutcomeDto"][];
         };
         MerchantSignupDto: {
             legalName: string;
@@ -1342,14 +1634,92 @@ export interface components {
             password: string;
             ownerName: string;
         };
+        MerchantSignupMerchantDto: {
+            id: string;
+            /** @enum {string} */
+            verificationStatus: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPENDED";
+        };
+        MerchantSignupResponseDto: {
+            accessToken: string;
+            /** @description Omitted when the caller declared cookie transport (X-Client-Transport: cookie) — the refresh token went out as an httpOnly cookie instead. */
+            refreshToken?: string;
+            /**
+             * Format: date-time
+             * @description Omitted under the same condition as refreshToken.
+             */
+            refreshTokenExpiresAt?: string;
+            merchant: components["schemas"]["MerchantSignupMerchantDto"];
+        };
         MerchantSubmitDto: {
             docsJson?: Record<string, never>;
             sttAttestationAccepted: boolean;
             intermediationAccepted: boolean;
             intermediationContractVersion: string;
         };
+        MerchantSubmitResponseDto: {
+            merchantId: string;
+            /** @enum {string} */
+            status: "SUBMITTED";
+        };
+        MerchantMeStoreSummaryDto: {
+            id: string;
+            name: string;
+            city: string;
+            district: string;
+            active: boolean;
+        };
+        MerchantMeResponseDto: {
+            id: string;
+            legalName: string;
+            tradeName: string;
+            taxId: string;
+            iban: string;
+            /** @enum {string} */
+            verificationStatus: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPENDED";
+            /** Format: date-time */
+            verifiedAt?: string | null;
+            /** Format: date-time */
+            nextReverifyAt?: string | null;
+            /** Format: date-time */
+            sttAttestationAcceptedAt?: string | null;
+            /** Format: date-time */
+            intermediationAcceptedAt?: string | null;
+            intermediationContractVersion?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            stores: components["schemas"]["MerchantMeStoreSummaryDto"][];
+        };
+        AdminMerchantListItemDto: {
+            id: string;
+            legalName: string;
+            tradeName: string;
+            taxId: string;
+            /** @enum {string} */
+            verificationStatus: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPENDED";
+            /** Format: date-time */
+            verifiedAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminMerchantListResponseDto: {
+            items: components["schemas"]["AdminMerchantListItemDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
         AdminMerchantActionDto: {
             note?: string;
+        };
+        MerchantTransitionResponseDto: {
+            merchantId: string;
+            /** @enum {string} */
+            status: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPENDED";
+        };
+        MerchantSuspendResponseDto: {
+            merchantId: string;
+            /** @enum {string} */
+            status: "SUSPENDED";
+            offersCancelled: number;
         };
         CreateStoreDto: {
             categoryTags?: ("MEAL" | "BAKERY" | "GROCERY" | "PRODUCE" | "OTHER")[];
@@ -1361,6 +1731,28 @@ export interface components {
             longitude: number;
             coverImageUrl?: string;
             openingHoursJson?: Record<string, never>;
+        };
+        StoreDto: {
+            id: string;
+            merchantId: string;
+            name: string;
+            address: string;
+            district: string;
+            city: string;
+            latitude: number;
+            longitude: number;
+            coverImageUrl?: string | null;
+            categoryTags: ("MEAL" | "BAKERY" | "GROCERY" | "PRODUCE" | "OTHER")[];
+            openingHoursJson?: {
+                [key: string]: unknown;
+            } | null;
+            active: boolean;
+            avgStars: number;
+            ratingCount: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
         };
         UpdateStoreDto: {
             categoryTags?: ("MEAL" | "BAKERY" | "GROCERY" | "PRODUCE" | "OTHER")[];
@@ -1404,6 +1796,29 @@ export interface components {
             page: number;
             pageSize: number;
         };
+        DiscoveryOfferDetailStoreDto: {
+            id: string;
+            name: string;
+            district: string;
+        };
+        DiscoveryOfferDetailTemplateDto: {
+            title: string;
+            category: string;
+            dietFlags: string[];
+            priceCents: number;
+            originalValueCentsMin: number;
+            originalValueCentsMax: number;
+            allergenDisclaimer: string;
+        };
+        DiscoveryOfferDetailResponseDto: {
+            offerId: string;
+            store: components["schemas"]["DiscoveryOfferDetailStoreDto"];
+            template: components["schemas"]["DiscoveryOfferDetailTemplateDto"];
+            pickupStartAt: string;
+            pickupEndAt: string;
+            qtyLeft: number;
+            coverImageUrl: string | null;
+        };
         DiscoveryMapPinDto: {
             storeId: string;
             lat: number;
@@ -1439,6 +1854,40 @@ export interface components {
             todaysOffers: components["schemas"]["DiscoveryTodaysOfferDto"][];
             rating: components["schemas"]["DiscoveryStoreRatingDto"];
         };
+        MembershipMineResponseDto: {
+            /** @enum {string} */
+            status: "TRIAL" | "ACTIVE" | "PAST_DUE" | "CANCELLED";
+            /** Format: date-time */
+            anchorDate: string;
+            /** Format: date-time */
+            currentPeriodStart: string;
+            /** Format: date-time */
+            currentPeriodEnd: string;
+            priceCents: number;
+            vatCents: number;
+            outstandingCents: number;
+            outstandingVatCents: number;
+            writtenOffCents: number;
+            /** Format: date-time */
+            periodPaidAt?: string | null;
+            /** Format: date-time */
+            nextAnniversary: string;
+        };
+        NotificationPreferenceDto: {
+            id: string;
+            userId: string;
+            favoritesEnabled: boolean;
+            nearbyEnabled: boolean;
+            nearbyRadiusM: number;
+            marketingEnabled: boolean;
+            /** @description Local hour-of-day [0-23]. */
+            quietHoursStart?: number | null;
+            quietHoursEnd?: number | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         UpdateNotificationPreferencesDto: {
             favoritesEnabled?: boolean;
             nearbyEnabled?: boolean;
@@ -1451,14 +1900,257 @@ export interface components {
             lat: number;
             lng: number;
         };
+        UserLocationUpdateResponseDto: {
+            /** @enum {number} */
+            ok: true;
+        };
+        AdminSettlementListMerchantDto: {
+            tradeName: string;
+        };
+        AdminSettlementListItemDto: {
+            id: string;
+            merchantId: string;
+            /** Format: date-time */
+            periodStart: string;
+            /** Format: date-time */
+            periodEnd: string;
+            /** @enum {string} */
+            status: "PENDING" | "CALCULATED" | "APPROVED" | "SENT" | "SETTLED" | "FAILED" | "HELD";
+            grossCents: number;
+            bagFeeCents: number;
+            bagFeeVatCents: number;
+            withholdingCents: number;
+            membershipOffsetCents: number;
+            membershipOffsetVatCents: number;
+            refundClawbackCents: number;
+            netPayoutCents: number;
+            carriedShortfallCents: number;
+            carriedExternalDemandCents: number;
+            inheritedExternalDemandCents: number;
+            /** Format: date-time */
+            shortfallResolvedAt?: string | null;
+            /** Format: date-time */
+            payoutAttemptedAt?: string | null;
+            holdReason?: string | null;
+            /** Format: date-time */
+            dueAt?: string | null;
+            pspTransferRef?: string | null;
+            /** Format: date-time */
+            sentAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            carriedDemandSourceBatchId?: string | null;
+            merchant: components["schemas"]["AdminSettlementListMerchantDto"];
+        };
+        AdminSettlementListResponseDto: {
+            items: components["schemas"]["AdminSettlementListItemDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
+        NightlyCycleFailureDto: {
+            merchantId?: string | null;
+            /** @enum {string} */
+            stage: "batch" | "clawback-sweep" | "clawback-sweep-scan";
+            message: string;
+        };
+        RunNightlyCycleResponseDto: {
+            batchIds: string[];
+            failures: components["schemas"]["NightlyCycleFailureDto"][];
+        };
+        SettlementLineDto: {
+            id: string;
+            batchId: string;
+            reservationId: string;
+            /** Format: date-time */
+            redeemedAt: string;
+            grossCents: number;
+            bagFeeCents: number;
+            bagFeeVatCents: number;
+            withholdingCents: number;
+            clawbackCents: number;
+            /** Format: date-time */
+            clawbackAppliedAt?: string | null;
+            clawbackBatchId?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        CommissionInvoiceDto: {
+            id: string;
+            merchantId: string;
+            batchId?: string | null;
+            /** @enum {string} */
+            type: "BAG_FEE" | "MEMBERSHIP";
+            /** @enum {string} */
+            docType: "EFATURA" | "EARSIVFATURA";
+            nilveraDocId?: string | null;
+            ublXmlRef?: string | null;
+            /** @enum {string} */
+            status: "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED";
+            /** Format: date-time */
+            issuedAt?: string | null;
+            netAmountCents: number;
+            vatCents: number;
+            totalAmountCents: number;
+            linesJson?: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        SettlementMerchantSummaryDto: {
+            tradeName: string;
+            legalName: string;
+            iban: string;
+        };
+        AdminSettlementDetailResponseDto: {
+            id: string;
+            merchantId: string;
+            /** Format: date-time */
+            periodStart: string;
+            /** Format: date-time */
+            periodEnd: string;
+            /** @enum {string} */
+            status: "PENDING" | "CALCULATED" | "APPROVED" | "SENT" | "SETTLED" | "FAILED" | "HELD";
+            grossCents: number;
+            bagFeeCents: number;
+            bagFeeVatCents: number;
+            withholdingCents: number;
+            membershipOffsetCents: number;
+            membershipOffsetVatCents: number;
+            refundClawbackCents: number;
+            netPayoutCents: number;
+            carriedShortfallCents: number;
+            carriedExternalDemandCents: number;
+            inheritedExternalDemandCents: number;
+            /** Format: date-time */
+            shortfallResolvedAt?: string | null;
+            /** Format: date-time */
+            payoutAttemptedAt?: string | null;
+            holdReason?: string | null;
+            /** Format: date-time */
+            dueAt?: string | null;
+            pspTransferRef?: string | null;
+            /** Format: date-time */
+            sentAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            carriedDemandSourceBatchId?: string | null;
+            settlementLines: components["schemas"]["SettlementLineDto"][];
+            commissionInvoices: components["schemas"]["CommissionInvoiceDto"][];
+            merchant: components["schemas"]["SettlementMerchantSummaryDto"];
+        };
         AdminSettlementActionDto: {
             note?: string;
+        };
+        PlatformPricingDto: {
+            id: string;
+            bagFeeCents: number;
+            membershipAnnualCents: number;
+            /** Format: date-time */
+            effectiveFrom: string;
         };
         SchedulePricingDto: {
             bagFeeCents: number;
             membershipAnnualCents: number;
             /** Format: date-time */
             effectiveFrom: string;
+        };
+        SettlementBatchDto: {
+            id: string;
+            merchantId: string;
+            /** Format: date-time */
+            periodStart: string;
+            /** Format: date-time */
+            periodEnd: string;
+            /** @enum {string} */
+            status: "PENDING" | "CALCULATED" | "APPROVED" | "SENT" | "SETTLED" | "FAILED" | "HELD";
+            grossCents: number;
+            bagFeeCents: number;
+            bagFeeVatCents: number;
+            withholdingCents: number;
+            membershipOffsetCents: number;
+            membershipOffsetVatCents: number;
+            refundClawbackCents: number;
+            netPayoutCents: number;
+            carriedShortfallCents: number;
+            carriedExternalDemandCents: number;
+            inheritedExternalDemandCents: number;
+            /** Format: date-time */
+            shortfallResolvedAt?: string | null;
+            /** Format: date-time */
+            payoutAttemptedAt?: string | null;
+            holdReason?: string | null;
+            /** Format: date-time */
+            dueAt?: string | null;
+            pspTransferRef?: string | null;
+            /** Format: date-time */
+            sentAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            carriedDemandSourceBatchId?: string | null;
+        };
+        SettlementListResponseDto: {
+            items: components["schemas"]["SettlementBatchDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
+        SettlementDetailResponseDto: {
+            id: string;
+            merchantId: string;
+            /** Format: date-time */
+            periodStart: string;
+            /** Format: date-time */
+            periodEnd: string;
+            /** @enum {string} */
+            status: "PENDING" | "CALCULATED" | "APPROVED" | "SENT" | "SETTLED" | "FAILED" | "HELD";
+            grossCents: number;
+            bagFeeCents: number;
+            bagFeeVatCents: number;
+            withholdingCents: number;
+            membershipOffsetCents: number;
+            membershipOffsetVatCents: number;
+            refundClawbackCents: number;
+            netPayoutCents: number;
+            carriedShortfallCents: number;
+            carriedExternalDemandCents: number;
+            inheritedExternalDemandCents: number;
+            /** Format: date-time */
+            shortfallResolvedAt?: string | null;
+            /** Format: date-time */
+            payoutAttemptedAt?: string | null;
+            holdReason?: string | null;
+            /** Format: date-time */
+            dueAt?: string | null;
+            pspTransferRef?: string | null;
+            /** Format: date-time */
+            sentAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            carriedDemandSourceBatchId?: string | null;
+            settlementLines: components["schemas"]["SettlementLineDto"][];
+            commissionInvoices: components["schemas"]["CommissionInvoiceDto"][];
+        };
+        FavoriteAddResponseDto: {
+            /** @enum {number} */
+            favorited: true;
+        };
+        FavoriteRemoveResponseDto: {
+            /** @enum {number} */
+            favorited: false;
         };
         FavoriteStoreSummaryDto: {
             id: string;
@@ -1489,6 +2181,58 @@ export interface components {
             service?: number;
             comment?: string;
         };
+        RatingDto: {
+            id: string;
+            reservationId: string;
+            userId: string;
+            storeId: string;
+            overallStars: number;
+            foodQuality?: number | null;
+            service?: number | null;
+            comment?: string | null;
+            /** @enum {string} */
+            moderationStatus: "PENDING" | "APPROVED" | "REJECTED";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        RatingDistributionDto: {
+            1: number;
+            2: number;
+            3: number;
+            4: number;
+            5: number;
+        };
+        RatingsMineItemDto: {
+            id: string;
+            overallStars: number;
+            foodQuality?: number | null;
+            service?: number | null;
+            comment?: string | null;
+            /** @enum {string} */
+            moderationStatus: "PENDING" | "APPROVED" | "REJECTED";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        RatingsMineResponseDto: {
+            storeId: string;
+            avgStars: number;
+            ratingCount: number;
+            distribution: components["schemas"]["RatingDistributionDto"];
+            /** @description Count of PENDING (commented, unmoderated) ratings for this store. */
+            pendingCount: number;
+            items: components["schemas"]["RatingsMineItemDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
+        AdminRatingListResponseDto: {
+            items: components["schemas"]["RatingDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
         ImpactTotalsDto: {
             mealsSaved: number;
             co2eGrams: number;
@@ -1502,14 +2246,6 @@ export interface components {
             count: number;
             /** @description ISO instant this cached aggregate was computed. */
             generatedAt: string;
-        };
-        CreateComplaintDto: {
-            /** @enum {string} */
-            category: "FOOD_QUALITY" | "MISSING_ITEMS" | "WRONG_ITEMS" | "STORE_CLOSED_NO_SHOW" | "RUDE_STAFF" | "PAYMENT_BILLING" | "SAFETY_HYGIENE" | "OTHER";
-            description: string;
-            /** @description If set, merchantId is derived from the reservation's store (any client-supplied merchantId is ignored). */
-            reservationId?: string;
-            merchantId?: string;
         };
         ComplaintTicketDto: {
             id: string;
@@ -1537,6 +2273,14 @@ export interface components {
             total: number;
             page: number;
             pageSize: number;
+        };
+        CreateComplaintDto: {
+            /** @enum {string} */
+            category: "FOOD_QUALITY" | "MISSING_ITEMS" | "WRONG_ITEMS" | "STORE_CLOSED_NO_SHOW" | "RUDE_STAFF" | "PAYMENT_BILLING" | "SAFETY_HYGIENE" | "OTHER";
+            description: string;
+            /** @description If set, merchantId is derived from the reservation's store (any client-supplied merchantId is ignored). */
+            reservationId?: string;
+            merchantId?: string;
         };
         ComplaintMessageDto: {
             id: string;
@@ -1612,6 +2356,56 @@ export interface components {
             targetId: string;
             reason: string;
         };
+        ContentReportDto: {
+            id: string;
+            /** @enum {string} */
+            targetType: "STORE" | "OFFER" | "RATING";
+            targetId: string;
+            reason: string;
+            /** @enum {string} */
+            status: "OPEN" | "ACTIONED" | "DISMISSED";
+            /** Format: date-time */
+            takedownDeadlineAt: string;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+            /** Format: date-time */
+            takedownWarningSentAt?: string | null;
+            /** Format: date-time */
+            takedownBreachedSentAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        AdminReportListItemDto: {
+            id: string;
+            /** @enum {string} */
+            targetType: "STORE" | "OFFER" | "RATING";
+            targetId: string;
+            reason: string;
+            /** @enum {string} */
+            status: "OPEN" | "ACTIONED" | "DISMISSED";
+            /** Format: date-time */
+            takedownDeadlineAt: string;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+            /** Format: date-time */
+            takedownWarningSentAt?: string | null;
+            /** Format: date-time */
+            takedownBreachedSentAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** @description Milliseconds until takedownDeadlineAt — negative once breached. */
+            takedownCountdownMs: number;
+        };
+        AdminReportListResponseDto: {
+            items: components["schemas"]["AdminReportListItemDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
         AdminReportActionDto: {
             note?: string;
         };
@@ -1653,7 +2447,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["HealthResponseDto"];
                 };
             };
         };
@@ -1679,7 +2473,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["OtpRequestResponseDto"];
                 };
             };
         };
@@ -1705,7 +2499,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ConsumerAuthResponseDto"];
                 };
             };
         };
@@ -1731,7 +2525,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MerchantAuthResponseDto"];
                 };
             };
         };
@@ -1757,7 +2551,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AdminAuthResponseDto"];
                 };
             };
         };
@@ -1783,7 +2577,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AuthTokensDto"];
                 };
             };
         };
@@ -1808,7 +2602,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LogoutResponseDto"];
+                };
             };
         };
     };
@@ -1833,7 +2629,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ReservationCreateResponseDto"];
                 };
             };
             /** @description Validation failed. */
@@ -1883,7 +2679,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReservationCancelResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -1918,7 +2716,7 @@ export interface operations {
         parameters: {
             query: {
                 page: number;
-                limit: number;
+                pageSize: number;
             };
             header?: {
                 /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
@@ -1934,7 +2732,67 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["ReservationListResponseDto"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Missing or invalid access token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+        };
+    };
+    ReservationsController_listForMerchant: {
+        parameters: {
+            query?: {
+                /** @description Restrict to one of the caller's own stores. */
+                storeId?: string;
+                /** @description Restrict to one specific offer. */
+                offerId?: string;
+                /** @description YYYY-MM-DD, Europe/Istanbul calendar day — which offer.offerDate to show. Defaults to today. */
+                date?: string;
+                /** @description Comma-separated ReservationStatus values (e.g. CONFIRMED,REDEEMED). Defaults to every status. */
+                status?: ("PENDING_PAYMENT" | "CONFIRMED" | "REDEEMED" | "CANCELLED_BY_USER" | "CANCELLED_BY_MERCHANT" | "NO_SHOW" | "EXPIRED")[];
+                page?: number;
+                pageSize?: number;
+            };
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReservationForMerchantListResponseDto"];
                 };
             };
             /** @description Validation failed. */
@@ -1984,7 +2842,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReservationRedeemResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2035,7 +2895,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PushTokenRegisterResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2084,7 +2946,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PushTokenRemoveResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2131,7 +2995,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["WebhookAckResponseDto"];
+                };
             };
         };
     };
@@ -2153,7 +3019,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BagTemplateDto"][];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2204,7 +3072,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BagTemplateDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2254,7 +3124,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["BagTemplateDto"];
                 };
             };
             /** @description Validation failed. */
@@ -2304,7 +3174,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BagTemplateDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2357,7 +3229,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["BagTemplateDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2408,7 +3282,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DailyOfferDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2457,7 +3333,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["OfferMineItemDto"][];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2506,7 +3384,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["OfferPublishResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2559,7 +3439,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["OfferScheduleResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2608,7 +3490,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["OfferCloseResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2658,7 +3542,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["OfferCancelResponseDto"];
                 };
             };
             /** @description Validation failed. */
@@ -2711,7 +3595,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MerchantSignupResponseDto"];
                 };
             };
         };
@@ -2736,7 +3620,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MerchantSubmitResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2783,7 +3669,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MerchantMeResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2834,7 +3722,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AdminMerchantListResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2887,7 +3777,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MerchantTransitionResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2940,7 +3832,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MerchantTransitionResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -2994,7 +3888,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MerchantSuspendResponseDto"];
                 };
             };
             /** @description Validation failed. */
@@ -3042,7 +3936,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StoreDto"][];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -3093,7 +3989,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StoreDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -3142,7 +4040,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StoreDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -3195,7 +4095,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["StoreDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -3255,6 +4157,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiscoveryOffersResponseDto"];
+                };
+            };
+        };
+    };
+    DiscoveryController_offer: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and /auth/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryOfferDetailResponseDto"];
                 };
             };
         };
@@ -3328,7 +4254,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["MembershipMineResponseDto"];
                 };
             };
             /** @description Validation failed. */
@@ -3376,7 +4302,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NotificationPreferenceDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -3427,7 +4355,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["NotificationPreferenceDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -3478,7 +4408,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["UserLocationUpdateResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -3530,7 +4462,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AdminSettlementListResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -3577,7 +4511,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RunNightlyCycleResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -3627,7 +4563,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AdminSettlementDetailResponseDto"];
                 };
             };
             /** @description Validation failed. */
@@ -3678,7 +4614,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AdminSettlementDetailResponseDto"];
                 };
             };
             /** @description Validation failed. */
@@ -3733,7 +4669,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AdminSettlementDetailResponseDto"];
                 };
             };
             /** @description Validation failed. */
@@ -3784,7 +4720,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["AdminSettlementDetailResponseDto"];
                 };
             };
             /** @description Validation failed. */
@@ -3833,7 +4769,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>[];
+                    "application/json": components["schemas"]["PlatformPricingDto"][];
                 };
             };
             /** @description Validation failed. */
@@ -3886,7 +4822,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["PlatformPricingDto"];
                 };
             };
             /** @description Validation failed. */
@@ -3937,7 +4873,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["SettlementListResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -3987,7 +4925,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/json": components["schemas"]["SettlementDetailResponseDto"];
                 };
             };
             /** @description Validation failed. */
@@ -4037,7 +4975,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FavoriteAddResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -4086,7 +5026,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FavoriteRemoveResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -4191,7 +5133,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RatingDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -4242,7 +5186,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RatingsMineResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -4294,7 +5240,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AdminRatingListResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -4343,7 +5291,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RatingDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -4392,7 +5342,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RatingDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -4437,6 +5389,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description No response body. */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4563,7 +5516,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ComplaintListResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -4773,7 +5728,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ComplaintMessageDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -4932,7 +5889,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ComplaintTicketDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -4985,7 +5944,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ComplaintTicketDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -5036,7 +5997,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ContentReportDto"];
+                };
             };
         };
     };
@@ -5061,7 +6024,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AdminReportListResponseDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -5114,7 +6079,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ContentReportDto"];
+                };
             };
             /** @description Validation failed. */
             400: {
@@ -5167,7 +6134,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ContentReportDto"];
+                };
             };
             /** @description Validation failed. */
             400: {

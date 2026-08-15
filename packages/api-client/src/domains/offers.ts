@@ -1,5 +1,5 @@
 import type { RequestEngine } from "../engine";
-import type { RequestBody } from "../core-types";
+import type { QueryParams, RequestBody } from "../core-types";
 
 /** Merchant-side daily-offer lifecycle: create -> publish|schedule -> close|cancel. Used by apps/merchant-web. */
 export function createOffersDomain(engine: RequestEngine) {
@@ -8,8 +8,9 @@ export function createOffersDomain(engine: RequestEngine) {
     create: (body: RequestBody<"/api/offers", "post">) =>
       engine.request("post", "/api/offers", { body }),
 
-    /** GET /offers/mine — the authenticated merchant's own offers. */
-    listMine: () => engine.request("get", "/api/offers/mine"),
+    /** GET /offers/mine — the authenticated merchant's own offers, optionally filtered to one calendar day (`date`). Omit for today. */
+    listMine: (query?: QueryParams<"/api/offers/mine", "get">) =>
+      engine.request("get", "/api/offers/mine", { query }),
 
     /** POST /offers/{id}/publish — makes the offer live for discovery immediately. */
     publish: (id: string) =>

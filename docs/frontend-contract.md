@@ -17,7 +17,7 @@ apps/
   consumer/               Task 12 — Expo + expo-router
 landing/                  Task 13 — Next.js (App Router)
 docs/
-  openapi.json            the committed OpenAPI contract (73 paths / 81 operations)
+  openapi.json            the committed OpenAPI contract (74 paths / 82 operations)
   frontend-contract.md    this file
 ops/
   docker-compose.yml            dev (db + redis only)
@@ -80,41 +80,56 @@ Grouped by domain, matching the shape you'd expect:
 
 ```ts
 client.auth.requestOtp(body)
-client.auth.verifyOtp(body)              // -> AuthTokens
-client.auth.merchantLogin(body)          // -> AuthTokens
-client.auth.adminLogin(body)             // -> AuthTokens
+client.auth.verifyOtp(body)              // -> ConsumerAuthResponseDto (accessToken + user)
+client.auth.merchantLogin(body)          // -> MerchantAuthResponseDto (accessToken + user)
+client.auth.adminLogin(body)             // -> AdminAuthResponseDto (accessToken + user)
+client.auth.refresh(body?)               // -> AuthTokensDto (accessToken only — no `user`)
 client.auth.logout(body?)
 
-client.merchant.signup(body)
+client.merchant.signup(body)             // -> MerchantSignupResponseDto (accessToken + merchant)
 client.merchant.submitForReview(body)
 client.merchant.getMe()
 client.merchant.getMembership()
 client.merchant.stores.{create,list,get,update}(...)
-client.merchant.bagTemplates.{create,list,get,update,deactivate}(...)
+client.merchant.bagTemplates.{create,list,get,update,deactivate}(...)   // list(query?) — storeId
 
-client.offers.{create,listMine,publish,schedule,close,cancel}(...)
-client.discovery.{offers,map,store}(...)
-client.reservations.{create,cancel,listMine,redeem,rate}(...)
-client.complaints.{create,listMine,get,addMessage,listAssigned,createReport}(...)
-client.admin.merchants.{list,approve,reject,suspend}(...)
-client.admin.settlements.{list,runNightly,get,approve,hold,retry}(...)
+client.offers.{create,publish,schedule,close,cancel}(...)
+client.offers.listMine(query?)           // date
+client.discovery.{offers,map,store,offer}(...)   // offer(id) — single-offer share-link preview, for landing
+client.reservations.{create,cancel,redeem,rate}(...)
+client.reservations.listMine(query)      // page, pageSize — both required
+client.reservations.listForMerchant(query?)  // storeId, offerId, date, status[], page, pageSize — the merchant pickup list, distinct from listMine (consumer-scoped)
+client.complaints.{create,get,addMessage,createReport}(...)
+client.complaints.listMine(query?)       // status, page, pageSize
+client.complaints.listAssigned(query?)   // status, page, pageSize
+client.admin.merchants.{approve,reject,suspend}(...)
+client.admin.merchants.list(query?)      // status, page, pageSize
+client.admin.settlements.{runNightly,get,approve,hold,retry}(...)
+client.admin.settlements.list(query?)    // status, merchantId, page, pageSize
 client.admin.pricing.{list,schedule}(...)
-client.admin.ratings.{list,approve,reject,remove}(...)
-client.admin.complaints.{list,get,resolve,escalate}(...)
-client.admin.reports.{list,action,dismiss}(...)
+client.admin.ratings.{approve,reject,remove}(...)
+client.admin.ratings.list(query?)        // status, storeId, page, pageSize
+client.admin.complaints.{get,resolve,escalate}(...)
+client.admin.complaints.list(query?)     // status, category, merchantId, page, pageSize
+client.admin.reports.{action,dismiss}(...)
+client.admin.reports.list(query?)        // status, targetType, page, pageSize
 client.admin.getDashboard()
-client.admin.exports.{complaintsCsv,settlementsCsv,merchantsCsv}(query?)  // returns a string (CSV), not JSON
+client.admin.exports.{complaintsCsv,settlementsCsv,merchantsCsv}(query?)  // from, to — returns a string (CSV), not JSON
 client.impact.{getMine,getPublic}()
-client.favorites.{add,remove,listMine}(...)
-client.ratings.listMine()
-client.settlements.{listMine,getMine}(...)
+client.favorites.{add,remove}(...)
+client.favorites.listMine(query)         // page, pageSize — both required
+client.ratings.listMine(query)           // storeId, page, pageSize — all required (yes, storeId too — see the method's own doc comment)
+client.settlements.getMine(...)
+client.settlements.listMine(query)       // page, pageSize — both required
 client.account.notificationPreferences.{get,update}(...)
 client.account.updateLocation(body)
 client.account.pushTokens.{register,remove}(...)
 client.health.check()
 ```
 
-Every method's request/response types come straight from the generated types — path params as plain string args, query/body as typed objects matching the DTO. `POST /webhooks/payment` is deliberately NOT in the client — it's a server-to-server provider webhook, never called by a frontend.
+Every method's request/response types come straight from the generated types — path params as plain string args, query/body as typed objects matching the DTO. As of `docs/openapi.json`'s current state, every one of the 82 operations except `DELETE /admin/ratings/{id}` (a genuine no-body response) has a real, non-guessed response type — see §9. `POST /webhooks/payment` is deliberately NOT in the client — it's a server-to-server provider webhook, never called by a frontend.
+
+**Every method that accepts `query` or `path` forwards EVERY parameter the operation declares** — this was a real, shipped bug for 8 methods (`reservations.listMine`, `merchant.bagTemplates.list`, `offers.listMine`, `settlements.listMine`, `favorites.listMine`, `ratings.listMine`, `complaints.listAssigned`, `complaints.listMine` each silently accepted zero arguments where the endpoint actually declares 1+ query params), fixed and now regression-tested: `packages/api-client/test/query-passthrough.spec.ts` derives the full list of query-bearing operations LIVE from `docs/openapi.json` and fails if any of them lacks a coverage entry proving its params reach the request URL — so a future contract change that adds a query param to any endpoint (existing or new) is caught automatically, not just the 8 that were already broken.
 
 ### 3.4 Error handling
 
@@ -131,7 +146,7 @@ try {
 }
 ```
 
-`err.isBackendErrorCode` tells you whether `errorCode` came from the backend's own envelope or was derived client-side from Nest's default exception shape (e.g. `"Unauthorized"` -> `"UNAUTHORIZED"`) — most framework-level 401s (expired JWT, inactive account) fall into the derived bucket; business errors from `modules/*.service.ts` always carry a real `errorCode`. See §7 for the full catalogue.
+`err.isBackendErrorCode` tells you whether `errorCode` came from the backend's own envelope or was derived client-side from Nest's default exception shape (e.g. `"Unauthorized"` -> `"UNAUTHORIZED"`) — most framework-level 401s (expired JWT, inactive account) fall into the derived bucket; business errors from `modules/*.service.ts` always carry a real `errorCode`. See §8 for the full catalogue.
 
 `err.isNetworkError` (statusCode === 0) means the request never reached the server — handle that as "offline", not as an API error.
 
@@ -194,17 +209,18 @@ All four dev ports are **fixed**, not left to "pick the next free one" (`vite.co
 
 ```
 POST /auth/otp/request  { phone }        -> client.auth.requestOtp({ phone })
-POST /auth/otp/verify   { phone, code }  -> client.auth.verifyOtp({ phone, code })  -> AuthTokens
+POST /auth/otp/verify   { phone, code }  -> client.auth.verifyOtp({ phone, code })  -> ConsumerAuthResponseDto (accessToken + user)
 ```
 `transport: "body"`. Persist `refreshToken` in `expo-secure-store`; keep `accessToken` in memory/React state (15m TTL — don't persist it, just let it be re-derived via refresh on next app open).
 
 ### 7.2 Merchant / admin — email + password
 
 ```
-POST /auth/merchant/login  { email, password }  -> client.auth.merchantLogin(...)  -> AuthTokens
-POST /auth/admin/login     { email, password }  -> client.auth.adminLogin(...)     -> AuthTokens
+POST /auth/merchant/login  { email, password }  -> client.auth.merchantLogin(...)  -> MerchantAuthResponseDto (accessToken + user: {id,email,role,merchantId})
+POST /auth/admin/login     { email, password }  -> client.auth.adminLogin(...)     -> AdminAuthResponseDto (accessToken + user: {id,email,name})
+POST /merchants/signup     { ... }              -> client.merchant.signup(...)     -> MerchantSignupResponseDto (accessToken + merchant: {id,verificationStatus})
 ```
-`transport: "cookie"`. `accessToken` comes back in the JSON body either way (keep it in memory/React state); the refresh token is stripped from the body and lives only in the httpOnly cookie — you never see it and never need to store it yourself.
+`transport: "cookie"`. `accessToken` comes back in the JSON body either way (keep it in memory/React state); the refresh token is stripped from the body and lives only in the httpOnly cookie — you never see it and never need to store it yourself. `merchant.signup` mints a session exactly like the two logins above (backend commit `7eb1bc2`) — it sends `X-Client-Transport: cookie` under cookie transport too; if you're calling it from a context where you're NOT going through `client.merchant.signup(...)` for some reason, make sure whatever you use sends that header, or the refresh token leaks into JS-readable JSON regardless of transport.
 
 ### 7.3 Merchant approval gate
 
@@ -255,17 +271,15 @@ SETTLEMENT_NOT_RETRYABLE
 
 Plus the derived-fallback family for framework-level errors with no custom code (`err.isBackendErrorCode === false`): `UNAUTHORIZED`, `BAD_REQUEST`, `NOT_FOUND`, `FORBIDDEN` (Nest's default `error` string, upper-snake-cased), or `HTTP_<status>` if even that's absent, or `NETWORK_ERROR` (statusCode 0) for a request that never reached the server. class-validator's `ValidationPipe` rejections return `message` as a `string[]` — the client joins it into one string; the individual field messages aren't separately exposed.
 
-## 9. Known OpenAPI contract gaps — read before assuming a response shape
+## 9. Response typing — fully resolved, zero hand-copied shapes
 
-**65 of the API's 81 operations have no declared response schema** in `docs/openapi.json` (either no `content` at all, or a bare `{"type":"object"}`) — most controllers across Tasks 1-8 never got an `@ApiOkResponse`/response-DTO decorator; only a minority (mostly Task 9's own additions) did. `@kurtar/api-client` reflects this HONESTLY: those operations' TypeScript return type is `Record<string, never>` or `void` — not a guess, the real (incomplete) contract.
+Every operation in `docs/openapi.json` now has a real, declared response schema (backend commit `117dd8c`) except `DELETE /admin/ratings/{id}`, which genuinely returns no body. An earlier revision of this doc documented a large gap here (65 of 81 operations untyped) and one hand-declared exception (`AuthTokens`, read by hand from the backend's `IssuedTokens` interface because the auth-issuing operations had no response schema at all) — both are resolved now: every domain method's return type, including all four auth-issuing calls and `merchant.signup`, is derived straight from the generated types with **zero hand-copied shapes anywhere in this package**. `AuthTokens` (`packages/api-client/src/transport.ts`) still exists as a name, but it's now a plain re-export of the generated `components["schemas"]["AuthTokensDto"]` — kept only because `CreateClientOptions.onTokensIssued` needs one stable shared type across every call site that can issue tokens. `verifyOtp`/`merchantLogin`/`adminLogin`/`signup` each return their OWN richer, actor-specific type (accessToken + a `user` or `merchant` object) — don't narrow their result to `AuthTokens` if you need those extra fields.
 
-**This is worth a backend follow-up task** (adding `@ApiOkResponse`/response DTOs across the affected controllers) before or during Tasks 10-12, since the operations affected include core screens: creating/listing reservations, offers, settlements detail, membership status, merchant signup. Until then, if you need a field from one of these responses, you have two honest options — neither of which is "guess the shape and cast it in the client package":
-1. Cast it yourself, in YOUR app code, with a comment naming the real backend source you read to confirm the shape (exactly how the four placeholders already handle `HealthController_getHealth` — see any `App.tsx`/`index.tsx`'s cast comment for the pattern).
-2. Ask for the backend decorator to be added — that's the actual fix, and it benefits every other app hitting the same operation.
+If a future backend change ever removes a response schema again (regressing an operation back to an untyped/no-content response), that's a real backend regression worth flagging — not something to work around with a cast in this package or in your app.
 
-The 16 operations that ARE fully typed today: `discovery.offers`, `discovery.map`, `discovery.store`, `admin.pricing.list`, `favorites.listMine`, `impact.getMine`, `impact.getPublic`, `complaints.create`, `complaints.listMine`, `complaints.get`, `admin.complaints.list`, `admin.complaints.get`, `admin.getDashboard`, and the three CSV exports (typed as `string`, not JSON).
+### A related, now-fixed bug: `Promise<never>`
 
-The ONE exception `@kurtar/api-client` itself makes to "never hand-copy a shape": `AuthTokens` (`packages/api-client/src/transport.ts`) — the four auth-issuing operations return `Record<string, never>` per the contract, but the client needs to know `{accessToken, refreshToken?, refreshTokenExpiresAt?}` really exists to implement single-flight refresh at all. That type is read from the real `TokenService.IssuedTokens` interface, not guessed, and is documented inline as the deliberate, sole override.
+Every domain method's COMPILED return type briefly resolved to `Promise<never>` — invisible to `tsc --noEmit` on source and to this package's runtime unit tests, only visible in the emitted `.d.ts` a real consumer's own `tsc` resolves against. Root cause: `openapi-typescript` emits response-status keys as NUMERIC literals (`201`, not `"201"`), and `SuccessBody`'s original conditional type checked `K extends \`2${string}\`` — a numeric literal never structurally matches a string template pattern, so the check was false for every key, unconditionally. Fixed in `core-types.ts` (stringify the key first: `` `${K}` extends `2${string}` ``) and regression-tested against the BUILT package specifically — `packages/api-client/test-types/build-output.types.ts`, run via `npm run typecheck:build`, imports `../dist` (not `../src`) and asserts real fields exist on several methods' awaited return types. If you ever see a kurtar API client method typed as `never` again, this is the first thing to check.
 
 ## 10. Known tooling footguns (already solved — read only if something breaks)
 
@@ -276,4 +290,6 @@ The ONE exception `@kurtar/api-client` itself makes to "never hand-copy a shape"
 
 ## 11. CI
 
-`.github/workflows/quality-gates.yml`'s `frontend-quality` job (blocking, no `continue-on-error`) runs, per workspace: lint, typecheck, and — for `@kurtar/api-client` — unit tests (including the single-flight refresh concurrency test), then production builds for merchant-web/admin-web/landing and `expo-doctor` for consumer. It also re-generates `@kurtar/api-client`'s types from `docs/openapi.json` and diffs against the committed file, mirroring the backend's own `openapi-contract-drift` job. It needs no database — the client's types come from the committed spec file, not a live server.
+`.github/workflows/quality-gates.yml`'s `frontend-quality` job (blocking, no `continue-on-error`) runs, per workspace: lint, typecheck, and — for `@kurtar/api-client` — unit tests (including the single-flight refresh concurrency test AND the query-passthrough coverage sweep), a type-level regression check against the BUILT package (`npm run typecheck:build` — see §9), then production builds for merchant-web/admin-web/landing and `expo-doctor` for consumer. It also re-generates `@kurtar/api-client`'s types from `docs/openapi.json` and diffs against the committed file, mirroring the backend's own `openapi-contract-drift` job. It needs no database — the client's types come from the committed spec file, not a live server.
+
+If you're extending `@kurtar/api-client`, run `npm run typecheck:build -w @kurtar/api-client` locally before pushing — `npm run typecheck` alone (source-only) is not sufficient to catch every class of bug this package has actually shipped (see §9's `Promise<never>` postmortem).

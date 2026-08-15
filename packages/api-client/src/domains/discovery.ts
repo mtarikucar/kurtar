@@ -15,6 +15,10 @@ export function createDiscoveryDomain(engine: RequestEngine) {
     /** GET /discovery/stores/{id} — a store's public profile (today's offers + rating aggregate). */
     store: (id: string) =>
       engine.request("get", "/api/discovery/stores/{id}", { path: { id } }),
+
+    /** GET /discovery/offers/{id} — a single offer's public share preview (the universal-link bridge page /o/[id]). Same visibility rules as `offers()` — a non-visible or nonexistent offer 404s identically. Used by landing. */
+    offer: (id: string) =>
+      engine.request("get", "/api/discovery/offers/{id}", { path: { id } }),
   };
 }
 

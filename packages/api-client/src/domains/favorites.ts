@@ -1,4 +1,5 @@
 import type { RequestEngine } from "../engine";
+import type { QueryParams } from "../core-types";
 
 /** Consumer's favorited stores. Used by apps/consumer. */
 export function createFavoritesDomain(engine: RequestEngine) {
@@ -15,8 +16,9 @@ export function createFavoritesDomain(engine: RequestEngine) {
         path: { storeId },
       }),
 
-    /** GET /me/favorites — the authenticated consumer's favorited stores. */
-    listMine: () => engine.request("get", "/api/me/favorites"),
+    /** GET /me/favorites — the authenticated consumer's favorited stores, paginated (`page`/`pageSize` both required). */
+    listMine: (query: QueryParams<"/api/me/favorites", "get">) =>
+      engine.request("get", "/api/me/favorites", { query }),
   };
 }
 

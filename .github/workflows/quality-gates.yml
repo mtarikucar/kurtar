@@ -481,6 +481,23 @@ jobs:
       - name: Unit tests (@kurtar/api-client — incl. the single-flight refresh test)
         run: npm test -w @kurtar/api-client
 
+      # Regression gate for a bug class that evaded both the two checks
+      # above: openapi-typescript emits response-status keys as NUMERIC
+      # literals, which a naive `K extends \`2${string}\`` conditional
+      # type never matches — collapsing every domain method's COMPILED
+      # return type to `Promise<never>` while `tsc --noEmit` on source
+      # (the Typecheck step above) stayed green throughout, because the
+      # checker fully resolves the conditional at a call site with
+      # concrete literal arguments even when the declaration emitter,
+      # printing an unannotated inferred return type, cannot. This step
+      # rebuilds the package and typechecks a fixture
+      # (test-types/build-output.types.ts) that imports the BUILT dist/
+      # output — the same thing a real consumer's own tsc resolves
+      # against — and asserts real fields exist on the awaited response
+      # types. See core-types.ts's SuccessBody doc comment for the fix.
+      - name: Type-level regression test against the BUILT @kurtar/api-client (not source)
+        run: npm run typecheck:build -w @kurtar/api-client
+
       - name: Production build — merchant-web (vite build)
         run: npm run build -w merchant-web
 

@@ -1,5 +1,5 @@
 import type { RequestEngine } from "../engine";
-import type { RequestBody } from "../core-types";
+import type { QueryParams, RequestBody } from "../core-types";
 
 /** Trust & safety surface: consumer complaints (with SLA), merchant's assigned queue, and abuse reports. Used by apps/consumer and apps/merchant-web. */
 export function createComplaintsDomain(engine: RequestEngine) {
@@ -8,8 +8,9 @@ export function createComplaintsDomain(engine: RequestEngine) {
     create: (body: RequestBody<"/api/complaints", "post">) =>
       engine.request("post", "/api/complaints", { body }),
 
-    /** GET /complaints/mine — the authenticated consumer's own complaints. */
-    listMine: () => engine.request("get", "/api/complaints/mine"),
+    /** GET /complaints/mine — the authenticated consumer's own complaints, optionally filtered by status and paginated. */
+    listMine: (query?: QueryParams<"/api/complaints/mine", "get">) =>
+      engine.request("get", "/api/complaints/mine", { query }),
 
     /** GET /complaints/{id} — a single complaint's detail + message thread (consumer or assigned merchant). */
     get: (id: string) =>
@@ -25,8 +26,9 @@ export function createComplaintsDomain(engine: RequestEngine) {
         body,
       }),
 
-    /** GET /complaints/assigned — merchant-side: complaints assigned to the authenticated merchant. */
-    listAssigned: () => engine.request("get", "/api/complaints/assigned"),
+    /** GET /complaints/assigned — merchant-side: complaints assigned to the authenticated merchant, optionally filtered by status and paginated. */
+    listAssigned: (query?: QueryParams<"/api/complaints/assigned", "get">) =>
+      engine.request("get", "/api/complaints/assigned", { query }),
 
     /** POST /reports — abuse/policy report against a store, offer, or rating (distinct from a per-reservation complaint). */
     createReport: (body: RequestBody<"/api/reports", "post">) =>

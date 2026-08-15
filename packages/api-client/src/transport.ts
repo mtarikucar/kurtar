@@ -1,3 +1,5 @@
+import type { components } from "./generated/openapi-types";
+
 /**
  * `"cookie"` — apps/merchant-web, apps/admin-web (and landing, for whatever
  *   little authenticated surface it has): the refresh token travels ONLY as
@@ -14,32 +16,25 @@
 export type ClientTransport = "cookie" | "body";
 
 /**
- * What POST /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and
- * /auth/refresh actually return at runtime (backend/src/modules/auth/
- * services/token.service.ts's `IssuedTokens`). Declared by hand here — the
- * ONE deliberate exception to "every type is derived from generated/
- * openapi-types.ts" in this package. Why: none of these four operations
- * carry an `@ApiOkResponse` (or any response DTO) in the backend
- * controller, so openapi-typescript generates `Record<string, never>` for
- * their response body — an accurate reflection of the committed contract,
- * not a bug to work around silently. This type is read from the real
- * `IssuedTokens` interface (the actual runtime source of truth), not
- * guessed, and is exactly why: the single-flight refresh logic in
- * `engine.ts` and every app's login flow depend on knowing these fields
- * exist. See docs/frontend-contract.md's "known OpenAPI contract gaps"
- * section — worth a follow-up backend task to add `@ApiOkResponse` there
- * so this override can be deleted.
+ * `POST /auth/refresh`'s response shape — derived from the generated
+ * `AuthTokensDto` schema, not hand-written (an earlier revision of this
+ * file hand-declared this type as a documented workaround for a backend
+ * gap — every auth-issuing operation lacked a response DTO at the time.
+ * That gap is closed: `docs/openapi.json` now declares a real schema for
+ * every one of them, so this alias is a straight re-export, kept only
+ * because `CreateClientOptions.onTokensIssued` needs ONE stable shared
+ * type across every call site that can issue tokens).
+ *
+ * `verifyOtp`/`merchantLogin`/`adminLogin`/`signup` return their OWN
+ * richer, actor-specific types (each also carries a `user` object) —
+ * see `domains/auth.ts` and `domains/merchant.ts`. Use `AuthTokens` only
+ * for the fields every one of those shapes has in common.
  *
  * `refreshToken` is absent when the caller used cookie transport (the
  * backend strips it from the JSON body in that case — see
  * auth.controller.ts's `stripRefreshToken`); present for body transport.
  */
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken?: string;
-  /** ISO-8601 string as received over JSON — the backend's `Date` does not survive serialization. */
-  refreshTokenExpiresAt?: string;
-}
+export type AuthTokens = components["schemas"]["AuthTokensDto"];
 
 export interface CreateClientOptions {
   /** Origin only, e.g. "http://localhost:4750" — every generated operation path already includes the "/api" prefix. */
