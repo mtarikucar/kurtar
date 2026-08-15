@@ -1,0 +1,147 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.title {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-h1);
+}
+
+.weekNav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.weekNavButton {
+  min-height: 44px;
+  min-width: 44px;
+  border: 1.5px solid var(--color-neutral-300);
+  background: var(--color-neutral-0);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-size-h3);
+}
+
+.weekStrip {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-xs);
+}
+
+.dayCell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 64px;
+  padding: var(--space-sm) 0;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-neutral-200);
+  background: var(--color-neutral-0);
+  cursor: pointer;
+}
+
+.dayCellSelected {
+  border-color: var(--color-primary-500);
+  background: var(--color-primary-50);
+}
+
+.dayCellWeekday {
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-500);
+}
+
+.dayCellNumber {
+  font-size: var(--font-size-bodyStrong);
+  font-weight: var(--font-weight-bodyStrong);
+}
+
+.dayCellDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-secondary-500);
+}
+
+.dayCellEmptyDot {
+  width: 6px;
+  height: 6px;
+}
+
+.dayDetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.dayDetailHeading {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-h3);
+}
+
+.offerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.row {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.row > * {
+  flex: 1;
+  /* see shared/ui/Form.module.css's .field comment — a flex item's
+     default min-width floors it at its content's intrinsic size, which
+     silently overflows a 390px viewport for two fields side by side. */
+  min-width: 0;
+}
+
+.timeInput {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.timeInput input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-neutral-300);
+  font-size: var(--font-size-body);
+  box-sizing: border-box;
+}
+
+.radioRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.radioOption {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 44px;
+}
+
+.formActions {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.formActions > * {
+  flex: 1;
+}

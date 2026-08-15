@@ -1,0 +1,85 @@
+/* Shared by TextField/SelectField/Checkbox — one visual language for every
+ * form control in the app (label, input, hint, error). */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  /* Flex items default to `min-width: auto`, which floors their shrink at
+     the content's intrinsic size — for a text field that intrinsic size
+     can exceed a 390px viewport, so two fields side by side (StoreForm's
+     latitude/longitude row, BagTemplateForm's value-band row) silently
+     overflow and get clipped by body's `overflow-x: hidden` instead of
+     wrapping. `min-width: 0` lets this shrink like every other block
+     element; `.control`'s `width: 100%` below is what then makes the
+     actual input/select/textarea fill whatever width that leaves it. */
+  min-width: 0;
+}
+
+.label {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-label);
+  color: var(--color-neutral-700);
+}
+
+.required::after {
+  content: " *";
+  color: var(--color-danger-500);
+}
+
+.control {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-neutral-300);
+  background: var(--color-neutral-0);
+  font-size: var(--font-size-body);
+  color: var(--color-neutral-900);
+  box-sizing: border-box;
+}
+
+.control:focus-visible {
+  border-color: var(--color-info-500);
+}
+
+.controlError {
+  border-color: var(--color-danger-500);
+}
+
+.textarea {
+  min-height: 88px;
+  padding: var(--space-md);
+  resize: vertical;
+}
+
+.hint {
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-500);
+}
+
+.errorText {
+  font-size: var(--font-size-caption);
+  color: var(--color-danger-700);
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  min-height: 44px;
+}
+
+.checkboxInput {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  margin-top: 2px;
+  accent-color: var(--color-primary-500);
+}
+
+.checkboxLabel {
+  font-size: var(--font-size-body);
+  line-height: var(--line-height-body);
+  color: var(--color-neutral-800);
+}

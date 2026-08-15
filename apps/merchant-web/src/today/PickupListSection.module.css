@@ -1,0 +1,26 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.heading {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-h3);
+}
+
+.manualForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.manualRow {
+  display: flex;
+  gap: var(--space-md);
+  align-items: flex-end;
+}
+
+.manualRow > :first-child {
+  flex: 1;
+}

@@ -1,0 +1,22 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.title {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-h1);
+}
+
+.dateLine {
+  font-size: var(--font-size-body);
+  color: var(--color-neutral-500);
+  margin-top: 2px;
+}
+
+.offerList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}

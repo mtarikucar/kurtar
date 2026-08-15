@@ -1,0 +1,33 @@
+{
+  "appName": "kurtar işletme",
+  "actions": {
+    "save": "Kaydet",
+    "cancel": "Vazgeç",
+    "close": "Kapat",
+    "edit": "Düzenle",
+    "delete": "Sil",
+    "back": "Geri",
+    "next": "Devam et",
+    "retry": "Tekrar dene",
+    "confirm": "Onayla",
+    "logout": "Çıkış yap"
+  },
+  "status": {
+    "loading": "Yükleniyor…",
+    "active": "Aktif",
+    "inactive": "Pasif"
+  },
+  "empty": {
+    "generic": "Henüz gösterilecek bir şey yok."
+  },
+  "error": {
+    "title": "Bir sorun oluştu",
+    "generic": "Bir şeyler ters gitti. Lütfen tekrar deneyin."
+  },
+  "units": {
+    "piece": "adet"
+  },
+  "validation": {
+    "required": "Bu alan zorunlu."
+  }
+}

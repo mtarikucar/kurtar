@@ -1,0 +1,33 @@
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.button {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-neutral-300);
+  background: var(--color-neutral-0);
+  font-size: var(--font-size-h3);
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-neutral-800);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.button:active:not(:disabled) {
+  background: var(--color-neutral-100);
+}
+
+.value {
+  min-width: 2.5ch;
+  text-align: center;
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-h3);
+}
