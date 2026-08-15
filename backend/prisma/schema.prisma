@@ -172,6 +172,20 @@ enum ComplaintStatus {
   ESCALATED
 }
 
+/// [Task 9] Complaint categories — a fixed, reviewable set rather than
+/// free text (the brief's "categories enum'd"). Picked for a surplus-food
+/// marketplace's actual complaint shapes; OTHER is the catch-all.
+enum ComplaintCategory {
+  FOOD_QUALITY
+  MISSING_ITEMS
+  WRONG_ITEMS
+  STORE_CLOSED_NO_SHOW
+  RUDE_STAFF
+  PAYMENT_BILLING
+  SAFETY_HYGIENE
+  OTHER
+}
+
 enum ReportTargetType {
   STORE
   OFFER
@@ -548,6 +562,17 @@ model Store {
   categoryTags     BagCategory[]
   openingHoursJson Json?
   active           Boolean       @default(true)
+
+  // [Task 9] Denormalized rating aggregate — maintained by
+  // modules/ratings' recomputeStoreAggregate (a bounded, storeId-scoped
+  // Rating.aggregate() re-derivation, run inside the SAME transaction as
+  // every rating create/approve/reject/delete), never a live
+  // platform-wide scan on a read path. Counts APPROVED ratings only — see
+  // Rating.moderationStatus's doc comment for the visibility policy.
+  // avgStars is 0 (not null) when ratingCount is 0, so callers never need
+  // a null-check just to render a placeholder.
+  avgStars    Float @default(0)
+  ratingCount Int   @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1139,6 +1164,16 @@ model Rating {
   service      Int?
   comment      String?
 
+  // [Task 9] Visibility policy (documented here, enforced in
+  // modules/ratings/ratings.service.ts's create()): a rating with NO
+  // comment is auto-APPROVED immediately (nothing to moderate, and the
+  // vast majority of ratings are a bare star tap — gating those on an
+  // admin would silently stall every store's average). A rating WITH a
+  // comment starts PENDING and needs an explicit admin approve/reject
+  // (modules/ratings' admin queue) before it counts toward
+  // Store.avgStars/ratingCount or appears in any public listing. REJECTED
+  // is terminal (used both by the admin ratings queue and by a
+  // content-report "action" on a RATING target — modules/moderation).
   moderationStatus ModerationStatus @default(PENDING)
 
   createdAt DateTime @default(now())
@@ -1203,18 +1238,57 @@ model ComplaintTicket {
   reservationId String?
   reservation   Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
 
-  category    String
+  category    ComplaintCategory
   description String
   status      ComplaintStatus @default(OPEN)
 
+  // [Task 9] ETAHS wording is calendar days, not business days (unlike
+  // settlements' 5-BUSINESS-day due date) — set at creation as
+  // now + 15 calendar days (modules/complaints/sla-date-math.ts).
   slaDeadlineAt DateTime
   resolvedAt    DateTime?
+  // [Task 9] Stamped the first time complaint-sla-cron.service.ts sends
+  // the "approaching deadline" admin alert for this ticket — the same
+  // sentinel-column idempotency pattern pickupReminderSentAt/
+  // shortfallResolvedAt already use elsewhere, so an hourly sweep never
+  // re-alerts on the same ticket. NULL means "not yet warned". Breach
+  // itself needs no separate sentinel — the OPEN/MERCHANT_RESPONDED ->
+  // ESCALATED transition is naturally idempotent (a guarded UPDATE whose
+  // WHERE no longer matches once ESCALATED).
+  slaWarningSentAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  messages ComplaintMessage[]
+
   @@index([status, slaDeadlineAt])
   @@map("complaint_tickets")
+}
+
+/// [Task 9] The message thread on a ComplaintTicket — consumer, the
+/// complained-about merchant, and admin all post here (authorization is
+/// modules/complaints/complaints.service.ts's job, not a DB constraint:
+/// authorType/authorId are a soft reference, matching
+/// MerchantVerificationEvent.actorAdminId's precedent, since a message's
+/// author can be any of three separate principal tables). A MERCHANT
+/// reply is also what flips ComplaintTicket.status OPEN -> MERCHANT_RESPONDED
+/// (see complaints.service.ts's addMessage) — there is no separate "reply"
+/// endpoint.
+model ComplaintMessage {
+  id String @id @default(cuid())
+
+  complaintId String
+  complaint   ComplaintTicket @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+
+  authorType PrincipalType
+  authorId   String
+  body       String
+
+  createdAt DateTime @default(now())
+
+  @@index([complaintId, createdAt])
+  @@map("complaint_messages")
 }
 
 model ContentReport {
@@ -1225,7 +1299,16 @@ model ContentReport {
   reason     String
 
   status             ReportStatus @default(OPEN)
+  // [Task 9] now + 48h at creation (modules/moderation).
   takedownDeadlineAt DateTime
+  resolvedAt         DateTime?
+  // [Task 9] ReportStatus has no ESCALATED value (unlike ComplaintStatus)
+  // — a breach here is alert-only, never an automatic status change, so
+  // BOTH the approaching and the breached alert need their own sentinel
+  // to stay idempotent across cron ticks (mirrors
+  // ComplaintTicket.slaWarningSentAt).
+  takedownWarningSentAt  DateTime?
+  takedownBreachedSentAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -14,6 +14,7 @@ import { MerchantStatusEmailHandler } from "./handlers/merchant-status-email.han
 import { SettlementSentEmailHandler } from "./handlers/settlement-sent-email.handler";
 import { MembershipApprovedHandler } from "../memberships/membership-approved.handler";
 import { SettlementSentInvoiceHandler } from "../invoicing/settlement-sent-invoice.handler";
+import { ImpactLedgerHandler } from "../impact/impact-redeemed.handler";
 
 /**
  * The drain worker + handler registry + every handler this task wires up.
@@ -47,6 +48,7 @@ import { SettlementSentInvoiceHandler } from "../invoicing/settlement-sent-invoi
     SettlementSentEmailHandler,
     MembershipApprovedHandler,
     SettlementSentInvoiceHandler,
+    ImpactLedgerHandler,
   ],
 })
 export class OutboxModule {}

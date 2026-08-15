@@ -12,6 +12,7 @@ import {
 import { buildDiscoveryOffersCacheKey } from "./discovery-cache-key.util";
 import { DiscoveryCacheService } from "./discovery-cache.service";
 import { escapeLikePattern } from "./like-escape.util";
+import { buildLiveOfferConditions } from "./live-offer.util";
 import { DiscoveryMapQueryDto } from "./dto/discovery-map-query.dto";
 import { DiscoveryOffersQueryDto } from "./dto/discovery-offers-query.dto";
 
@@ -160,19 +161,19 @@ export class DiscoveryService {
   ): Promise<DiscoveryOffersResult> {
     const point = Prisma.sql`ST_SetSRID(ST_MakePoint(${query.lng}, ${query.lat}), 4326)::geography`;
 
+    // [Task 9] The first six conditions (PUBLISHED/stock-left/pickup-not-
+    // over/store-active/template-active/merchant-APPROVED) are the shared
+    // "live offer" predicate — see live-offer.util.ts's doc comment for
+    // why this is now a shared helper instead of hand-typed here and in
+    // map()/favorites a third time. A SUSPENDED (or never-APPROVED)
+    // merchant's offers must never surface publicly — the suspend
+    // kill-switch cancels every ACTIVE offer at the moment of suspension,
+    // but that's a one-shot sweep, not a standing gate: without this
+    // filter, an offer published BEFORE suspension (or one somehow
+    // created after via a missed write-path check) would stay visible and
+    // bookable indefinitely.
     const conditions: Prisma.Sql[] = [
-      Prisma.sql`d."status" = 'PUBLISHED'`,
-      Prisma.sql`d."qtyReserved" < d."qtyTotal"`,
-      Prisma.sql`d."pickupEndAt" > now()`,
-      Prisma.sql`s."active" = true`,
-      Prisma.sql`bt."active" = true`,
-      // A SUSPENDED (or never-APPROVED) merchant's offers must never
-      // surface publicly — the suspend kill-switch cancels every ACTIVE
-      // offer at the moment of suspension, but that's a one-shot sweep,
-      // not a standing gate: without this filter, an offer published
-      // BEFORE suspension (or one somehow created after via a missed
-      // write-path check) would stay visible and bookable indefinitely.
-      Prisma.sql`m."verificationStatus" = 'APPROVED'`,
+      ...buildLiveOfferConditions(new Date()),
       Prisma.sql`ST_DWithin(s."location", ${point}, ${query.radiusM})`,
     ];
     if (query.category) {
@@ -313,15 +314,11 @@ export class DiscoveryService {
       });
     }
 
+    // [Task 9] Same shared live-offer predicate as queryOffers above — see
+    // live-offer.util.ts. Same SUSPENDED-merchant reasoning too: a
+    // SUSPENDED merchant's pins must not show up on the map either.
     const conditions: Prisma.Sql[] = [
-      Prisma.sql`d."status" = 'PUBLISHED'`,
-      Prisma.sql`d."qtyReserved" < d."qtyTotal"`,
-      Prisma.sql`d."pickupEndAt" > now()`,
-      Prisma.sql`s."active" = true`,
-      Prisma.sql`bt."active" = true`,
-      // Same reasoning as queryOffers above — a SUSPENDED merchant's pins
-      // must not show up on the map either.
-      Prisma.sql`m."verificationStatus" = 'APPROVED'`,
+      ...buildLiveOfferConditions(new Date()),
       Prisma.sql`ST_Intersects(s."location"::geometry, ST_MakeEnvelope(${query.west}, ${query.south}, ${query.east}, ${query.north}, 4326))`,
     ];
     if (query.category) {
@@ -392,6 +389,11 @@ export class DiscoveryService {
         coverImageUrl: true,
         categoryTags: true,
         openingHoursJson: true,
+        // [Task 9] Denormalized rating aggregate — see Store.avgStars's
+        // doc comment. Reading it here means this @Public, uncached
+        // endpoint never runs a live Rating.aggregate() per request.
+        avgStars: true,
+        ratingCount: true,
       },
     });
     if (!store) throw storeNotFoundError();
@@ -436,18 +438,14 @@ export class DiscoveryService {
         qtyLeft: o.qtyTotal - o.qtyReserved,
       }));
 
-    const ratingAgg = await this.prisma.rating.aggregate({
-      where: { storeId, moderationStatus: "APPROVED" },
-      _avg: { overallStars: true },
-      _count: { _all: true },
-    });
+    const { avgStars, ratingCount, ...publicStore } = store;
 
     return {
-      store,
+      store: publicStore,
       todaysOffers,
       rating: {
-        average: ratingAgg._avg.overallStars ?? 0,
-        count: ratingAgg._count._all,
+        average: avgStars,
+        count: ratingCount,
       },
     };
   }

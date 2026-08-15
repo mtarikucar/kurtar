@@ -27,6 +27,16 @@ export const OUTBOX_EVENT_TYPES = {
   OFFER_CANCELLED_MERCHANT_EMAIL_V1: "offer.cancelled.merchant-email.v1",
   RESERVATION_CONFIRMED_V1: "reservation.confirmed.v1",
   RESERVATION_REDEEMED_V1: "reservation.redeemed.v1",
+  // [Task 9] A SECOND, independent event for the exact same redeem
+  // instant reservation.redeemed.v1 already covers — NOT reused, for the
+  // identical one-handler-per-type reason OFFER_CANCELLED_MERCHANT_EMAIL_V1/
+  // MERCHANT_APPROVED_MEMBERSHIP_V1 were split out (see their own doc
+  // comments): reservation.redeemed.v1 is already ReservationRedeemedHandler's
+  // (the rating-invite push, scheduled +2h). This drives
+  // modules/impact's ImpactLedger write instead — a different concern
+  // with its own idempotency/retry needs (must fire immediately, not
+  // +2h), published in the SAME transaction as reservation.redeemed.v1.
+  RESERVATION_REDEEMED_IMPACT_V1: "reservation.redeemed.impact.v1",
   MERCHANT_APPROVED_V1: "merchant.approved.v1",
   MERCHANT_REJECTED_V1: "merchant.rejected.v1",
   MERCHANT_SUSPENDED_V1: "merchant.suspended.v1",
@@ -109,6 +119,22 @@ export interface ReservationRedeemedV1Payload {
   reservationId: string;
   userId: string;
   storeId: string;
+}
+
+/** [Task 9] Everything ImpactLedgerHandler needs to compute mealsSaved/
+ * co2eGrams/moneySavedCents WITHOUT a second query back to the
+ * reservation/offer/bagTemplate chain — copied at publish time (same
+ * "cheap-and-stable" rationale as every other payload in this file),
+ * since the underlying rows could in principle change shape before a
+ * retried dispatch runs. */
+export interface ReservationRedeemedImpactV1Payload {
+  reservationId: string;
+  userId: string;
+  storeId: string;
+  qty: number;
+  totalCents: number;
+  originalValueCentsMin: number;
+  originalValueCentsMax: number;
 }
 
 export interface MerchantStatusV1Payload {

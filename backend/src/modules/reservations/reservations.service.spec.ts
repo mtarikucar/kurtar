@@ -547,13 +547,20 @@ describe("ReservationsService.redeem", () => {
     return {
       id: "resv1",
       offerId: "offer1",
+      userId: "u1",
+      storeId: "store1",
       qty: 1,
+      totalCents: 5000,
       status: "CONFIRMED",
       redeemedAt: null,
       store: { merchantId: "merchant1" },
       offer: {
         pickupStartAt: new Date(Date.now() - 60_000),
         pickupEndAt: new Date(Date.now() + 60_000),
+        bagTemplate: {
+          originalValueCentsMin: 10000,
+          originalValueCentsMax: 20000,
+        },
       },
       ...overrides,
     };
@@ -621,6 +628,25 @@ describe("ReservationsService.redeem", () => {
     expect(tx.dailyOffer.update).toHaveBeenCalledWith({
       where: { id: "offer1" },
       data: { qtyRedeemed: { increment: 1 } },
+    });
+    // [Task 9] Both the rating-invite AND the impact-ledger outbox rows
+    // are written on the winning branch — two independent events, per
+    // event-types.ts's doc comment.
+    expect(tx.outboxEvent.create).toHaveBeenCalledTimes(2);
+    const impactCall = (tx.outboxEvent.create as jest.Mock).mock.calls.find(
+      ([args]: any[]) => args.data.type === "reservation.redeemed.impact.v1",
+    );
+    expect(impactCall[0].data).toMatchObject({
+      idempotencyKey: "reservation-redeemed-impact:resv1",
+      payload: {
+        reservationId: "resv1",
+        userId: "u1",
+        storeId: "store1",
+        qty: 1,
+        totalCents: 5000,
+        originalValueCentsMin: 10000,
+        originalValueCentsMax: 20000,
+      },
     });
   });
 

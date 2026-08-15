@@ -24,6 +24,9 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { MembershipsModule } from "./modules/memberships/memberships.module";
 import { InvoicingModule } from "./modules/invoicing/invoicing.module";
 import { SettlementsModule } from "./modules/settlements/settlements.module";
+import { FavoritesModule } from "./modules/favorites/favorites.module";
+import { RatingsModule } from "./modules/ratings/ratings.module";
+import { ImpactModule } from "./modules/impact/impact.module";
 
 @Module({
   imports: [
@@ -60,6 +63,9 @@ import { SettlementsModule } from "./modules/settlements/settlements.module";
     MembershipsModule,
     InvoicingModule,
     SettlementsModule,
+    FavoritesModule,
+    RatingsModule,
+    ImpactModule,
   ],
   providers: [
     // Applies the matching THROTTLER_PROFILES tier to every route; auth

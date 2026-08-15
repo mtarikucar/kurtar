@@ -715,7 +715,13 @@ export class ReservationsService {
   ): Promise<{ reservationId: string; status: "REDEEMED"; redeemedAt: Date }> {
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
-      include: { store: true, offer: true },
+      include: {
+        store: true,
+        // [Task 9] bagTemplate's original-value range is needed for the
+        // reservation.redeemed.impact.v1 payload below — fetched here
+        // (piggybacking on this same read) rather than a second query.
+        offer: { include: { bagTemplate: true } },
+      },
     });
     if (!reservation) throw reservationNotFoundError();
     if (reservation.store.merchantId !== merchantId) {
@@ -789,6 +795,26 @@ export class ReservationsService {
         },
         idempotencyKey: `reservation-redeemed:${reservationId}`,
         scheduledFor: new Date(attemptedAt.getTime() + RATING_INVITE_DELAY_MS),
+      });
+
+      // [Task 9] The impact-ledger leg — no scheduledFor (recorded
+      // immediately, unlike the +2h rating invite above). Split into its
+      // own event/handler rather than piggybacking on
+      // ReservationRedeemedHandler — see event-types.ts's doc comment.
+      await this.outbox.publish(tx, {
+        type: OUTBOX_EVENT_TYPES.RESERVATION_REDEEMED_IMPACT_V1,
+        payload: {
+          reservationId,
+          userId: reservation.userId,
+          storeId: reservation.storeId,
+          qty: reservation.qty,
+          totalCents: reservation.totalCents,
+          originalValueCentsMin:
+            reservation.offer.bagTemplate.originalValueCentsMin,
+          originalValueCentsMax:
+            reservation.offer.bagTemplate.originalValueCentsMax,
+        },
+        idempotencyKey: `reservation-redeemed-impact:${reservationId}`,
       });
 
       return attemptedAt;
