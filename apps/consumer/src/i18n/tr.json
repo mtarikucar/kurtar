@@ -149,7 +149,7 @@
     "surpriseTitle": "Sürpriz paket",
     "surpriseBody": "Bu paketin içeriği mağaza tarafından belirlenir ve önceden gösterilmez — o günün fazlasından oluşur. Fotoğraflar temsilidir.",
     "allergenTitle": "Alerjen uyarısı",
-    "allergenBody": "İçerik gün be gün değişebileceğinden alerjen bilgisi mağazaya göre değişir. Alerjin varsa teslim alırken mağaza personeline mutlaka sor. Bu bilgiyi uygulama içinde göstermek için mağazaların alerjen beyanı yakında eklenecek.",
+    "allergenBody": "İçerik gün be gün değişebileceğinden alerjen bilgisi mağazaya göre değişir. Bu mağaza için bir alerjen beyanı bulunamadı — alerjin varsa teslim alırken mağaza personeline mutlaka sor.",
     "noRefundTitle": "İade koşulu",
     "noRefundBody": "Bu bir gıda ürünüdür. Teslim alma saatinden {{hours}} saat öncesine kadar ücretsiz iptal edebilirsin; bu süreden sonra cayma hakkı bulunmamaktadır ve ücret iade edilmez.",
     "buyCta": "Satın al · {{price}}",

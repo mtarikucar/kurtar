@@ -149,7 +149,7 @@
     "surpriseTitle": "Surprise bag",
     "surpriseBody": "This bag's exact contents are decided by the store and not shown in advance — it's made from that day's surplus. Photos are illustrative.",
     "allergenTitle": "Allergen notice",
-    "allergenBody": "Contents vary day to day, so allergen information varies by store. If you have allergies, always ask staff when you pick up. Per-store allergen disclosures are coming to the app soon.",
+    "allergenBody": "Contents vary day to day, so allergen information varies by store. This store hasn't provided an allergen disclosure — if you have allergies, always ask staff when you pick up.",
     "noRefundTitle": "Refund policy",
     "noRefundBody": "This is a food item. You can cancel for free up to {{hours}} hours before pickup; after that there is no right of withdrawal and the price is non-refundable.",
     "buyCta": "Buy · {{price}}",

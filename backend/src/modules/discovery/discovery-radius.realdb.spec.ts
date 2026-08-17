@@ -93,6 +93,7 @@ async function seedOffer(
     status?: OfferStatus;
     qtyTotal?: number;
     qtyReserved?: number;
+    allergenDisclaimer?: string;
   } = {},
 ) {
   const n = templateSeedCounter++;
@@ -102,7 +103,7 @@ async function seedOffer(
       title: `Discovery Realdb Test Bag ${n}`,
       category: opts.category ?? "MEAL",
       dietFlags: opts.dietFlags ?? [],
-      allergenDisclaimer: "N/A",
+      allergenDisclaimer: opts.allergenDisclaimer ?? "N/A",
       originalValueCentsMin: 10000,
       originalValueCentsMax: 20000,
       priceCents: 5900,
@@ -378,6 +379,24 @@ d("DiscoveryService — real DB radius search", () => {
 
     const result = await service.searchOffers(offersQuery());
     expect(result.items.map((i) => i.offerId)).not.toContain(offer.id);
+  }, 15_000);
+
+  // [I12 fix] storeProfile() is what apps/consumer's offer detail screen
+  // actually reads (via useStoreProfile) — the merchant's real allergen
+  // text has to survive to THIS surface, not just getOfferById's
+  // share-preview (which already selected it). Without this select, the
+  // screen fell back to a hard-coded "coming soon" placeholder.
+  it("storeProfile's todaysOffers carries the merchant's real allergenDisclaimer text through", async () => {
+    const { service } = buildHarness(prisma);
+    await seedOffer(prisma, store500Id, {
+      allergenDisclaimer: "Fındık ve susam içerir.",
+    });
+
+    const result = await service.storeProfile(store500Id);
+    const withDisclaimer = result.todaysOffers.find(
+      (o) => o.template.allergenDisclaimer === "Fındık ve susam içerir.",
+    );
+    expect(withDisclaimer).toBeDefined();
   }, 15_000);
 
   describe("getOfferById — the universal-link bridge page's single-offer read", () => {

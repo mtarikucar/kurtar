@@ -67,9 +67,18 @@ export interface DiscoveryMapPin {
 
 export type DiscoveryMapResponse = DiscoveryMapPin[];
 
+/** [I12 fix] storeProfile()'s bagTemplate select now also carries
+ * allergenDisclaimer (backend/src/modules/discovery/discovery.service.ts)
+ * — a dedicated type rather than adding the field to the shared
+ * DiscoveryOfferTemplate, which the search-list endpoint (DiscoveryOfferItem
+ * above) does NOT select it for. */
+export interface DiscoveryTodaysOfferTemplate extends DiscoveryOfferTemplate {
+  allergenDisclaimer: string;
+}
+
 export interface DiscoveryTodaysOffer {
   offerId: string;
-  template: DiscoveryOfferTemplate;
+  template: DiscoveryTodaysOfferTemplate;
   pickupStartAt: string;
   pickupEndAt: string;
   qtyLeft: number;

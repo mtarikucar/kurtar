@@ -9119,7 +9119,7 @@
             "type": "string"
           },
           "template": {
-            "$ref": "#/components/schemas/DiscoveryOfferTemplateDto"
+            "$ref": "#/components/schemas/DiscoveryOfferDetailTemplateDto"
           },
           "pickupStartAt": {
             "format": "date-time",

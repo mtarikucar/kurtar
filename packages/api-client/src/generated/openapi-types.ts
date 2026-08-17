@@ -2001,7 +2001,7 @@ export interface components {
         };
         DiscoveryTodaysOfferDto: {
             offerId: string;
-            template: components["schemas"]["DiscoveryOfferTemplateDto"];
+            template: components["schemas"]["DiscoveryOfferDetailTemplateDto"];
             /** Format: date-time */
             pickupStartAt: string;
             /** Format: date-time */

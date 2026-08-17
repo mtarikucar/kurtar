@@ -24,6 +24,18 @@ export class DiscoveryOfferTemplateDto {
   @ApiProperty() originalValueCentsMax!: number;
 }
 
+/** [I12 fix] `template` gains `allergenDisclaimer` (the mandatory
+ * allergen text) via a dedicated subclass rather than adding the field
+ * to the shared DiscoveryOfferTemplateDto, which would incorrectly claim
+ * the LIST endpoint (GET /discovery/offers) returns it too — it doesn't
+ * select that column. Declared ahead of DiscoveryTodaysOfferDto/
+ * DiscoveryOfferDetailResponseDto below (both reference it as a
+ * decorator argument, evaluated at module-load time — a forward
+ * reference to a not-yet-initialized class would throw). */
+export class DiscoveryOfferDetailTemplateDto extends DiscoveryOfferTemplateDto {
+  @ApiProperty() allergenDisclaimer!: string;
+}
+
 export class DiscoveryOfferItemDto {
   @ApiProperty() offerId!: string;
   @ApiProperty({ type: DiscoveryOfferStoreDto }) store!: DiscoveryOfferStoreDto;
@@ -53,8 +65,12 @@ export class DiscoveryMapPinDto {
 
 export class DiscoveryTodaysOfferDto {
   @ApiProperty() offerId!: string;
-  @ApiProperty({ type: DiscoveryOfferTemplateDto })
-  template!: DiscoveryOfferTemplateDto;
+  // [I12 fix] Was DiscoveryOfferTemplateDto (no allergenDisclaimer) —
+  // storeProfile()'s bagTemplate select now carries it too (see
+  // discovery.service.ts), same shape getOfferById's DiscoveryOfferDetail
+  // already returned.
+  @ApiProperty({ type: DiscoveryOfferDetailTemplateDto })
+  template!: DiscoveryOfferDetailTemplateDto;
   @ApiProperty() pickupStartAt!: Date;
   @ApiProperty() pickupEndAt!: Date;
   @ApiProperty() qtyLeft!: number;
@@ -91,20 +107,11 @@ export class DiscoveryStoreProfileResponseDto {
  * overlap), but NOT a bare reuse of either: `store` here has no
  * `distanceM` (a single offer fetched by id has no query lat/lng to be
  * distant FROM — reusing DiscoveryOfferStoreDto as-is would falsely
- * claim this endpoint always returns one), and `template` gains
- * `allergenDisclaimer` (what a share preview needs that the list view
- * doesn't) via a dedicated subclass rather than adding the field to the
- * shared DiscoveryOfferTemplateDto, which would incorrectly claim the
- * LIST endpoint and store-profile's todaysOffers return it too — they
- * don't select that column. */
+ * claim this endpoint always returns one). */
 export class DiscoveryOfferDetailStoreDto {
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
   @ApiProperty() district!: string;
-}
-
-export class DiscoveryOfferDetailTemplateDto extends DiscoveryOfferTemplateDto {
-  @ApiProperty() allergenDisclaimer!: string;
 }
 
 export class DiscoveryOfferDetailResponseDto {

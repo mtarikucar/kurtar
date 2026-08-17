@@ -121,7 +121,17 @@ export default function OfferDetailScreen() {
             <Section
               icon="warning-outline"
               title={t("offerDetail.allergenTitle")}
-              body={t("offerDetail.allergenBody")}
+              // [I12 fix] The merchant's OWN allergen text (mandatory at
+              // submit — CreateBagTemplateDto.allergenDisclaimer) shown
+              // pre-purchase, not the generic "coming soon" placeholder —
+              // falls back to it only when a template genuinely has no
+              // text (shouldn't happen given it's required at submit, but
+              // never silently blank).
+              body={
+                offer.template.allergenDisclaimer.trim().length > 0
+                  ? offer.template.allergenDisclaimer
+                  : t("offerDetail.allergenBody")
+              }
               tone="warning"
             />
             <Section

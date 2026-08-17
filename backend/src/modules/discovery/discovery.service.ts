@@ -449,6 +449,14 @@ export class DiscoveryService {
             priceCents: true,
             originalValueCentsMin: true,
             originalValueCentsMax: true,
+            // [I12 fix] The mandatory allergen disclaimer — collected and
+            // validated at merchant submit (CreateBagTemplateDto), but
+            // this select never carried it through to the consumer's
+            // actual purchase path (only getOfferById's share-preview
+            // did). Without it, apps/consumer's offer detail screen had
+            // no real allergen text to render and fell back to a
+            // hard-coded "coming soon" placeholder.
+            allergenDisclaimer: true,
           },
         },
       },

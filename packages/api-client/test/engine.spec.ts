@@ -416,11 +416,11 @@ describe("createRequestEngine — single-flight refresh", () => {
 
     const err = await engine
       .request("get", "/api/reservations/mine")
-      .catch((e) => e as KurtarApiError);
+      .catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(KurtarApiError);
-    expect(err.errorCode).toBe("NETWORK_ERROR");
-    expect(err.isNetworkError).toBe(true);
+    expect((err as KurtarApiError).errorCode).toBe("NETWORK_ERROR");
+    expect((err as KurtarApiError).isNetworkError).toBe(true);
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 });
