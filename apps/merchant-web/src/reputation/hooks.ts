@@ -43,7 +43,12 @@ export function useAssignedComplaints() {
 export function useComplaintDetail(id: string | null) {
   return useQuery({
     queryKey: ["complaints", "detail", id],
-    queryFn: async () => client.complaints.get(id as string),
+    // [I18 fix] `client.complaints.get` is the CONSUMER-only GET
+    // /complaints/:id (class-level @Actors("CONSUMER") on
+    // ComplaintsController) — every merchant call there 403'd, so the
+    // reply thread never rendered. `getAssigned` hits the merchant-scoped
+    // mirror, GET /complaints/assigned/:id.
+    queryFn: async () => client.complaints.getAssigned(id as string),
     enabled: id !== null,
   });
 }
