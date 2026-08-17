@@ -13,6 +13,7 @@ import { client, onClientUnauthorized, tokenStore } from "./api-client";
 import {
   clearStoredRefreshToken,
   getStoredRefreshToken,
+  setStoredRefreshToken,
 } from "./secure-tokens";
 
 const USER_CACHE_KEY = "kurtar.user";
@@ -114,6 +115,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifyOtp = useCallback(async (phone: string, code: string) => {
     const result = await client.auth.verifyOtp({ phone, code });
+    // engine.ts's onTokensIssued only fires from the internal refresh path
+    // (see its doc comment) — a plain login/verify response never routes
+    // through it, so this is the one save point for a freshly-minted
+    // session. Mirrors what onTokensIssued itself does (lib/api-client.ts)
+    // so a subsequent 401 has a token to send and a refresh token to fall
+    // back on, and a cold restart (below) has something in SecureStore to
+    // find.
+    tokenStore.accessToken = result.accessToken;
+    if (result.refreshToken) {
+      tokenStore.refreshToken = result.refreshToken;
+      await setStoredRefreshToken(result.refreshToken);
+    }
     const nextUser: ConsumerUser = {
       id: result.user.id,
       phone: result.user.phone,

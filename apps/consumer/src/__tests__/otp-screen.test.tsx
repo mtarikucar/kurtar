@@ -17,7 +17,7 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ phone: "+905551234567" }),
 }));
 
-import { client } from "../lib/api-client";
+import { client, tokenStore } from "../lib/api-client";
 import { AuthProvider } from "../lib/auth-context";
 import OtpScreen from "../app/(auth)/otp";
 import "../i18n";
@@ -39,6 +39,8 @@ function renderOtpScreen() {
 describe("OTP screen — verify, cooldown, and lockout copy", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
+    tokenStore.accessToken = null;
+    tokenStore.refreshToken = null;
     await SecureStore.deleteItemAsync("kurtar.refreshToken");
   });
 
@@ -60,6 +62,26 @@ describe("OTP screen — verify, cooldown, and lockout copy", () => {
       }),
     );
     await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith("/(auth)/permissions"));
+  });
+
+  it("persists the issued access + refresh token pair on successful verify — without this, every authenticated call 401s and the app bounces straight back to signed-out", async () => {
+    mockVerifyOtp.mockResolvedValue({
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      user: { id: "u1", phone: "+905551234567", status: "ACTIVE", name: null },
+    });
+
+    await renderOtpScreen();
+    await fireEvent.changeText(screen.getByTestId("otp-input"), "123456");
+    await fireEvent.press(screen.getByTestId("otp-verify"));
+
+    await waitFor(() => expect(tokenStore.accessToken).toBe("access-token"));
+    expect(tokenStore.refreshToken).toBe("refresh-token");
+    // The refresh token must also survive a cold start — SecureStore, not
+    // just the in-memory tokenStore.
+    await waitFor(async () =>
+      expect(await SecureStore.getItemAsync("kurtar.refreshToken")).toBe("refresh-token"),
+    );
   });
 
   it("shows the uniform invalid-code message on a wrong/expired code (no oracle)", async () => {
