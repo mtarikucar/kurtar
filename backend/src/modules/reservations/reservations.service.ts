@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import {
+  Payment,
   Prisma,
   RefundReason,
   Reservation,
@@ -195,6 +196,17 @@ function notRedeemableError() {
     statusCode: 409,
     errorCode: "RESERVATION_NOT_REDEEMABLE",
     message: "This reservation cannot be redeemed right now.",
+  });
+}
+
+/** [I3 fix] refundRedeemed's guard error — the reservation isn't REDEEMED,
+ * or its Payment isn't (still) PAID (never paid, already refunded, or a
+ * concurrent refund attempt already claimed it). */
+function notRefundableError() {
+  return new ConflictException({
+    statusCode: 409,
+    errorCode: "RESERVATION_NOT_REFUNDABLE",
+    message: "This reservation cannot be refunded right now.",
   });
 }
 
@@ -563,6 +575,16 @@ export class ReservationsService {
     reservationId: string,
     reason: RefundReason,
     requestedByType: string,
+    // [I3 fix] The Payment status this refund is authorized to move OUT
+    // of, on the final bookkeeping write — "PAID" for every existing
+    // caller (cancel()/refundMany()), whose own upstream reservation-
+    // status transition already guarantees this method is invoked at
+    // most once per payment. refundRedeemed() below has no such upstream
+    // guard (REDEEMED is terminal — there is no second status transition
+    // to piggyback the single-fire guarantee on), so IT atomically claims
+    // the payment first (PAID -> REFUND_PENDING) and passes that status
+    // here instead, so this method's guarded update still matches.
+    fromStatus: Payment["status"] = "PAID",
   ): Promise<{ ok: boolean; refundRef?: string; error?: string }> {
     let refundRef: string;
     try {
@@ -600,7 +622,7 @@ export class ReservationsService {
           },
         });
         await tx.payment.updateMany({
-          where: { id: paymentId, status: "PAID" },
+          where: { id: paymentId, status: fromStatus },
           data: { status: "REFUNDED" },
         });
       });
@@ -635,7 +657,7 @@ export class ReservationsService {
         });
       await this.prisma.payment
         .updateMany({
-          where: { id: paymentId, status: "PAID" },
+          where: { id: paymentId, status: fromStatus },
           data: { status: "REFUNDED" },
         })
         .catch(() => undefined);
@@ -769,6 +791,86 @@ export class ReservationsService {
       results.push({ reservationId: item.reservationId, ...outcome });
     }
     return results;
+  }
+
+  /**
+   * [I3 fix] The refund path `cancel()`/`refundMany()` never reach: a
+   * REDEEMED reservation is terminal in RESERVATION_TRANSITIONS, so an
+   * already-picked-up (spoiled/empty/wrong) bag had no way back to the
+   * consumer's money before this. Called only from
+   * ComplaintsService.adminRefund (the complaint-resolution flow) — never
+   * exposed directly on a reservations controller — so every refund of a
+   * redeemed pickup is tied to a ComplaintTicket with its own audit trail
+   * and RefundReason.COMPLAINT provenance.
+   *
+   * Reservation.status is deliberately left at REDEEMED (there is no
+   * "REFUNDED" reservation status, and the pickup itself genuinely
+   * happened) — only the Payment/Refund rows change, exactly like
+   * cancel()'s CONFIRMED path leaves stock alone once it's already been
+   * released.
+   *
+   * Unlike cancel()/refundMany(), there is no reservation-status
+   * transition to piggyback a single-fire guarantee on (REDEEMED has no
+   * further transition), so this atomically claims the payment itself
+   * (PAID -> REFUND_PENDING) BEFORE ever calling the provider, and passes
+   * that claimed status through to refundForCancellation so its own
+   * bookkeeping update targets the right "from" state. Two concurrent
+   * refund attempts against the same payment — a double-click, or two
+   * different complaint tickets against the same reservation — can now
+   * only ever have one of them reach the provider; the loser gets
+   * notRefundableError() instead of a second real-money refund.
+   */
+  async refundRedeemed(
+    reservationId: string,
+  ): Promise<{ reservationId: string; ok: boolean; refundRef?: string; error?: string }> {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      include: { payment: true },
+    });
+    if (!reservation) throw reservationNotFoundError();
+    if (!reservation.payment) {
+      // Invariant violation, not a normal error path — every Reservation
+      // is created with a Payment row in the same transaction.
+      throw new Error(
+        `Reservation ${reservationId} has no Payment row (data invariant violated)`,
+      );
+    }
+    if (reservation.status !== "REDEEMED") {
+      throw notRefundableError();
+    }
+    const payment = reservation.payment;
+
+    const claimed = await this.prisma.payment.updateMany({
+      where: { id: payment.id, status: "PAID" },
+      data: { status: "REFUND_PENDING" },
+    });
+    if (claimed.count === 0) {
+      throw notRefundableError();
+    }
+
+    const outcome = await this.refundForCancellation(
+      payment.id,
+      payment.merchantOid,
+      payment.amountCents,
+      reservationId,
+      "COMPLAINT",
+      "ADMIN",
+      "REFUND_PENDING",
+    );
+
+    if (!outcome.ok) {
+      // The provider call itself failed — no money moved
+      // (refundForCancellation already recorded the FAILED Refund row).
+      // Release the claim so a retry is possible.
+      await this.prisma.payment
+        .updateMany({
+          where: { id: payment.id, status: "REFUND_PENDING" },
+          data: { status: "PAID" },
+        })
+        .catch(() => undefined);
+    }
+
+    return { reservationId, ...outcome };
   }
 
   /**

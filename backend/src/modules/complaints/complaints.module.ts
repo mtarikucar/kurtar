@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { EmailModule } from "../notifications/email/email.module";
+import { ReservationsModule } from "../reservations/reservations.module";
 import { AdminComplaintsController } from "./admin-complaints.controller";
 import { ComplaintsController } from "./complaints.controller";
 import { MerchantComplaintsController } from "./merchant-complaints.controller";
@@ -7,7 +8,11 @@ import { ComplaintsService } from "./complaints.service";
 import { ComplaintSlaCronService } from "./complaint-sla-cron.service";
 
 @Module({
-  imports: [EmailModule],
+  // [I3 fix] ReservationsModule — ComplaintsService.adminRefund calls
+  // ReservationsService.refundRedeemed to refund a REDEEMED reservation's
+  // payment, the same "import the module for its exported service"
+  // pattern modules/offers and modules/merchants already use.
+  imports: [EmailModule, ReservationsModule],
   // [Fix round, Critical 1] MerchantComplaintsController MUST be
   // registered before ComplaintsController. Nest registers controllers
   // (and therefore their routes) with the underlying Express router in

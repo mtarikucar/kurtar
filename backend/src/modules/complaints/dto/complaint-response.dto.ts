@@ -23,8 +23,25 @@ export class ComplaintTicketDto {
   @ApiPropertyOptional({ nullable: true, type: Date }) resolvedAt!: Date | null;
   @ApiPropertyOptional({ nullable: true, type: Date })
   slaWarningSentAt!: Date | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    type: Date,
+    description:
+      "[I3 fix] Set the moment this ticket's admin refund action succeeded — the single-fire guard against triggering a second refund from the same ticket.",
+  })
+  refundedAt!: Date | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
+}
+
+/** [I3 fix] ComplaintsService.adminRefund's response — mirrors
+ * ReservationsService.RefundBatchOutcome's shape (ok/refundRef?/error?)
+ * plus the reservationId the refund was for. */
+export class ComplaintRefundResultDto {
+  @ApiProperty() reservationId!: string;
+  @ApiProperty() ok!: boolean;
+  @ApiPropertyOptional() refundRef?: string;
+  @ApiPropertyOptional() error?: string;
 }
 
 export class ComplaintMessageDto {

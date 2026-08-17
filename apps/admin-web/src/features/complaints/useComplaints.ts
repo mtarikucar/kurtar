@@ -150,3 +150,17 @@ export function usePostComplaintMessage(id: string) {
     onSuccess: invalidate,
   });
 }
+
+/** [I3 fix] The admin-initiated make-whole action for a picked-up
+ * spoiled/missing/wrong bag — refunds the complaint's linked reservation
+ * (only valid once REDEEMED). Always invalidates on settle (not just
+ * onSuccess): the backend never throws for a provider-side failure — it
+ * returns `{ok: false, error}` — so the ticket's `refundedAt` may or may
+ * not have moved, and the caller needs a fresh read either way. */
+export function useRefundComplaint(id: string) {
+  const invalidate = useInvalidateComplaints(id);
+  return useMutation({
+    mutationFn: () => client.admin.complaints.refund(id),
+    onSettled: invalidate,
+  });
+}

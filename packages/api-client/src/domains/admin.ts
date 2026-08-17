@@ -35,6 +35,9 @@ export function createAdminDomain(engine: RequestEngine) {
           path: { id },
           body,
         }),
+      /** [I7 fix] GET /admin/merchants/{id} — the audited KYC-detail read (docsJson, IBAN, verification history) an approver needs to actually judge a submission before approve/reject. Every read is audited server-side. */
+      get: (id: string) =>
+        engine.request("get", "/api/admin/merchants/{id}", { path: { id } }),
     },
 
     settlements: {
@@ -118,6 +121,11 @@ export function createAdminDomain(engine: RequestEngine) {
       /** POST /admin/complaints/{id}/escalate — also fired automatically by the SLA cron on breach; exposed here for a manual admin escalation too. */
       escalate: (id: string) =>
         engine.request("post", "/api/admin/complaints/{id}/escalate", {
+          path: { id },
+        }),
+      /** [I3 fix] POST /admin/complaints/{id}/refund — refunds this complaint's linked reservation (only valid once REDEEMED); the make-whole action for a picked-up bad/missing/wrong bag. Does not itself resolve/escalate the ticket. */
+      refund: (id: string) =>
+        engine.request("post", "/api/admin/complaints/{id}/refund", {
           path: { id },
         }),
     },

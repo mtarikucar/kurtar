@@ -13,11 +13,12 @@ import {
   useComplaintDetail,
   useEscalateComplaint,
   usePostComplaintMessage,
+  useRefundComplaint,
   useResolveComplaint,
 } from "./useComplaints";
 import styles from "./ComplaintDetailPage.module.css";
 
-type PendingAction = "resolve" | "escalate" | null;
+type PendingAction = "resolve" | "escalate" | "refund" | null;
 
 export function ComplaintDetailPage() {
   const { t } = useTranslation("complaints");
@@ -26,16 +27,27 @@ export function ComplaintDetailPage() {
   const resolveMutation = useResolveComplaint(id ?? "");
   const escalateMutation = useEscalateComplaint(id ?? "");
   const postMessageMutation = usePostComplaintMessage(id ?? "");
+  const refundMutation = useRefundComplaint(id ?? "");
 
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [messageBody, setMessageBody] = useState("");
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [resultBanner, setResultBanner] = useState<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
 
   function describeError(err: unknown): string {
     if (isApiError(err)) {
       if (err.errorCode === "COMPLAINT_TRANSITION_INVALID")
         return t("errors.transitionInvalid");
       if (err.errorCode === "COMPLAINT_NOT_FOUND") return t("errors.notFound");
+      if (err.errorCode === "COMPLAINT_NO_RESERVATION")
+        return t("errors.noReservation");
+      if (err.errorCode === "COMPLAINT_ALREADY_REFUNDED")
+        return t("errors.alreadyRefunded");
+      if (err.errorCode === "RESERVATION_NOT_REFUNDABLE")
+        return t("errors.notRefundable");
     }
     return t("errors.generic");
   }
@@ -66,6 +78,28 @@ export function ComplaintDetailPage() {
           setErrorBanner(describeError(err));
         },
       });
+    } else if (pendingAction === "refund") {
+      // [I3 fix] The backend never THROWS for a provider-side refund
+      // failure — it returns `{ok: false, error}` with a normal 2xx, so
+      // "the mutation resolved" and "the money actually moved" are two
+      // different questions; both are checked here.
+      refundMutation.mutate(undefined, {
+        onSuccess: (result) => {
+          setPendingAction(null);
+          if (result.ok) {
+            setResultBanner({ kind: "success", message: t("detail.refundOk") });
+          } else {
+            setResultBanner({
+              kind: "error",
+              message: t("detail.refundFailed", { error: result.error }),
+            });
+          }
+        },
+        onError: (err) => {
+          setPendingAction(null);
+          setErrorBanner(describeError(err));
+        },
+      });
     }
   }
 
@@ -83,6 +117,13 @@ export function ComplaintDetailPage() {
   const complaint = detail.data;
   const canTransition =
     complaint.status === "OPEN" || complaint.status === "MERCHANT_RESPONDED";
+  // [I3 fix] Independent of the resolve/escalate transition — a refund is
+  // a money action on the LINKED RESERVATION, not a ticket-status change
+  // (an admin may still refund a complaint that's already RESOLVED). Only
+  // gated on "has a reservation to refund" and "hasn't already triggered
+  // one" (refundedAt is this ticket's own single-fire guard — see
+  // ComplaintsService.adminRefund).
+  const canRefund = Boolean(complaint.reservationId) && !complaint.refundedAt;
 
   return (
     <div>
@@ -92,26 +133,48 @@ export function ComplaintDetailPage() {
       <PageHeader
         title={t(`category.${complaint.category}`)}
         actions={
-          canTransition ? (
+          canTransition || canRefund ? (
             <>
-              <button
-                type="button"
-                className={styles.escalateButton}
-                onClick={() => setPendingAction("escalate")}
-              >
-                {t("detail.escalateTitle")}
-              </button>
-              <button
-                type="button"
-                className={styles.resolveButton}
-                onClick={() => setPendingAction("resolve")}
-              >
-                {t("detail.resolveTitle")}
-              </button>
+              {canRefund ? (
+                <button
+                  type="button"
+                  className={styles.refundButton}
+                  onClick={() => setPendingAction("refund")}
+                >
+                  {t("detail.refundTitle")}
+                </button>
+              ) : null}
+              {canTransition ? (
+                <>
+                  <button
+                    type="button"
+                    className={styles.escalateButton}
+                    onClick={() => setPendingAction("escalate")}
+                  >
+                    {t("detail.escalateTitle")}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.resolveButton}
+                    onClick={() => setPendingAction("resolve")}
+                  >
+                    {t("detail.resolveTitle")}
+                  </button>
+                </>
+              ) : null}
             </>
           ) : undefined
         }
       />
+
+      {resultBanner ? (
+        <Banner
+          kind={resultBanner.kind}
+          onDismiss={() => setResultBanner(null)}
+        >
+          {resultBanner.message}
+        </Banner>
+      ) : null}
 
       {errorBanner ? (
         <Banner kind="error" onDismiss={() => setErrorBanner(null)}>
@@ -193,19 +256,30 @@ export function ComplaintDetailPage() {
         title={
           pendingAction === "resolve"
             ? t("detail.resolveTitle")
-            : t("detail.escalateTitle")
+            : pendingAction === "escalate"
+              ? t("detail.escalateTitle")
+              : t("detail.refundTitle")
         }
         consequence={
           pendingAction === "resolve"
             ? t("detail.resolveConsequence")
-            : t("detail.escalateConsequence")
+            : pendingAction === "escalate"
+              ? t("detail.escalateConsequence")
+              : t("detail.refundConsequence")
         }
         confirmLabel={
           pendingAction === "resolve"
             ? t("detail.resolveTitle")
-            : t("detail.escalateTitle")
+            : pendingAction === "escalate"
+              ? t("detail.escalateTitle")
+              : t("detail.refundTitle")
         }
-        pending={resolveMutation.isPending || escalateMutation.isPending}
+        danger={pendingAction === "refund"}
+        pending={
+          resolveMutation.isPending ||
+          escalateMutation.isPending ||
+          refundMutation.isPending
+        }
         onConfirm={handleConfirmAction}
         onCancel={() => setPendingAction(null)}
       />

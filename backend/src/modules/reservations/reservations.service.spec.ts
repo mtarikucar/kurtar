@@ -543,6 +543,153 @@ describe("ReservationsService.cancel", () => {
   });
 });
 
+// [I3 fix] The refund path cancel()/refundMany() never reach — REDEEMED is
+// terminal, so this is the only production way to refund an
+// already-picked-up reservation. Unlike cancel(), there's no reservation
+// status transition to piggyback the single-fire guard on, so this claims
+// the Payment itself (PAID -> REFUND_PENDING) before ever calling the
+// provider.
+describe("ReservationsService.refundRedeemed", () => {
+  function redeemedReservation(overrides: Record<string, any> = {}) {
+    return {
+      id: "resv1",
+      status: "REDEEMED",
+      payment: {
+        id: "pay1",
+        merchantOid: "KRVxxx",
+        amountCents: 5000,
+        status: "PAID",
+      },
+      ...overrides,
+    };
+  }
+
+  it("throws RESERVATION_NOT_FOUND when the reservation doesn't exist", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(null);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+    await expect(
+      service.refundRedeemed("resv1"),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("throws RESERVATION_NOT_REFUNDABLE (409) when the reservation is not REDEEMED, without ever touching Payment", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      redeemedReservation({ status: "CONFIRMED" }),
+    );
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+    const err = await service.refundRedeemed("resv1").catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.response.errorCode).toBe("RESERVATION_NOT_REFUNDABLE");
+    expect(prisma.payment.updateMany).not.toHaveBeenCalled();
+    expect(facade.refund).not.toHaveBeenCalled();
+  });
+
+  it("claims the payment (PAID -> REFUND_PENDING), refunds at the provider, and records DONE against REFUND_PENDING", async () => {
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      redeemedReservation(),
+    );
+    facade.refund.mockResolvedValue({ refundRef: "mock-refund-redeemed-1" });
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.refundRedeemed("resv1");
+
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: "pay1", status: "PAID" },
+      data: { status: "REFUND_PENDING" },
+    });
+    expect(facade.refund).toHaveBeenCalledWith("KRVxxx", 5000);
+    // The DONE-path refund row is created INSIDE refundForCancellation's
+    // own $transaction (tx.refund.create) — buildDeps' $transaction mock
+    // invokes the callback with `tx`, so this is where it lands, not
+    // prisma.refund.create directly.
+    expect(tx.refund.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        paymentId: "pay1",
+        reason: "COMPLAINT",
+        requestedByType: "ADMIN",
+        status: "DONE",
+        pspRefundId: "mock-refund-redeemed-1",
+      }),
+    });
+    expect(tx.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: "pay1", status: "REFUND_PENDING" },
+      data: { status: "REFUNDED" },
+    });
+    expect(result).toEqual({
+      reservationId: "resv1",
+      ok: true,
+      refundRef: "mock-refund-redeemed-1",
+    });
+  });
+
+  it("throws RESERVATION_NOT_REFUNDABLE when the claim itself fails (payment already refunded / a concurrent refund won) — the provider is never called", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      redeemedReservation(),
+    );
+    prisma.payment.updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const err = await service.refundRedeemed("resv1").catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.response.errorCode).toBe("RESERVATION_NOT_REFUNDABLE");
+    expect(facade.refund).not.toHaveBeenCalled();
+  });
+
+  it("releases the claim (REFUND_PENDING back to PAID) when the provider call itself fails — no money moved, retry stays possible", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      redeemedReservation(),
+    );
+    facade.refund.mockRejectedValue(new Error("provider down"));
+    prisma.refund.create = jest.fn().mockResolvedValue({});
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.refundRedeemed("resv1");
+
+    expect(result).toEqual({
+      reservationId: "resv1",
+      ok: false,
+      error: "provider down",
+    });
+    expect(prisma.refund.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ status: "FAILED" }),
+    });
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: "pay1", status: "REFUND_PENDING" },
+      data: { status: "PAID" },
+    });
+  });
+});
+
 describe("ReservationsService.redeem", () => {
   const MERCHANT_REDEEMER = {
     actorType: "MERCHANT" as const,

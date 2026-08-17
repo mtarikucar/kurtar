@@ -47,11 +47,18 @@
     "resolveNoteLabel": "Çözüm notu (opsiyonel)",
     "escalateTitle": "Şikayeti yükselt",
     "escalateConsequence": "Bu şikayet \"Yükseltildi\" durumuna alınacaktır — normal SLA takibinin ötesinde ek inceleme gerektiğini işaretler.",
-    "escalateNoteLabel": "Yükseltme notu (opsiyonel)"
+    "escalateNoteLabel": "Yükseltme notu (opsiyonel)",
+    "refundTitle": "Rezervasyonu iade et",
+    "refundConsequence": "Bu şikayete bağlı rezervasyonun ödemesi tamamen iade edilecektir (yalnızca teslim alınmış — REDEEMED — rezervasyonlarda geçerlidir). Bu işlem geri alınamaz.",
+    "refundOk": "İade başlatıldı — ödeme sağlayıcıya gönderildi.",
+    "refundFailed": "İade başarısız oldu, para hareket etmedi: {{error}}"
   },
   "errors": {
     "transitionInvalid": "Bu şikayet artık bu duruma geçirilemez — sayfa güncellendi.",
     "notFound": "Şikayet bulunamadı.",
-    "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin."
+    "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin.",
+    "noReservation": "Bu şikayete bağlı bir rezervasyon yok, iade edilecek bir şey bulunamadı.",
+    "alreadyRefunded": "Bu şikayet üzerinden zaten bir iade başlatıldı.",
+    "notRefundable": "Bu rezervasyon şu anda iade edilemez (teslim alınmamış ya da ödemesi zaten iade edilmiş olabilir)."
   }
 }

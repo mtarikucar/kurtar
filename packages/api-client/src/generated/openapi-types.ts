@@ -1100,6 +1100,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/complaints/assigned/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get one complaint assigned to the caller's own merchant, with its message thread. */
+        get: operations["MerchantComplaintsController_getAssigned"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/complaints": {
         parameters: {
             query?: never;
@@ -1230,6 +1247,23 @@ export interface paths {
         put?: never;
         /** Manually escalate a complaint (the SLA cron also does this automatically on breach). */
         post: operations["AdminComplaintsController_escalate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/complaints/{id}/refund": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refund this complaint's linked reservation (only valid once it has been REDEEMED) — the admin-initiated make-whole action for a picked-up bad/missing/wrong bag. */
+        post: operations["AdminComplaintsController_refund"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2392,6 +2426,11 @@ export interface components {
             resolvedAt?: string | null;
             /** Format: date-time */
             slaWarningSentAt?: string | null;
+            /**
+             * Format: date-time
+             * @description [I3 fix] Set the moment this ticket's admin refund action succeeded — the single-fire guard against triggering a second refund from the same ticket.
+             */
+            refundedAt?: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2402,14 +2441,6 @@ export interface components {
             total: number;
             page: number;
             pageSize: number;
-        };
-        CreateComplaintDto: {
-            /** @enum {string} */
-            category: "FOOD_QUALITY" | "MISSING_ITEMS" | "WRONG_ITEMS" | "STORE_CLOSED_NO_SHOW" | "RUDE_STAFF" | "PAYMENT_BILLING" | "SAFETY_HYGIENE" | "OTHER";
-            description: string;
-            /** @description If set, merchantId is derived from the reservation's store (any client-supplied merchantId is ignored). */
-            reservationId?: string;
-            merchantId?: string;
         };
         ComplaintMessageDto: {
             id: string;
@@ -2437,11 +2468,24 @@ export interface components {
             resolvedAt?: string | null;
             /** Format: date-time */
             slaWarningSentAt?: string | null;
+            /**
+             * Format: date-time
+             * @description [I3 fix] Set the moment this ticket's admin refund action succeeded — the single-fire guard against triggering a second refund from the same ticket.
+             */
+            refundedAt?: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
             messages: components["schemas"]["ComplaintMessageDto"][];
+        };
+        CreateComplaintDto: {
+            /** @enum {string} */
+            category: "FOOD_QUALITY" | "MISSING_ITEMS" | "WRONG_ITEMS" | "STORE_CLOSED_NO_SHOW" | "RUDE_STAFF" | "PAYMENT_BILLING" | "SAFETY_HYGIENE" | "OTHER";
+            description: string;
+            /** @description If set, merchantId is derived from the reservation's store (any client-supplied merchantId is ignored). */
+            reservationId?: string;
+            merchantId?: string;
         };
         CreateComplaintMessageDto: {
             body: string;
@@ -2462,6 +2506,11 @@ export interface components {
             resolvedAt?: string | null;
             /** Format: date-time */
             slaWarningSentAt?: string | null;
+            /**
+             * Format: date-time
+             * @description [I3 fix] Set the moment this ticket's admin refund action succeeded — the single-fire guard against triggering a second refund from the same ticket.
+             */
+            refundedAt?: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2477,6 +2526,12 @@ export interface components {
         };
         AdminComplaintActionDto: {
             note?: string;
+        };
+        ComplaintRefundResultDto: {
+            reservationId: string;
+            ok: boolean;
+            refundRef?: string;
+            error?: string;
         };
         CreateReportDto: {
             /** @enum {string} */
@@ -5833,6 +5888,57 @@ export interface operations {
             };
         };
     };
+    MerchantComplaintsController_getAssigned: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComplaintDetailResponseDto"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Missing or invalid access token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+        };
+    };
     ComplaintsController_create: {
         parameters: {
             query?: never;
@@ -6230,6 +6336,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ComplaintTicketDto"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Missing or invalid access token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+        };
+    };
+    AdminComplaintsController_refund: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComplaintRefundResultDto"];
                 };
             };
             /** @description Validation failed. */

@@ -1267,6 +1267,16 @@ model ComplaintTicket {
   // ESCALATED transition is naturally idempotent (a guarded UPDATE whose
   // WHERE no longer matches once ESCALATED).
   slaWarningSentAt DateTime?
+  // [I3 fix] The single-fire guard for ComplaintsService.adminRefund — a
+  // REDEEMED reservation has no further status transition to piggyback
+  // an idempotency guarantee on (unlike cancel()'s CONFIRMED ->
+  // CANCELLED_BY_USER), so this ticket's own refundedAt is the guarded
+  // compare-and-swap (NULL -> now) instead, the same sentinel-column
+  // pattern as slaWarningSentAt/pickupReminderSentAt above. NULL means
+  // "no refund triggered from this ticket yet"; cleared back to NULL if
+  // the provider call itself fails, so a retry through the same ticket
+  // stays possible.
+  refundedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -14,6 +14,7 @@ import { AdminListComplaintsQueryDto } from "./dto/admin-list-complaints-query.d
 import {
   AdminComplaintListResponseDto,
   ComplaintDetailResponseDto,
+  ComplaintRefundResultDto,
   ComplaintTicketDto,
 } from "./dto/complaint-response.dto";
 import { ComplaintsService } from "./complaints.service";
@@ -74,5 +75,20 @@ export class AdminComplaintsController {
     @Body() dto: AdminComplaintActionDto,
   ) {
     return this.complaints.adminEscalate(adminId, id, dto.note);
+  }
+
+  // [I3 fix] The entry point for RefundReason.COMPLAINT — the only way to
+  // refund a REDEEMED reservation's payment (see ReservationsService.
+  // refundRedeemed's own doc comment for why REDEEMED needed a dedicated
+  // path). Deliberately does not also transition the complaint's status;
+  // resolve/escalate stay separate calls the admin makes explicitly.
+  @ApiOperation({
+    summary:
+      "Refund this complaint's linked reservation (only valid once it has been REDEEMED) — the admin-initiated make-whole action for a picked-up bad/missing/wrong bag.",
+  })
+  @ApiCreatedResponse({ type: ComplaintRefundResultDto })
+  @Post(":id/refund")
+  refund(@CurrentUser("id") adminId: string, @Param("id") id: string) {
+    return this.complaints.adminRefund(adminId, id);
   }
 }

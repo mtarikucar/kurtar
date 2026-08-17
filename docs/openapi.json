@@ -5399,6 +5399,84 @@
         ]
       }
     },
+    "/api/complaints/assigned/{id}": {
+      "get": {
+        "operationId": "MerchantComplaintsController_getAssigned",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Client-Transport",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cookie"
+              ]
+            },
+            "description": "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplaintDetailResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get one complaint assigned to the caller's own merchant, with its message thread.",
+        "tags": [
+          "complaints"
+        ]
+      }
+    },
     "/api/complaints": {
       "post": {
         "operationId": "ComplaintsController_create",
@@ -6130,6 +6208,84 @@
           }
         ],
         "summary": "Manually escalate a complaint (the SLA cron also does this automatically on breach).",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/complaints/{id}/refund": {
+      "post": {
+        "operationId": "AdminComplaintsController_refund",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Client-Transport",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cookie"
+              ]
+            },
+            "description": "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body)."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComplaintRefundResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Refund this complaint's linked reservation (only valid once it has been REDEEMED) — the admin-initiated make-whole action for a picked-up bad/missing/wrong bag.",
         "tags": [
           "admin"
         ]
@@ -10505,6 +10661,12 @@
             "type": "string",
             "nullable": true
           },
+          "refundedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "[I3 fix] Set the moment this ticket's admin refund action succeeded — the single-fire guard against triggering a second refund from the same ticket."
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -10549,40 +10711,6 @@
           "total",
           "page",
           "pageSize"
-        ]
-      },
-      "CreateComplaintDto": {
-        "type": "object",
-        "properties": {
-          "category": {
-            "type": "string",
-            "enum": [
-              "FOOD_QUALITY",
-              "MISSING_ITEMS",
-              "WRONG_ITEMS",
-              "STORE_CLOSED_NO_SHOW",
-              "RUDE_STAFF",
-              "PAYMENT_BILLING",
-              "SAFETY_HYGIENE",
-              "OTHER"
-            ]
-          },
-          "description": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 4000
-          },
-          "reservationId": {
-            "type": "string",
-            "description": "If set, merchantId is derived from the reservation's store (any client-supplied merchantId is ignored)."
-          },
-          "merchantId": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "category",
-          "description"
         ]
       },
       "ComplaintMessageDto": {
@@ -10678,6 +10806,12 @@
             "type": "string",
             "nullable": true
           },
+          "refundedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "[I3 fix] Set the moment this ticket's admin refund action succeeded — the single-fire guard against triggering a second refund from the same ticket."
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -10703,6 +10837,40 @@
           "createdAt",
           "updatedAt",
           "messages"
+        ]
+      },
+      "CreateComplaintDto": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "FOOD_QUALITY",
+              "MISSING_ITEMS",
+              "WRONG_ITEMS",
+              "STORE_CLOSED_NO_SHOW",
+              "RUDE_STAFF",
+              "PAYMENT_BILLING",
+              "SAFETY_HYGIENE",
+              "OTHER"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "reservationId": {
+            "type": "string",
+            "description": "If set, merchantId is derived from the reservation's store (any client-supplied merchantId is ignored)."
+          },
+          "merchantId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "description"
         ]
       },
       "CreateComplaintMessageDto": {
@@ -10774,6 +10942,12 @@
             "type": "string",
             "nullable": true
           },
+          "refundedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "[I3 fix] Set the moment this ticket's admin refund action succeeded — the single-fire guard against triggering a second refund from the same ticket."
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -10833,6 +11007,27 @@
             "maxLength": 2000
           }
         }
+      },
+      "ComplaintRefundResultDto": {
+        "type": "object",
+        "properties": {
+          "reservationId": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "refundRef": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reservationId",
+          "ok"
+        ]
       },
       "CreateReportDto": {
         "type": "object",

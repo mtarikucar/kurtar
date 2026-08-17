@@ -12,9 +12,15 @@ export function createComplaintsDomain(engine: RequestEngine) {
     listMine: (query?: QueryParams<"/api/complaints/mine", "get">) =>
       engine.request("get", "/api/complaints/mine", { query }),
 
-    /** GET /complaints/{id} — a single complaint's detail + message thread (consumer or assigned merchant). */
+    /** GET /complaints/{id} — a single complaint's detail + message thread. CONSUMER-only (class-level @Actors("CONSUMER") on ComplaintsController) — a MERCHANT gets 403 here; use `getAssigned` instead. */
     get: (id: string) =>
       engine.request("get", "/api/complaints/{id}", { path: { id } }),
+
+    /** [I18 fix] GET /complaints/assigned/{id} — the MERCHANT-scoped mirror of `get`: a single complaint assigned to the caller's own merchant, with its message thread. */
+    getAssigned: (id: string) =>
+      engine.request("get", "/api/complaints/assigned/{id}", {
+        path: { id },
+      }),
 
     /** POST /complaints/{id}/messages — adds a message to a complaint's thread. */
     addMessage: (

@@ -1,4 +1,4 @@
-import { ValidationPipe } from "@nestjs/common";
+import { Module, ValidationPipe } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { Test } from "@nestjs/testing";
 import { NestExpressApplication } from "@nestjs/platform-express";
@@ -8,6 +8,28 @@ import { ComplaintsService } from "./complaints.service";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { PrismaService } from "../../prisma/prisma.service";
 import { EmailService } from "../notifications/email/email.service";
+import { ReservationsModule } from "../reservations/reservations.module";
+import { ReservationsService } from "../reservations/reservations.service";
+
+/**
+ * [I3 fix] ComplaintsModule now imports the real ReservationsModule (for
+ * ComplaintsService.adminRefund's dependency on
+ * ReservationsService.refundRedeemed) — which itself imports PushModule
+ * and needs PaymentsFacadeService/OutboxService (both @Global, but only
+ * actually registered where PaymentsCoreModule/OutboxCoreModule are part
+ * of the compiled graph, which this narrow routing test deliberately
+ * never pulls in). Swapped out wholesale via `overrideModule` rather than
+ * chasing every transitive provider individually — this test's only job
+ * is proving controller REGISTRATION ORDER, nothing about reservations or
+ * push.
+ */
+@Module({
+  providers: [
+    { provide: ReservationsService, useValue: { refundRedeemed: jest.fn() } },
+  ],
+  exports: [ReservationsService],
+})
+class StubReservationsModule {}
 
 /**
  * [Fix round, Critical 1] Regression test for the route-shadowing bug:
@@ -49,6 +71,7 @@ describe("Complaints route registration order — regression for the /complaints
 
   const listAssignedMock = jest.fn();
   const getMineMock = jest.fn();
+  const getAssignedMock = jest.fn();
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
@@ -64,17 +87,21 @@ describe("Complaints route registration order — regression for the /complaints
         ConfigModule.forRoot({ isGlobal: true }),
       ],
     })
+      .overrideModule(ReservationsModule)
+      .useModule(StubReservationsModule)
       .overrideProvider(ComplaintsService)
       .useValue({
         create: jest.fn(),
         listMine: jest.fn(),
         getMine: getMineMock,
         listAssigned: listAssignedMock,
+        getAssigned: getAssignedMock,
         addMessage: jest.fn(),
         adminList: jest.fn(),
         adminGet: jest.fn(),
         adminResolve: jest.fn(),
         adminEscalate: jest.fn(),
+        adminRefund: jest.fn(),
       })
       .overrideProvider(PrismaService)
       .useValue({})
@@ -119,6 +146,7 @@ describe("Complaints route registration order — regression for the /complaints
   beforeEach(() => {
     listAssignedMock.mockReset();
     getMineMock.mockReset();
+    getAssignedMock.mockReset();
   });
 
   it("GET /api/complaints/assigned dispatches to MerchantComplaintsController.listAssigned, NOT ComplaintsController's :id handler", async () => {
@@ -156,6 +184,34 @@ describe("Complaints route registration order — regression for the /complaints
       "consumer-or-merchant-user-1",
       "real-complaint-id",
     );
+    expect(listAssignedMock).not.toHaveBeenCalled();
+  });
+
+  // [I18 fix] Regression test: merchant-web calls this route (via
+  // client.complaints.getAssigned) instead of the CONSUMER-only GET
+  // /complaints/:id it used to 403 on. Also proves the three-segment
+  // /complaints/assigned/:id doesn't get shadowed by either the
+  // two-segment /complaints/:id (ComplaintsController) or the bare
+  // /complaints/assigned (MerchantComplaintsController.listAssigned).
+  it("GET /api/complaints/assigned/:id dispatches to MerchantComplaintsController.getAssigned, not ComplaintsController's :id handler or listAssigned", async () => {
+    getAssignedMock.mockResolvedValue({
+      id: "real-complaint-id",
+      status: "OPEN",
+    });
+    getMineMock.mockResolvedValue({ WRONG_HANDLER: "this must never appear" });
+
+    const res = await fetch(
+      `${baseUrl}/api/complaints/assigned/real-complaint-id`,
+    );
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toEqual({ id: "real-complaint-id", status: "OPEN" });
+    expect(getAssignedMock).toHaveBeenCalledWith(
+      "merchant-1",
+      "real-complaint-id",
+    );
+    expect(getMineMock).not.toHaveBeenCalled();
     expect(listAssignedMock).not.toHaveBeenCalled();
   });
 });
