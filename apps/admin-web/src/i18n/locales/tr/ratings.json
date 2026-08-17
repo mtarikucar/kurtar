@@ -1,0 +1,32 @@
+{
+  "title": "Puan moderasyonu",
+  "subtitle": "Yorum içeren puanları onaylayın, reddedin veya kaldırın.",
+  "filter": {
+    "label": "Durum",
+    "ALL": "Tümü",
+    "PENDING": "Onay bekleyen",
+    "APPROVED": "Onaylandı",
+    "REJECTED": "Reddedildi"
+  },
+  "table": {
+    "stars": "Puan",
+    "comment": "Yorum",
+    "status": "Durum",
+    "createdAt": "Tarih",
+    "actions": "İşlemler"
+  },
+  "actions": {
+    "approve": "Onayla",
+    "reject": "Reddet",
+    "remove": "Kaldır"
+  },
+  "removeDialog": {
+    "title": "Puanı kalıcı olarak kaldır",
+    "consequence": "Bu puan kalıcı olarak silinecek ve mağazanın puan ortalaması yeniden hesaplanacaktır. Bu işlem geri alınamaz.",
+    "confirm": "Kalıcı olarak kaldır"
+  },
+  "errors": {
+    "notFound": "Puan bulunamadı.",
+    "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin."
+  }
+}

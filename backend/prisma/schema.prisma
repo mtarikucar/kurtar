@@ -139,6 +139,13 @@ enum SettlementStatus {
   SENT
   SETTLED
   FAILED
+  // [Task 8] Net payout would have gone negative (fees + withholding +
+  // membership offset + clawback exceed gross for the period), OR an
+  // admin manually paused the batch via POST .../:id/hold. Distinguished
+  // by SettlementBatch.holdReason, not a second enum value — see that
+  // column's doc comment. Never paid while HELD; the arithmetic shortfall
+  // (if any) carries to the merchant's NEXT batch via carriedShortfallCents.
+  HELD
 }
 
 enum InvoiceType {
@@ -163,6 +170,20 @@ enum ComplaintStatus {
   MERCHANT_RESPONDED
   RESOLVED
   ESCALATED
+}
+
+/// [Task 9] Complaint categories — a fixed, reviewable set rather than
+/// free text (the brief's "categories enum'd"). Picked for a surplus-food
+/// marketplace's actual complaint shapes; OTHER is the catch-all.
+enum ComplaintCategory {
+  FOOD_QUALITY
+  MISSING_ITEMS
+  WRONG_ITEMS
+  STORE_CLOSED_NO_SHOW
+  RUDE_STAFF
+  PAYMENT_BILLING
+  SAFETY_HYGIENE
+  OTHER
 }
 
 enum ReportTargetType {
@@ -203,6 +224,17 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // [Task 7] Last known device location, written by POST /api/me/location —
+  // powers the offer.published.v1 nearby-fan-out radius query
+  // (ST_DWithin against stores.location). All three are nullable and only
+  // ever set together (application layer always writes them as a triple);
+  // a user who has never granted location permission simply never
+  // qualifies for nearby-radius notifications regardless of their
+  // nearbyEnabled preference.
+  lastLat        Float?
+  lastLng        Float?
+  lastLocationAt DateTime?
 
   refreshTokens    RefreshToken[]
   pushTokens       PushToken[]
@@ -359,6 +391,20 @@ model Merchant {
   intermediationContractVersion String?
   intermediationAcceptedAt      DateTime?
 
+  // [Task 8] Founding-member commercial terms — both nullable, both set
+  // (if ever) once, by an admin, outside this task's automated flow.
+  // Platform fee is a fixed ₺ amount, not a percentage (see
+  // PlatformPricing) — this column locks one merchant's amount below the
+  // platform default rather than expressing a discount rate. NULL means
+  // "use whatever PlatformPricing says as of the settlement period date".
+  bagFeeCentsOverride   Int?
+  // First-year membership fee exemption. When set and the settlement
+  // period date is before this instant, the membership offset engine
+  // treats the merchant's then-open period as priceCents=0 (nothing to
+  // recover) rather than skipping membership handling altogether — see
+  // memberships/membership-offset.service.ts.
+  membershipExemptUntil DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -429,11 +475,64 @@ model MembershipSubscription {
   currentPeriodStart DateTime
   currentPeriodEnd   DateTime
   priceCents         Int
+  // [Fix round, P2] KDV %20 on `priceCents` for the CURRENT period —
+  // mirrors the bag fee's netCents/vatCents split exactly. A membership
+  // invoice to a merchant is a taxable service in Turkey; this was missing
+  // in the original ship and is now first-class, carried through
+  // subscription -> offset -> batch (SettlementBatch.membershipOffsetVatCents)
+  // -> invoice (CommissionInvoice.vatCents for the MEMBERSHIP row).
+  vatCents           Int              @default(0)
   status             MembershipStatus @default(TRIAL)
+
+  // [Task 8] How much of `priceCents + vatCents` (combined) is still
+  // unrecovered for the CURRENT period — the offset engine's running
+  // balance. Starts equal to priceCents+vatCents when a period opens (0 if
+  // membershipExemptUntil covers it), decremented by each settlement
+  // batch's membershipOffsetCents, floored at 0. periodPaidAt is stamped
+  // the instant it FIRST reaches 0 (idempotent marker — see
+  // membership-offset.service.ts).
+  outstandingCents    Int       @default(0)
+  // [Fix round, P2] The portion of `outstandingCents` that is still-unpaid
+  // VAT specifically (outstandingCents - outstandingVatCents is always the
+  // still-unpaid NET portion) — lets the offset engine allocate a partial
+  // recovery proportionally between net and VAT (membership-offset.
+  // service.ts's persistOffset) instead of only ever tracking one lump sum.
+  outstandingVatCents Int       @default(0)
+  periodPaidAt        DateTime?
+
+  // [Fix round, P1] Cumulative lifetime amount forgiven at a renewal
+  // rollover because the just-ended period's outstandingCents was still
+  // > 0 (membership-renewal-cron.service.ts) — TGTG-style "you don't pay
+  // until you earn" forgiveness IS correct policy (a merchant who never
+  // earns the fee never owes it), but it must never be silent: a matching
+  // AuditLog row is written at the SAME instant this increments, and this
+  // column alone lets a finance person answer "how much have we written
+  // off THIS merchant, ever" without joining AuditLog (AuditLog is what
+  // answers a time-scoped "how much did we write off LAST YEAR" query).
+  // COMBINED net+KDV, same convention as outstandingCents.
+  writtenOffCents    Int @default(0)
+  // [Fix round #2, P1-minor] The VAT-only portion of writtenOffCents — post
+  // P2, outstandingCents (and therefore a write-off of it) is net+KDV
+  // combined, so writtenOffCents ALONE overstates "how much membership
+  // REVENUE did we write off" by the VAT component. writtenOffCents -
+  // writtenOffVatCents is the true forgiven-revenue figure; this column is
+  // what makes that subtraction possible directly in SQL, mirroring the
+  // outstandingCents/outstandingVatCents split above.
+  writtenOffVatCents Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // [Task 8] Exactly one subscription per merchant, ever — a renewal
+  // (memberships/membership-renewal-cron.service.ts) UPDATES this SAME
+  // row's currentPeriodStart/End/priceCents/outstandingCents/periodPaidAt
+  // in place rather than creating a new row per year, so "the merchant's
+  // subscription" is always a plain findUnique, and creation (on
+  // merchant.approved.v1) is naturally idempotent against a duplicate
+  // outbox delivery via the DB constraint (catch P2002, no-op) rather
+  // than a "most recent by createdAt" convention a duplicate row could
+  // silently defeat.
+  @@unique([merchantId])
   @@map("membership_subscriptions")
 }
 
@@ -463,6 +562,17 @@ model Store {
   categoryTags     BagCategory[]
   openingHoursJson Json?
   active           Boolean       @default(true)
+
+  // [Task 9] Denormalized rating aggregate — maintained by
+  // modules/ratings' recomputeStoreAggregate (a bounded, storeId-scoped
+  // Rating.aggregate() re-derivation, run inside the SAME transaction as
+  // every rating create/approve/reject/delete), never a live
+  // platform-wide scan on a read path. Counts APPROVED ratings only — see
+  // Rating.moderationStatus's doc comment for the visibility policy.
+  // avgStars is 0 (not null) when ratingCount is 0, so callers never need
+  // a null-check just to render a placeholder.
+  avgStars    Float @default(0)
+  ratingCount Int   @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -572,9 +682,26 @@ model Reservation {
   status                   ReservationStatus @default(PENDING_PAYMENT)
   cancelDeadlineAt         DateTime
   redeemedAt               DateTime?
+  // [Consumer redeem] Which actor redeemed this pickup — CONSUMER (the
+  // phone-swipe, this product's defining interaction) or MERCHANT (staff
+  // panel, the documented fallback for a dead customer phone). Null until
+  // redeemed. Exactly one of redeemedByUserId/redeemedByMerchantUserId is
+  // ever set, matching this discriminator — whichever actor's guarded
+  // update actually won the redeem race.
+  redeemedByActorType      PrincipalType?
+  // Soft reference to the consumer who redeemed their own pickup —
+  // intentionally not a foreign key, matching redeemedByMerchantUserId's
+  // own precedent below.
+  redeemedByUserId         String?
   // Soft reference to the merchant staff account that redeemed the pickup —
   // intentionally not a foreign key, matching the brief.
   redeemedByMerchantUserId String?
+  // [Task 7] Set the moment the pickup-reminder cron actually pushes this
+  // reservation's consumer — guards against double-sending on the next
+  // 5-minute tick, the same "write a sentinel column in the same guarded
+  // update that decides to act" pattern publishedAt/redeemedAt use
+  // elsewhere in this file.
+  pickupReminderSentAt     DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -660,12 +787,121 @@ model SettlementBatch {
   periodEnd   DateTime
   status      SettlementStatus @default(PENDING)
 
-  grossCents            Int @default(0)
-  bagFeeCents           Int @default(0)
-  withholdingCents      Int @default(0)
-  membershipOffsetCents Int @default(0)
-  refundClawbackCents   Int @default(0)
-  netPayoutCents        Int @default(0)
+  grossCents                   Int       @default(0)
+  bagFeeCents                  Int       @default(0)
+  // [Task 8] KDV %20 on bagFeeCents, tracked separately — the bag fee
+  // itself is never a taxable-inclusive blend; see settlement-math.ts.
+  bagFeeVatCents               Int       @default(0)
+  withholdingCents             Int       @default(0)
+  membershipOffsetCents        Int       @default(0)
+  // [Fix round, P2] The portion of membershipOffsetCents that is VAT
+  // specifically (membershipOffsetCents - membershipOffsetVatCents is the
+  // net portion) — mirrors bagFeeCents/bagFeeVatCents. Also what a repeat
+  // recompute of THIS batch "adds back" (alongside membershipOffsetCents
+  // itself) to the subscription's outstandingVatCents before re-deriving,
+  // the same idempotency trick membershipOffsetCents already uses.
+  membershipOffsetVatCents     Int       @default(0)
+  refundClawbackCents          Int       @default(0)
+  netPayoutCents               Int       @default(0)
+  // [Task 8] Set only when this batch went HELD because fees + withholding
+  // + membershipOffset + clawback exceeded grossCents (settlement-math.ts's
+  // never-negative-net invariant). The exact deficit — what still needs to
+  // be recovered — becomes an input to computing the merchant's NEXT batch
+  // (settlements.service.ts folds it into that batch's priorClawbackCents).
+  // Zero on every non-HELD batch.
+  carriedShortfallCents        Int       @default(0)
+  // [Fix round, C2] The portion of carriedShortfallCents that is
+  // externally-caused (inherited from a predecessor batch, or an unmet
+  // refund-clawback demand) — DELIBERATELY NOT the same number as
+  // carriedShortfallCents itself, which also bakes in this batch's OWN
+  // fixed-fees-exceed-gross deficit. That distinction is exactly what a
+  // real bug in this fix's first draft got wrong: feeding the FULL
+  // carriedShortfallCents back into a later recompute pass double-counts
+  // the own-fee-deficit component (computeSettlement already re-derives
+  // it fresh from `lines` every single pass; the stored total already
+  // includes it once), which made a batch's reported shortfall GROW on
+  // every retry with zero new information (2000 -> 4000 -> 6000 -> ...)
+  // instead of converging. This column is what actually feeds forward
+  // into the NEXT pass's priorClawbackCents — updated each pass via
+  // "how much of THIS column's value did refundClawbackCents actually
+  // absorb" (the same absorb-the-oldest-debt-first arithmetic
+  // recomputeBatch already applies when allocating clawback across
+  // lines), fully decoupled from whatever the batch's own lines do.
+  carriedExternalDemandCents   Int       @default(0)
+  // [Fix round #3, C2-residual] The IMMUTABLE original amount this batch
+  // inherited from a predecessor on its first-ever recompute pass — set
+  // ONCE (by resolveCarriedShortfall) and never changed again by any LATER
+  // pass of this SAME batch. `carriedExternalDemandCents` above is the
+  // RESIDUAL (how much of this is still outstanding as of the last pass,
+  // read by a FUTURE batch's resolveCarriedShortfall) — a mutable,
+  // fully-rederived-every-pass number. This column is the fixed baseline
+  // that residual is rederived FROM on every pass.
+  //
+  // Without this column, a later pass had nowhere to read "how much did I
+  // originally inherit" from — it could only read the (already-shrunk)
+  // residual, which on the very next recompute after a pass that fully
+  // absorbed the inherited demand reads back as 0. That is C2's exact
+  // shape one column over: pass 1 absorbs inherited demand X (refund=X,
+  // carriedExternalDemandCents correctly written to 0 since nothing is
+  // left outstanding) -> adminApprove's routine pre-lock recompute reads
+  // that same now-zero residual as THIS pass's starting point, rederives
+  // refundClawbackCents=0, and pays X back out to the merchant — money
+  // already recovered, forgiven on the very next ordinary action. And
+  // unlike the line-level version of this bug, X was then genuinely
+  // UNRECOVERABLE afterward: resolveCarriedShortfall only ever inherits
+  // from a HELD most-recent predecessor, and by the time this happened the
+  // batch itself was APPROVED/SENT, not HELD.
+  //
+  // Fixed the same way as the line-level version: read this IMMUTABLE
+  // column (not the mutable residual) as `carriedFromPrior` on EVERY pass,
+  // first or later — "the batch's own absorbed inherited demand, added
+  // back before re-deriving." Since nothing besides this batch's own
+  // passes ever touches this specific inherited amount (it is private to
+  // whichever batch resolveCarriedShortfall handed it to), the correct
+  // value to re-derive FROM is always the full original, not "whatever is
+  // left after my own last pass" — exactly mirroring why a settlement_line
+  // this batch previously fully absorbed must have its FULL original
+  // demand (not 0) fed back in as the baseline on a repeat pass.
+  //
+  // [Fix round #5] This is now a PROJECTION of the batch's
+  // SettlementCarriedDemandClaim row (0 when there is none), rewritten on
+  // every pass — not a write-once frozen copy. Freezing it was this same
+  // defect class in its OTHER half: a predecessor's own fee deficit is
+  // MUTABLE (a HELD batch stays recomputable and can be cured by a very
+  // late line or a fee correction), so a frozen copy could outlive the
+  // demand that justified it and be withheld from the merchant a second
+  // time. Re-deriving it from the PINNED PREDECESSOR every pass — never
+  // from this batch's own earlier output, so R1 still holds — is what
+  // makes the handoff retirable. assertLedgerIdentity cross-checks this
+  // column against the claim row.
+  inheritedExternalDemandCents Int       @default(0)
+  // [Fix round, C2] Stamped the FIRST time this batch is ever recomputed
+  // (settlement-batch-builder.service.ts's recomputeBatch), whether or not
+  // it actually inherited anything. Before this is set, a recompute is
+  // allowed to inherit a carried shortfall from the merchant's most-recent
+  // OTHER batch (the normal "shortfall rolls to the next batch" flow) —
+  // seeding carriedExternalDemandCents (and, as of fix round #3,
+  // inheritedExternalDemandCents) from it. Once set, EVERY subsequent
+  // recompute of THIS SAME batch (an admin retry on a HELD batch, or an
+  // "extend" that adds new lines to one) must consume the batch's OWN
+  // currently-stored inheritedExternalDemandCents instead of re-querying a
+  // sibling — querying a sibling again on a later pass would either
+  // silently DROP progress already made recovering it, or (if the
+  // predecessor is itself untouched, as it usually is) simply re-fetch
+  // the same starting value while ignoring any partial recovery already
+  // achieved. NULL means "never recomputed yet".
+  shortfallResolvedAt          DateTime?
+  // [Fix round, C3] Stamped BEFORE the payout provider is ever called for
+  // this batch (settlement-payout.service.ts's executeOne) — freezes
+  // netPayoutCents from that instant on: hold()/recomputeBatch() both
+  // refuse to touch a batch with this set, so the amount a provider was
+  // told to transfer can never drift out from under an in-flight or
+  // already-attempted payout. NULL until the first attempt.
+  payoutAttemptedAt            DateTime?
+  // [Task 8] Why this batch is HELD — "negative net, ₺X carried" for the
+  // automatic path, or the admin's note for a manual POST .../:id/hold.
+  // NULL for every batch that has never been HELD.
+  holdReason                   String?
 
   dueAt          DateTime?
   pspTransferRef String?
@@ -674,8 +910,32 @@ model SettlementBatch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  settlementLines    SettlementLine[]
-  commissionInvoices CommissionInvoice[]
+  settlementLines            SettlementLine[]
+  commissionInvoices         CommissionInvoice[]
+  // [Task 8] The settled lines whose reservation was refunded AFTER this
+  // batch sent — the clawback lands on the NEXT batch, but this relation
+  // still points back at the batch that ORIGINALLY paid the line out, for
+  // audit ("what got clawed back, and why"). See SettlementLine.clawbackBatchId.
+  clawedBackLines            SettlementLine[]               @relation("SettlementLineClawback")
+  // [Fix round #4] This batch's OWN per-line clawback contributions — the
+  // authoritative ledger every recompute rebuilds from scratch and checks
+  // `refundClawbackCents` against before committing. See
+  // SettlementClawbackAllocation's own doc comment.
+  clawbackAllocations        SettlementClawbackAllocation[]
+  // [Fix round #5] The carried-demand handoff, recorded on both sides.
+  // `carriedDemandSourceBatchId` is the PREDECESSOR this batch inherited
+  // external demand from — write-once, discovered on the first pass only,
+  // pure identity with no money in it. `carriedDemandClaim` is the live,
+  // every-pass-rebuilt MONEY claim against that predecessor;
+  // `carriedDemandClaimsAgainst` is the same rows seen from the
+  // predecessor's side, which is what lets a predecessor whose deficit is
+  // cured have the claim retired instead of leaving a frozen copy behind.
+  // See SettlementCarriedDemandClaim.
+  carriedDemandSourceBatchId String?
+  carriedDemandSource        SettlementBatch?               @relation("SettlementCarriedDemandSource", fields: [carriedDemandSourceBatchId], references: [id], onDelete: SetNull)
+  carriedDemandSuccessors    SettlementBatch[]              @relation("SettlementCarriedDemandSource")
+  carriedDemandClaim         SettlementCarriedDemandClaim?  @relation("CarriedDemandClaimant")
+  carriedDemandClaimsAgainst SettlementCarriedDemandClaim[] @relation("CarriedDemandSource")
 
   @@index([merchantId, status])
   @@map("settlement_batches")
@@ -693,12 +953,146 @@ model SettlementLine {
   redeemedAt       DateTime
   grossCents       Int
   bagFeeCents      Int
+  bagFeeVatCents   Int      @default(0)
   withholdingCents Int
+
+  // [Task 8 / Fix round #4] DENORMALIZED PROJECTIONS of
+  // settlement_clawback_allocations — NEVER an independent source of
+  // truth, and never written by anything except
+  // settlement-batch-builder.service.ts's `projectLinesFromLedger`, which
+  // recomputes all three from that table's rows for the line:
+  //   clawbackCents     = SUM(allocations.amountCents) for this line
+  //   clawbackAppliedAt = non-null iff that sum covers the line's FULL
+  //                       demand (gross - bagFee - VAT - withholding);
+  //                       explicitly NULLed again the moment it does not,
+  //                       so an under-recovered line always stays visible
+  //                       to the recovery queries (the "no orphaned
+  //                       demand" invariant — see the service's class doc
+  //                       comment).
+  //   clawbackBatchId   = the most recent allocating batch (audit
+  //                       pointer only; per-batch attribution lives in
+  //                       the allocation rows, NOT here — inferring it
+  //                       from this single pointer is what made a
+  //                       partially-absorbed line unattributable and is
+  //                       the defect class fix round #4 closed).
+  clawbackCents     Int              @default(0)
+  clawbackAppliedAt DateTime?
+  clawbackBatchId   String?
+  clawbackBatch     SettlementBatch? @relation("SettlementLineClawback", fields: [clawbackBatchId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  clawbackAllocations SettlementClawbackAllocation[]
+
   @@map("settlement_lines")
+}
+
+/**
+ * [Fix round #4] The refund-clawback ledger: ONE row per (batch, line)
+ * saying "batch B withheld `amountCents` of line L's clawback demand."
+ * WHY A TABLE AND NOT A COLUMN. Four consecutive audits found the same
+ * defect four times, each one column over from the last: a recompute read
+ * back a value its OWN earlier pass had written and treated it as an
+ * untouched input, silently forgiving (or, in the multi-batch case,
+ * double-charging) the difference. Every one of those was possible because
+ * per-batch attribution was INFERRED from a single mutable owner pointer
+ * (SettlementLine.clawbackBatchId + its cumulative clawbackCents) rather
+ * than RECORDED. Inference has no inverse: once a second batch touched the
+ * line, the first batch's own contribution was unrecoverable, so its next
+ * recompute could not correctly undo it.
+ * With this table the undo is structural instead of arithmetic:
+ * recomputeBatch DELETEs every row it owns before it reads anything, so
+ * what it then reads is by construction "what OTHER batches have
+ * recovered" — a recompute is incapable of seeing its own prior output as
+ * an input. It then re-derives from scratch and re-inserts. Any number of
+ * open batches may hold partial claims on the same line simultaneously and
+ * each can re-derive independently without corrupting the others.
+ * INVARIANTS (the first is asserted against the persisted rows inside the
+ * recompute transaction, before commit — see assertLedgerIdentity):
+ * 1. batch.refundClawbackCents
+ * === (batch.inheritedExternalDemandCents - batch.carriedExternalDemandCents)
+ * + SUM(allocations.amountCents WHERE batchId = batch.id)
+ * 2. line.clawbackCents === SUM(allocations.amountCents WHERE reservationId = line.reservationId)
+ * 3. SUM(allocations for a line) <= that line's full demand
+ * 4. amountCents > 0 — a zero contribution is the ABSENCE of a row, so
+ * "allocate nothing" and "delete my claim" are the same operation and
+ * cannot be skipped by any branch.
+ */
+model SettlementClawbackAllocation {
+  batchId String
+  batch   SettlementBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  // References SettlementLine.reservationId (unique) rather than its id —
+  // the whole settlement path keys lines by reservation, and it makes the
+  // ledger readable without a join.
+  reservationId String
+  line          SettlementLine @relation(fields: [reservationId], references: [reservationId], onDelete: Cascade)
+
+  /**
+   * Always > 0 (invariant 4 above). Kuruş, Int, never a rate.
+   */
+  amountCents Int
+
+  // No `updatedAt`: an allocation row is never UPDATEd. A recompute
+  // deletes every row it owns and re-inserts the ones it still wants, so
+  // "changed my mind about this line" and "never claimed it" are the same
+  // write — there is no partial-update path a branch could skip.
+  createdAt DateTime @default(now())
+
+  @@id([batchId, reservationId])
+  @@index([reservationId])
+  @@map("settlement_clawback_allocations")
+}
+
+/**
+ * [Fix round #5] The carried-demand ledger: at most ONE row per claimant
+ * batch, saying "batch S has taken over `amountCents` of predecessor P's
+ * still-unresolved demand."
+ * WHY, given the line ledger already exists. `priorClawbackCents` has two
+ * halves. The LINE half (settlement_clawback_allocations) was fixed in
+ * round #4. The other half — the shortfall a HELD predecessor hands to its
+ * successor — was still an INFERRED COPY: resolveCarriedShortfall read the
+ * predecessor's own fee deficit and froze it into the successor's
+ * inheritedExternalDemandCents, and nothing on the predecessor recorded
+ * that the claim had been made. Unlike a settled line's demand, a
+ * predecessor's deficit is MUTABLE: a HELD batch stays recomputable, and
+ * `createOrExtendBatch` deliberately adds very-late lines to it. So a
+ * cured predecessor left the successor holding a frozen claim on a demand
+ * that no longer existed, and the merchant was charged for it twice —
+ * the opposite direction from the four forgiveness bugs, the same class.
+ * Recording the handoff makes it RETIRABLE, exactly as recording line
+ * attribution made that undoable: the claimant deletes its own row before
+ * re-deriving, re-reads the predecessor's CURRENT exportable demand, and
+ * re-inserts only what is still justified. A predecessor that resolves
+ * (leaves HELD) exports 0, so the claim simply is not re-created.
+ * INVARIANTS (1 and 2 asserted against persisted rows inside the recompute
+ * transaction — see assertLedgerIdentity / assertIrrevocableClaimsHonoured):
+ * 1. batch.inheritedExternalDemandCents === COALESCE(its claim's amountCents, 0)
+ * 2. a claim held by a claimant that can no longer recompute (anything
+ * outside CALCULATED/HELD — its amount is committed money) must stay
+ * covered by the source's exportable demand; a source recompute that
+ * would break that refuses to commit rather than silently under-paying.
+ * 3. amountCents > 0 — enforced by a DB CHECK. A zero claim is the
+ * ABSENCE of a row, so "claim nothing" and "release my claim" are the
+ * same write and no branch can skip either.
+ */
+model SettlementCarriedDemandClaim {
+  claimantBatchId String          @id
+  claimantBatch   SettlementBatch @relation("CarriedDemandClaimant", fields: [claimantBatchId], references: [id], onDelete: Cascade)
+
+  sourceBatchId String
+  sourceBatch   SettlementBatch @relation("CarriedDemandSource", fields: [sourceBatchId], references: [id], onDelete: Cascade)
+
+  /// Always > 0 (invariant 3). Kuruş, Int.
+  amountCents Int
+
+  // No `updatedAt`, for the same reason as SettlementClawbackAllocation:
+  // the row is deleted and re-inserted, never patched.
+  createdAt DateTime @default(now())
+
+  @@index([sourceBatchId])
+  @@map("settlement_carried_demand_claims")
 }
 
 model CommissionInvoice {
@@ -717,10 +1111,47 @@ model CommissionInvoice {
   status       InvoiceStatus @default(DRAFT)
   issuedAt     DateTime?
 
+  // [Task 8] netAmountCents/vatCents/totalAmountCents are the invoice's own
+  // aggregate totals (BAG_FEE type: bagFeeCents / bagFeeVatCents / their
+  // sum; MEMBERSHIP type: the amount offset this batch / 0 / same value —
+  // no KDV line, see invoicing/commission-invoice.service.ts's doc
+  // comment for why). Withholding is DELIBERATELY never one of these
+  // fields or a linesJson entry — it is a tevkifat on the payout dekont,
+  // not a commission-invoice line (brief §6). linesJson is the itemized
+  // breakdown (one entry per SettlementLine contributing to this invoice)
+  // the e-document adapter serializes into the actual UBL payload.
+  netAmountCents   Int   @default(0)
+  vatCents         Int   @default(0)
+  totalAmountCents Int   @default(0)
+  linesJson        Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@map("commission_invoices")
+}
+
+// [Task 8] Platform pricing, indexed by effectiveFrom so a price change
+// never rewrites history — every settlement batch resolves its fee/
+// membership price "as of" its OWN period date (settlements/pricing.service.ts),
+// so a batch computed for a day before a price change keeps recomputing
+// identically forever, even after the change ships. One row is seeded by
+// this table's own creation migration as the platform's initial pricing
+// (see that migration's doc comment); a price change is a NEW row with a
+// FUTURE effectiveFrom (POST /api/admin/pricing), never an UPDATE of an
+// existing row — mutating history in place is exactly what this table
+// exists to prevent.
+model PlatformPricing {
+  id String @id @default(cuid())
+
+  bagFeeCents           Int
+  membershipAnnualCents Int
+  effectiveFrom         DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([effectiveFrom])
+  @@map("platform_pricing")
 }
 
 // ========================================
@@ -744,6 +1175,16 @@ model Rating {
   service      Int?
   comment      String?
 
+  // [Task 9] Visibility policy (documented here, enforced in
+  // modules/ratings/ratings.service.ts's create()): a rating with NO
+  // comment is auto-APPROVED immediately (nothing to moderate, and the
+  // vast majority of ratings are a bare star tap — gating those on an
+  // admin would silently stall every store's average). A rating WITH a
+  // comment starts PENDING and needs an explicit admin approve/reject
+  // (modules/ratings' admin queue) before it counts toward
+  // Store.avgStars/ratingCount or appears in any public listing. REJECTED
+  // is terminal (used both by the admin ratings queue and by a
+  // content-report "action" on a RATING target — modules/moderation).
   moderationStatus ModerationStatus @default(PENDING)
 
   createdAt DateTime @default(now())
@@ -808,18 +1249,67 @@ model ComplaintTicket {
   reservationId String?
   reservation   Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull)
 
-  category    String
+  category    ComplaintCategory
   description String
   status      ComplaintStatus @default(OPEN)
 
+  // [Task 9] ETAHS wording is calendar days, not business days (unlike
+  // settlements' 5-BUSINESS-day due date) — set at creation as
+  // now + 15 calendar days (modules/complaints/sla-date-math.ts).
   slaDeadlineAt DateTime
   resolvedAt    DateTime?
+  // [Task 9] Stamped the first time complaint-sla-cron.service.ts sends
+  // the "approaching deadline" admin alert for this ticket — the same
+  // sentinel-column idempotency pattern pickupReminderSentAt/
+  // shortfallResolvedAt already use elsewhere, so an hourly sweep never
+  // re-alerts on the same ticket. NULL means "not yet warned". Breach
+  // itself needs no separate sentinel — the OPEN/MERCHANT_RESPONDED ->
+  // ESCALATED transition is naturally idempotent (a guarded UPDATE whose
+  // WHERE no longer matches once ESCALATED).
+  slaWarningSentAt DateTime?
+  // [I3 fix] The single-fire guard for ComplaintsService.adminRefund — a
+  // REDEEMED reservation has no further status transition to piggyback
+  // an idempotency guarantee on (unlike cancel()'s CONFIRMED ->
+  // CANCELLED_BY_USER), so this ticket's own refundedAt is the guarded
+  // compare-and-swap (NULL -> now) instead, the same sentinel-column
+  // pattern as slaWarningSentAt/pickupReminderSentAt above. NULL means
+  // "no refund triggered from this ticket yet"; cleared back to NULL if
+  // the provider call itself fails, so a retry through the same ticket
+  // stays possible.
+  refundedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  messages ComplaintMessage[]
+
   @@index([status, slaDeadlineAt])
   @@map("complaint_tickets")
+}
+
+/// [Task 9] The message thread on a ComplaintTicket — consumer, the
+/// complained-about merchant, and admin all post here (authorization is
+/// modules/complaints/complaints.service.ts's job, not a DB constraint:
+/// authorType/authorId are a soft reference, matching
+/// MerchantVerificationEvent.actorAdminId's precedent, since a message's
+/// author can be any of three separate principal tables). A MERCHANT
+/// reply is also what flips ComplaintTicket.status OPEN -> MERCHANT_RESPONDED
+/// (see complaints.service.ts's addMessage) — there is no separate "reply"
+/// endpoint.
+model ComplaintMessage {
+  id String @id @default(cuid())
+
+  complaintId String
+  complaint   ComplaintTicket @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+
+  authorType PrincipalType
+  authorId   String
+  body       String
+
+  createdAt DateTime @default(now())
+
+  @@index([complaintId, createdAt])
+  @@map("complaint_messages")
 }
 
 model ContentReport {
@@ -830,7 +1320,16 @@ model ContentReport {
   reason     String
 
   status             ReportStatus @default(OPEN)
+  // [Task 9] now + 48h at creation (modules/moderation).
   takedownDeadlineAt DateTime
+  resolvedAt         DateTime?
+  // [Task 9] ReportStatus has no ESCALATED value (unlike ComplaintStatus)
+  // — a breach here is alert-only, never an automatic status change, so
+  // BOTH the approaching and the breached alert need their own sentinel
+  // to stay idempotent across cron ticks (mirrors
+  // ComplaintTicket.slaWarningSentAt).
+  takedownWarningSentAt  DateTime?
+  takedownBreachedSentAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -857,21 +1356,53 @@ model OutboxEvent {
   // Full event body; consumers parse this against the event contract.
   payload Json
 
-  // Idempotency key emitted by the producer; consumers dedupe on this.
-  idempotencyKey String
+  // [Task 7] Producer-side dedup key, nullable + UNIQUE — a producer that
+  // supplies one (e.g. "offer-published:<offerId>") gets a REAL guarantee
+  // that a duplicate insert can never land twice; a producer with no
+  // natural dedup key simply omits it, and Postgres treats each NULL as
+  // distinct so any number of keyless rows may coexist. Was a bare
+  // non-null String with NO constraint before this task — every producer
+  // happened to set it, but nothing enforced uniqueness. A collision on
+  // this column is a genuine P2002 that propagates out of
+  // OutboxService.publish and aborts the caller's WHOLE transaction —
+  // deliberately NOT caught/swallowed inside the transaction (an aborted
+  // Postgres transaction answers every subsequent statement, including
+  // COMMIT, without raising — see reservations.service.ts's
+  // createReservationWithRetry doc comment for the identical footgun
+  // fixed once already in this codebase). See
+  // modules/outbox/outbox.service.ts.
+  idempotencyKey String? @unique
 
-  // Drain state machine: queued -> dispatching -> dispatched | failed.
+  // [Task 7] Delayed dispatch: NULL means "eligible as soon as status/
+  // nextAttemptAt allow it" (every event before this task); a future
+  // instant defers OutboxWorkerService's claim query until it has passed —
+  // e.g. the reservation.redeemed.v1 rating invite, queued at redeem time
+  // but not meant to fire until 2 hours later.
+  scheduledFor DateTime?
+
+  // Drain state machine: queued -> processing -> done | dead (retried
+  // rows return to queued with a future nextAttemptAt in between).
   status    String  @default("queued")
   attempts  Int     @default(0)
   lastError String?
 
   dispatchedAt  DateTime?
   nextAttemptAt DateTime?
+  // [Task 7 fix round] Set on every claim (fresh OR stale-lease reclaim —
+  // see outbox-worker.service.ts's claimBatch/OUTBOX_LEASE_MS). Doubles as
+  // an optimistic-concurrency token: mark*() only succeeds if claimedAt
+  // still matches what THIS claim set, so a worker that finishes late
+  // (past its own lease, after someone else already reclaimed the row)
+  // can never stomp on the reclaimer's work.
+  claimedAt     DateTime?
 
   createdAt DateTime @default(now())
 
-  // Worker scans `status='queued' AND nextAttemptAt <= now()` in id order.
+  // Worker scans `(status='queued' AND nextAttemptAt <= now()) OR
+  // (status='processing' AND claimedAt <= now() - lease), AND
+  // (scheduledFor IS NULL OR scheduledFor <= now())` in id order.
   @@index([status, nextAttemptAt])
+  @@index([status, claimedAt])
   @@index([type, createdAt])
   @@map("outbox_events")
 }

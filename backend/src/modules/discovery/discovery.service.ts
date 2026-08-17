@@ -12,6 +12,7 @@ import {
 import { buildDiscoveryOffersCacheKey } from "./discovery-cache-key.util";
 import { DiscoveryCacheService } from "./discovery-cache.service";
 import { escapeLikePattern } from "./like-escape.util";
+import { buildLiveOfferConditions } from "./live-offer.util";
 import { DiscoveryMapQueryDto } from "./dto/discovery-map-query.dto";
 import { DiscoveryOffersQueryDto } from "./dto/discovery-offers-query.dto";
 
@@ -80,6 +81,32 @@ function storeNotFoundError() {
     errorCode: "STORE_NOT_FOUND",
     message: "Store not found.",
   });
+}
+
+function offerNotFoundError() {
+  return new NotFoundException({
+    statusCode: 404,
+    errorCode: "OFFER_NOT_FOUND",
+    message: "Offer not found.",
+  });
+}
+
+export interface DiscoveryOfferDetail {
+  offerId: string;
+  store: { id: string; name: string; district: string };
+  template: {
+    title: string;
+    category: string;
+    dietFlags: string[];
+    allergenDisclaimer: string;
+    priceCents: number;
+    originalValueCentsMin: number;
+    originalValueCentsMax: number;
+  };
+  pickupStartAt: string;
+  pickupEndAt: string;
+  qtyLeft: number;
+  coverImageUrl: string | null;
 }
 
 function parseDietFlags(diet: string | undefined): DietFlag[] | undefined {
@@ -160,19 +187,19 @@ export class DiscoveryService {
   ): Promise<DiscoveryOffersResult> {
     const point = Prisma.sql`ST_SetSRID(ST_MakePoint(${query.lng}, ${query.lat}), 4326)::geography`;
 
+    // [Task 9] The first six conditions (PUBLISHED/stock-left/pickup-not-
+    // over/store-active/template-active/merchant-APPROVED) are the shared
+    // "live offer" predicate — see live-offer.util.ts's doc comment for
+    // why this is now a shared helper instead of hand-typed here and in
+    // map()/favorites a third time. A SUSPENDED (or never-APPROVED)
+    // merchant's offers must never surface publicly — the suspend
+    // kill-switch cancels every ACTIVE offer at the moment of suspension,
+    // but that's a one-shot sweep, not a standing gate: without this
+    // filter, an offer published BEFORE suspension (or one somehow
+    // created after via a missed write-path check) would stay visible and
+    // bookable indefinitely.
     const conditions: Prisma.Sql[] = [
-      Prisma.sql`d."status" = 'PUBLISHED'`,
-      Prisma.sql`d."qtyReserved" < d."qtyTotal"`,
-      Prisma.sql`d."pickupEndAt" > now()`,
-      Prisma.sql`s."active" = true`,
-      Prisma.sql`bt."active" = true`,
-      // A SUSPENDED (or never-APPROVED) merchant's offers must never
-      // surface publicly — the suspend kill-switch cancels every ACTIVE
-      // offer at the moment of suspension, but that's a one-shot sweep,
-      // not a standing gate: without this filter, an offer published
-      // BEFORE suspension (or one somehow created after via a missed
-      // write-path check) would stay visible and bookable indefinitely.
-      Prisma.sql`m."verificationStatus" = 'APPROVED'`,
+      ...buildLiveOfferConditions(new Date()),
       Prisma.sql`ST_DWithin(s."location", ${point}, ${query.radiusM})`,
     ];
     if (query.category) {
@@ -313,15 +340,11 @@ export class DiscoveryService {
       });
     }
 
+    // [Task 9] Same shared live-offer predicate as queryOffers above — see
+    // live-offer.util.ts. Same SUSPENDED-merchant reasoning too: a
+    // SUSPENDED merchant's pins must not show up on the map either.
     const conditions: Prisma.Sql[] = [
-      Prisma.sql`d."status" = 'PUBLISHED'`,
-      Prisma.sql`d."qtyReserved" < d."qtyTotal"`,
-      Prisma.sql`d."pickupEndAt" > now()`,
-      Prisma.sql`s."active" = true`,
-      Prisma.sql`bt."active" = true`,
-      // Same reasoning as queryOffers above — a SUSPENDED merchant's pins
-      // must not show up on the map either.
-      Prisma.sql`m."verificationStatus" = 'APPROVED'`,
+      ...buildLiveOfferConditions(new Date()),
       Prisma.sql`ST_Intersects(s."location"::geometry, ST_MakeEnvelope(${query.west}, ${query.south}, ${query.east}, ${query.north}, 4326))`,
     ];
     if (query.category) {
@@ -392,6 +415,11 @@ export class DiscoveryService {
         coverImageUrl: true,
         categoryTags: true,
         openingHoursJson: true,
+        // [Task 9] Denormalized rating aggregate — see Store.avgStars's
+        // doc comment. Reading it here means this @Public, uncached
+        // endpoint never runs a live Rating.aggregate() per request.
+        avgStars: true,
+        ratingCount: true,
       },
     });
     if (!store) throw storeNotFoundError();
@@ -421,6 +449,14 @@ export class DiscoveryService {
             priceCents: true,
             originalValueCentsMin: true,
             originalValueCentsMax: true,
+            // [I12 fix] The mandatory allergen disclaimer — collected and
+            // validated at merchant submit (CreateBagTemplateDto), but
+            // this select never carried it through to the consumer's
+            // actual purchase path (only getOfferById's share-preview
+            // did). Without it, apps/consumer's offer detail screen had
+            // no real allergen text to render and fell back to a
+            // hard-coded "coming soon" placeholder.
+            allergenDisclaimer: true,
           },
         },
       },
@@ -436,19 +472,114 @@ export class DiscoveryService {
         qtyLeft: o.qtyTotal - o.qtyReserved,
       }));
 
-    const ratingAgg = await this.prisma.rating.aggregate({
-      where: { storeId, moderationStatus: "APPROVED" },
-      _avg: { overallStars: true },
-      _count: { _all: true },
-    });
+    const { avgStars, ratingCount, ...publicStore } = store;
 
     return {
-      store,
+      store: publicStore,
       todaysOffers,
       rating: {
-        average: ratingAgg._avg.overallStars ?? 0,
-        count: ratingAgg._count._all,
+        average: avgStars,
+        count: ratingCount,
       },
+    };
+  }
+
+  /**
+   * [Universal-link bridge page] GET /discovery/offers/:id — a single
+   * offer's public share-preview. Same visibility rules as searchOffers/
+   * map (buildLiveOfferConditions's shared six conditions: PUBLISHED,
+   * stock left, pickup window not over, store active, template active,
+   * merchant APPROVED), narrowed to one `d."id"` in the SAME WHERE clause
+   * rather than a separate existence check first — a non-visible offer
+   * (wrong id, or a real id that's since sold out/closed/deactivated)
+   * produces zero matching rows either way, so it 404s identically to a
+   * genuinely nonexistent one. Never leaks "this id exists but isn't
+   * showable right now" the way a two-step "find by id, then check
+   * visibility" would.
+   *
+   * Deliberately NOT behind DiscoveryCacheService, unlike searchOffers/
+   * map: those cache a RADIUS/BBOX scan (an inherently fan-out query
+   * whose cost scales with how many live offers are nearby); this is a
+   * single indexed primary-key lookup joined to three FK-indexed tables,
+   * LIMIT 1 — the same cost profile as storeProfile() above, which has
+   * never needed caching either. A crawler/unfurler hits ONE known id at
+   * a time, not a broad geographic area, so Postgres's own index lookup
+   * already bounds the per-request cost tightly; adding a cache layer
+   * here would mainly buy staleness risk (a stale qtyLeft/price in a
+   * share preview) for negligible real load reduction. If one specific
+   * offer ever goes viral enough to change that calculus, the same
+   * DiscoveryCacheService this module already has is a two-line addition
+   * at that point.
+   */
+  async getOfferById(offerId: string): Promise<DiscoveryOfferDetail> {
+    const conditions: Prisma.Sql[] = [
+      ...buildLiveOfferConditions(new Date()),
+      Prisma.sql`d."id" = ${offerId}`,
+    ];
+    const whereClause = Prisma.join(conditions, " AND ");
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        offerId: string;
+        storeId: string;
+        storeName: string;
+        district: string;
+        title: string;
+        category: string;
+        dietFlags: string[];
+        allergenDisclaimer: string;
+        priceCents: number;
+        originalValueCentsMin: number;
+        originalValueCentsMax: number;
+        pickupStartAt: Date;
+        pickupEndAt: Date;
+        qtyLeft: number;
+        coverImageUrl: string | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        d."id" AS "offerId",
+        s."id" AS "storeId",
+        s."name" AS "storeName",
+        s."district" AS "district",
+        bt."title" AS "title",
+        bt."category" AS "category",
+        bt."dietFlags" AS "dietFlags",
+        bt."allergenDisclaimer" AS "allergenDisclaimer",
+        bt."priceCents" AS "priceCents",
+        bt."originalValueCentsMin" AS "originalValueCentsMin",
+        bt."originalValueCentsMax" AS "originalValueCentsMax",
+        d."pickupStartAt" AS "pickupStartAt",
+        d."pickupEndAt" AS "pickupEndAt",
+        (d."qtyTotal" - d."qtyReserved") AS "qtyLeft",
+        s."coverImageUrl" AS "coverImageUrl"
+      FROM "daily_offers" d
+      JOIN "stores" s ON s."id" = d."storeId"
+      JOIN "bag_templates" bt ON bt."id" = d."bagTemplateId"
+      JOIN "merchants" m ON m."id" = s."merchantId"
+      WHERE ${whereClause}
+      LIMIT 1
+    `);
+
+    const row = rows[0];
+    if (!row) throw offerNotFoundError();
+
+    return {
+      offerId: row.offerId,
+      store: { id: row.storeId, name: row.storeName, district: row.district },
+      template: {
+        title: row.title,
+        category: row.category,
+        dietFlags: row.dietFlags,
+        allergenDisclaimer: row.allergenDisclaimer,
+        priceCents: row.priceCents,
+        originalValueCentsMin: row.originalValueCentsMin,
+        originalValueCentsMax: row.originalValueCentsMax,
+      },
+      pickupStartAt: row.pickupStartAt.toISOString(),
+      pickupEndAt: row.pickupEndAt.toISOString(),
+      qtyLeft: row.qtyLeft,
+      coverImageUrl: row.coverImageUrl,
     };
   }
 }

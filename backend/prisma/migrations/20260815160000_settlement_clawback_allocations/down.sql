@@ -1,0 +1,14 @@
+-- Reverses 20260815160000_settlement_clawback_allocations/migration.sql.
+--
+-- Dropping the table takes its primary key, its index and both foreign
+-- keys with it — no separate DROP CONSTRAINT / DROP INDEX statements are
+-- needed (or possible, once the table is gone). IF EXISTS makes this
+-- idempotent / safe to re-run, matching every other down.sql in this
+-- folder.
+--
+-- The forward migration's backfill is intentionally NOT reversed: it only
+-- ever COPIED attribution that still lives, unchanged, in
+-- settlement_lines.clawbackBatchId / clawbackCents, so dropping the table
+-- loses no information the pre-migration representation did not already
+-- hold. Nothing in this migration ever wrote to settlement_lines.
+DROP TABLE IF EXISTS "settlement_clawback_allocations";

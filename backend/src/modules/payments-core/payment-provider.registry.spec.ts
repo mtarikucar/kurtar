@@ -8,6 +8,7 @@ function fakeProvider(id: "mock" | "iyzico" | "paytr"): PaymentProvider {
     createIntent: jest.fn(),
     queryStatus: jest.fn(),
     refund: jest.fn(),
+    payout: jest.fn(),
     parseWebhook: jest.fn(),
     healthCheck: jest.fn(),
   };

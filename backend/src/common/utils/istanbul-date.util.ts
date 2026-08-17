@@ -23,3 +23,19 @@ export function istanbulDateKey(date: Date): string {
 export function offerDateToDbDate(offerDate: string): Date {
   return new Date(`${offerDate}T00:00:00.000Z`);
 }
+
+/** [Task 7] The Europe/Istanbul hour-of-day for `date`, as an integer
+ * 0-23. Used by modules/notifications' quiet-hours check
+ * (NotificationPreference.quietHoursStart/End are local hour-of-day
+ * bounds, per schema.prisma's comment on that model). */
+export function istanbulHourOfDay(date: Date): number {
+  const formatted = new Intl.DateTimeFormat("en-GB", {
+    timeZone: ISTANBUL_TZ,
+    hour: "2-digit",
+    hour12: false,
+  }).format(date);
+  // "en-GB" + hour12:false formats as "HH" (occasionally "24" for
+  // midnight in some ICU versions) — normalize "24" to 0.
+  const hour = Number.parseInt(formatted, 10);
+  return hour === 24 ? 0 : hour;
+}

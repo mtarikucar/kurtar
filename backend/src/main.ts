@@ -4,6 +4,53 @@ import { NestExpressApplication } from "@nestjs/platform-express";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
+import { buildOpenApiDocument, setupSwaggerUi } from "./openapi.setup";
+
+// [Task 9.5] The four frontend dev servers' fixed origins (see
+// docs/frontend-contract.md's port table) — apps/merchant-web (Vite,
+// 5173), apps/admin-web (Vite, 5174), landing (Next, 3000), apps/consumer
+// (Expo web preview, 8081). Used ONLY as the development-mode default
+// below; production never falls back to this list.
+const DEV_DEFAULT_CORS_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:3000",
+  "http://localhost:8081",
+];
+
+/**
+ * [Task 9.5] Additive CORS wiring for the four frontend surfaces — this
+ * codebase had NO CORS middleware at all before this (every prior caller
+ * was either same-origin or a non-browser client). `X-Client-Transport:
+ * cookie` (apps/merchant-web, apps/admin-web — see auth.controller.ts)
+ * relies on the browser sending/receiving the httpOnly refresh cookie
+ * cross-origin, which requires `credentials: true` here AND the origin
+ * echoed back verbatim (never `*`, which `credentials: true` forbids by
+ * the CORS spec).
+ *
+ * `CORS_ALLOWED_ORIGINS` (comma-separated) is the explicit, always-safe
+ * override for any environment, including production. With it unset:
+ * development falls back to the four fixed dev origins above; every OTHER
+ * environment (staging/production, anything with NODE_ENV=production)
+ * gets NO CORS enabled at all — i.e. exactly today's pre-Task-9.5
+ * behavior (same-origin/non-browser only). This is deliberately NOT
+ * weakened for production: a real deployment must set
+ * CORS_ALLOWED_ORIGINS explicitly (e.g. to the merchant/admin/landing
+ * domains) before any of those origins can call the API from a browser.
+ */
+function resolveCorsOrigins(): string[] | undefined {
+  const explicit = process.env.CORS_ALLOWED_ORIGINS;
+  if (explicit && explicit.trim().length > 0) {
+    return explicit
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0);
+  }
+  if (process.env.NODE_ENV !== "production") {
+    return DEV_DEFAULT_CORS_ORIGINS;
+  }
+  return undefined;
+}
 
 async function bootstrap() {
   // rawBody: true additionally populates req.rawBody (a Buffer) alongside
@@ -34,6 +81,22 @@ async function bootstrap() {
   // panel transport) — Express doesn't parse cookies into req.cookies
   // without this.
   app.use(cookieParser());
+
+  // [Task 9.5] See resolveCorsOrigins()'s doc comment above — additive,
+  // origin-allowlisted, credentials-enabled CORS for the four frontend
+  // dev origins (or CORS_ALLOWED_ORIGINS's explicit override). Skipped
+  // entirely (no enableCors() call at all) when neither applies, which
+  // preserves the exact pre-Task-9.5 behavior.
+  const corsOrigins = resolveCorsOrigins();
+  if (corsOrigins) {
+    app.enableCors({
+      origin: corsOrigins,
+      credentials: true,
+      methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Client-Transport"],
+    });
+  }
+
   app.setGlobalPrefix("api");
   app.useGlobalPipes(
     new ValidationPipe({
@@ -41,6 +104,11 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  // [Task 9] Built AFTER setGlobalPrefix so every documented path already
+  // carries "/api" — see openapi.setup.ts's own doc comment.
+  const openApiDocument = buildOpenApiDocument(app);
+  setupSwaggerUi(app, openApiDocument);
 
   // Nest calls onModuleDestroy on SIGTERM/SIGINT so connections (DB, Redis —
   // added in later tasks) drain cleanly instead of being cut mid-request.

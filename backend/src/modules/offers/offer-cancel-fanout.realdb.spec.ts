@@ -6,6 +6,7 @@ import { PaymentProviderRegistry } from "../payments-core/payment-provider.regis
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { MockPaymentProvider } from "../payments-core/adapters/mock-payment-provider";
 import { OffersService } from "./offers.service";
+import { OutboxService } from "../outbox/outbox.service";
 
 /**
  * Real-DB proof of the merchant-cancel reservation fan-out (§3 of the
@@ -34,12 +35,14 @@ function buildHarness(prisma: PrismaClient) {
   mockProvider.onModuleInit();
   const facade = new PaymentsFacadeService(registry, config);
   const offerStock = new OfferStockService();
+  const outbox = new OutboxService();
   const reservations = new ReservationsService(
     prisma as any,
     offerStock,
     facade,
+    outbox,
   );
-  const offers = new OffersService(prisma as any, reservations);
+  const offers = new OffersService(prisma as any, reservations, outbox);
   return { reservations, offers, mockProvider };
 }
 
@@ -182,6 +185,18 @@ d("OffersService.cancel — real DB merchant-cancel fan-out", () => {
         },
       }),
     );
+    // [Fix round 2] The merchant-email leg was split out into its own
+    // event type (offer.cancelled.merchant-email.v1) — see event-types.ts.
+    await safeCleanup("outboxEvent", () =>
+      prisma.outboxEvent.deleteMany({
+        where: {
+          type: "offer.cancelled.merchant-email.v1",
+          idempotencyKey: {
+            in: offerIds.map((id) => `offer-cancelled-merchant-email:${id}`),
+          },
+        },
+      }),
+    );
     await safeCleanup("refund", () =>
       prisma.refund.deleteMany({
         where: { payment: { reservation: { storeId } } },
@@ -281,25 +296,48 @@ d("OffersService.cancel — real DB merchant-cancel fan-out", () => {
       expect(refund.requestedByType).toBe("MERCHANT");
     }
 
-    const outboxRows = await prisma.outboxEvent.findMany({
+    // [Fix round 2] Two independent outbox rows now — the consumer-push
+    // leg (offer.cancelled.v1) and the merchant-email leg
+    // (offer.cancelled.merchant-email.v1), split so a persistently-bad
+    // merchant email can't force a retry to re-push already-notified
+    // consumers (see event-types.ts's doc comment).
+    const pushOutboxRows = await prisma.outboxEvent.findMany({
       where: {
         type: "offer.cancelled.v1",
         idempotencyKey: `offer-cancelled:${offer.id}`,
       },
     });
-    expect(outboxRows).toHaveLength(1);
-    const payload = outboxRows[0].payload as {
+    expect(pushOutboxRows).toHaveLength(1);
+    const pushPayload = pushOutboxRows[0].payload as {
+      offerId: string;
+      storeId: string;
+      reservationIds: string[];
+    };
+    expect(pushPayload.offerId).toBe(offer.id);
+    expect(pushPayload.storeId).toBe(storeId);
+    expect(pushPayload.reservationIds.slice().sort()).toEqual(
+      [r1.reservationId, r2.reservationId].sort(),
+    );
+
+    const emailOutboxRows = await prisma.outboxEvent.findMany({
+      where: {
+        type: "offer.cancelled.merchant-email.v1",
+        idempotencyKey: `offer-cancelled-merchant-email:${offer.id}`,
+      },
+    });
+    expect(emailOutboxRows).toHaveLength(1);
+    const emailPayload = emailOutboxRows[0].payload as {
       offerId: string;
       storeId: string;
       expiredCount: number;
       cancelledCount: number;
       reason: string;
     };
-    expect(payload.offerId).toBe(offer.id);
-    expect(payload.storeId).toBe(storeId);
-    expect(payload.expiredCount).toBe(1);
-    expect(payload.cancelledCount).toBe(2);
-    expect(payload.reason).toBe("MERCHANT_CANCEL");
+    expect(emailPayload.offerId).toBe(offer.id);
+    expect(emailPayload.storeId).toBe(storeId);
+    expect(emailPayload.expiredCount).toBe(1);
+    expect(emailPayload.cancelledCount).toBe(2);
+    expect(emailPayload.reason).toBe("MERCHANT_CANCEL");
   }, 20_000);
 
   it("a forced provider refund failure on ONE reservation does not abort the other's refund — both outcomes surfaced in the result", async () => {

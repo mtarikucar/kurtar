@@ -1,0 +1,73 @@
+.rangeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+}
+
+.rangeLabel {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-label);
+  color: var(--color-neutral-700);
+}
+
+.dateInput {
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-neutral-300);
+  font-size: var(--font-size-caption);
+}
+
+.rangeError {
+  color: var(--color-danger-700);
+  font-size: var(--font-size-caption);
+  margin-bottom: var(--space-lg);
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-xl);
+  margin-top: var(--space-xl);
+}
+
+.card {
+  background-color: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+}
+
+.cardTitle {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-h3);
+  margin-bottom: var(--space-sm);
+}
+
+.cardDescription {
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-600);
+  flex: 1;
+  margin-bottom: var(--space-lg);
+}
+
+.downloadButton {
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-md);
+  border: none;
+  background-color: var(--color-primary-500);
+  color: var(--color-neutral-0);
+  font-weight: var(--font-weight-bodyStrong);
+  cursor: pointer;
+}
+
+.downloadButton:hover:not(:disabled) {
+  background-color: var(--color-primary-600);
+}
+
+.downloadButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

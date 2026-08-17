@@ -6,6 +6,7 @@ import { PaymentProviderRegistry } from "../payments-core/payment-provider.regis
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { MockPaymentProvider } from "../payments-core/adapters/mock-payment-provider";
 import { OffersService } from "./offers.service";
+import { OutboxService } from "../outbox/outbox.service";
 
 /**
  * Real-DB proof of OffersService.publishDueScheduled — the method
@@ -34,12 +35,14 @@ function buildHarness(prisma: PrismaClient) {
   mockProvider.onModuleInit();
   const facade = new PaymentsFacadeService(registry, config);
   const offerStock = new OfferStockService();
+  const outbox = new OutboxService();
   const reservations = new ReservationsService(
     prisma as any,
     offerStock,
     facade,
+    outbox,
   );
-  const offers = new OffersService(prisma as any, reservations);
+  const offers = new OffersService(prisma as any, reservations, outbox);
   return { offers };
 }
 

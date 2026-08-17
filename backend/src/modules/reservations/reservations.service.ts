@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import {
+  Payment,
   Prisma,
   RefundReason,
   Reservation,
@@ -14,12 +15,20 @@ import {
 } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { isUniqueConstraintViolation } from "../../common/utils/prisma-error.util";
+import {
+  istanbulDateKey,
+  offerDateToDbDate,
+} from "../../common/utils/istanbul-date.util";
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { toPrismaPaymentProvider } from "../payments-core/payment-provider.mapping";
 import { OfferStockService } from "./offer-stock.service";
 import { generateReservationCode } from "./reservation-code.util";
 import { generateMerchantOid } from "./merchant-oid.util";
 import { allowedFromStatusesFor } from "./reservation-transitions";
+import { OutboxService } from "../outbox/outbox.service";
+import { OUTBOX_EVENT_TYPES } from "../outbox/event-types";
+
+const RATING_INVITE_DELAY_MS = 2 * 60 * 60 * 1000; // 2h
 
 const MAX_CODE_ATTEMPTS = 5;
 const CANCEL_DEADLINE_BEFORE_PICKUP_MS = 2 * 60 * 60 * 1000; // 2h
@@ -59,7 +68,66 @@ export interface ListReservationsResult {
   items: Reservation[];
   total: number;
   page: number;
-  limit: number;
+  pageSize: number;
+}
+
+export interface ListReservationsForMerchantFilters {
+  storeId?: string;
+  offerId?: string;
+  date?: string;
+  status?: ReservationStatus[];
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * [Merchant pickup list] Deliberately NOT the Reservation model, and
+ * deliberately NOT the consumer's own `user` object at all — the
+ * merchant-facing pickup screen exists to greet a customer and match a
+ * bag to a code, not to view an account. `customerFirstName` is the
+ * FIRST TOKEN of User.name only (no phone, no email, no surname, no
+ * userId) — `null` when the consumer never set a name (common: OTP
+ * signup never asks for one). See firstNameOnly()'s own doc comment for
+ * why this is a deliberate minimization, not an oversight.
+ */
+export interface ReservationForMerchantItem {
+  id: string;
+  storeId: string;
+  offerId: string;
+  code: string;
+  qty: number;
+  status: ReservationStatus;
+  pickupStartAt: Date;
+  pickupEndAt: Date;
+  redeemedAt: Date | null;
+  customerFirstName: string | null;
+}
+
+export interface ListReservationsForMerchantResult {
+  items: ReservationForMerchantItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * [Merchant pickup list — PII minimization] The merchant's whole reason
+ * to see this row is "does the person standing in front of me match this
+ * bag" — a first name is enough for that ("Ayşe?" / "Hi, is this for
+ * Mehmet?"); a phone number, email, surname, or the consumer's own
+ * userId would hand the merchant identity data they have no operational
+ * need for and the consumer never consented to sharing beyond "let this
+ * specific merchant fulfill my order." `User.name` is a single free-text
+ * field (no separate first/last columns — see schema.prisma), so "first
+ * name only" means the first whitespace-separated token, not a real
+ * structured first-name lookup; genuinely single-word names pass through
+ * unchanged either way.
+ */
+function firstNameOnly(name: string | null): string | null {
+  if (!name) return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  return trimmed.split(/\s+/)[0];
 }
 
 /** [Task 5] cancelAllForOffer's DB-write-only result — see its doc comment. */
@@ -131,6 +199,17 @@ function notRedeemableError() {
   });
 }
 
+/** [I3 fix] refundRedeemed's guard error — the reservation isn't REDEEMED,
+ * or its Payment isn't (still) PAID (never paid, already refunded, or a
+ * concurrent refund attempt already claimed it). */
+function notRefundableError() {
+  return new ConflictException({
+    statusCode: 409,
+    errorCode: "RESERVATION_NOT_REFUNDABLE",
+    message: "This reservation cannot be refunded right now.",
+  });
+}
+
 /**
  * The reservations state machine, on top of the raw atomic stock
  * primitives in OfferStockService. Every write here that changes
@@ -156,6 +235,7 @@ export class ReservationsService {
     private readonly prisma: PrismaService,
     private readonly offerStock: OfferStockService,
     private readonly facade: PaymentsFacadeService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async create(
@@ -495,6 +575,16 @@ export class ReservationsService {
     reservationId: string,
     reason: RefundReason,
     requestedByType: string,
+    // [I3 fix] The Payment status this refund is authorized to move OUT
+    // of, on the final bookkeeping write — "PAID" for every existing
+    // caller (cancel()/refundMany()), whose own upstream reservation-
+    // status transition already guarantees this method is invoked at
+    // most once per payment. refundRedeemed() below has no such upstream
+    // guard (REDEEMED is terminal — there is no second status transition
+    // to piggyback the single-fire guarantee on), so IT atomically claims
+    // the payment first (PAID -> REFUND_PENDING) and passes that status
+    // here instead, so this method's guarded update still matches.
+    fromStatus: Payment["status"] = "PAID",
   ): Promise<{ ok: boolean; refundRef?: string; error?: string }> {
     let refundRef: string;
     try {
@@ -532,7 +622,7 @@ export class ReservationsService {
           },
         });
         await tx.payment.updateMany({
-          where: { id: paymentId, status: "PAID" },
+          where: { id: paymentId, status: fromStatus },
           data: { status: "REFUNDED" },
         });
       });
@@ -567,7 +657,7 @@ export class ReservationsService {
         });
       await this.prisma.payment
         .updateMany({
-          where: { id: paymentId, status: "PAID" },
+          where: { id: paymentId, status: fromStatus },
           data: { status: "REFUNDED" },
         })
         .catch(() => undefined);
@@ -703,17 +793,133 @@ export class ReservationsService {
     return results;
   }
 
+  /**
+   * [I3 fix] The refund path `cancel()`/`refundMany()` never reach: a
+   * REDEEMED reservation is terminal in RESERVATION_TRANSITIONS, so an
+   * already-picked-up (spoiled/empty/wrong) bag had no way back to the
+   * consumer's money before this. Called only from
+   * ComplaintsService.adminRefund (the complaint-resolution flow) — never
+   * exposed directly on a reservations controller — so every refund of a
+   * redeemed pickup is tied to a ComplaintTicket with its own audit trail
+   * and RefundReason.COMPLAINT provenance.
+   *
+   * Reservation.status is deliberately left at REDEEMED (there is no
+   * "REFUNDED" reservation status, and the pickup itself genuinely
+   * happened) — only the Payment/Refund rows change, exactly like
+   * cancel()'s CONFIRMED path leaves stock alone once it's already been
+   * released.
+   *
+   * Unlike cancel()/refundMany(), there is no reservation-status
+   * transition to piggyback a single-fire guarantee on (REDEEMED has no
+   * further transition), so this atomically claims the payment itself
+   * (PAID -> REFUND_PENDING) BEFORE ever calling the provider, and passes
+   * that claimed status through to refundForCancellation so its own
+   * bookkeeping update targets the right "from" state. Two concurrent
+   * refund attempts against the same payment — a double-click, or two
+   * different complaint tickets against the same reservation — can now
+   * only ever have one of them reach the provider; the loser gets
+   * notRefundableError() instead of a second real-money refund.
+   */
+  async refundRedeemed(reservationId: string): Promise<{
+    reservationId: string;
+    ok: boolean;
+    refundRef?: string;
+    error?: string;
+  }> {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id: reservationId },
+      include: { payment: true },
+    });
+    if (!reservation) throw reservationNotFoundError();
+    if (!reservation.payment) {
+      // Invariant violation, not a normal error path — every Reservation
+      // is created with a Payment row in the same transaction.
+      throw new Error(
+        `Reservation ${reservationId} has no Payment row (data invariant violated)`,
+      );
+    }
+    if (reservation.status !== "REDEEMED") {
+      throw notRefundableError();
+    }
+    const payment = reservation.payment;
+
+    const claimed = await this.prisma.payment.updateMany({
+      where: { id: payment.id, status: "PAID" },
+      data: { status: "REFUND_PENDING" },
+    });
+    if (claimed.count === 0) {
+      throw notRefundableError();
+    }
+
+    const outcome = await this.refundForCancellation(
+      payment.id,
+      payment.merchantOid,
+      payment.amountCents,
+      reservationId,
+      "COMPLAINT",
+      "ADMIN",
+      "REFUND_PENDING",
+    );
+
+    if (!outcome.ok) {
+      // The provider call itself failed — no money moved
+      // (refundForCancellation already recorded the FAILED Refund row).
+      // Release the claim so a retry is possible.
+      await this.prisma.payment
+        .updateMany({
+          where: { id: payment.id, status: "REFUND_PENDING" },
+          data: { status: "PAID" },
+        })
+        .catch(() => undefined);
+    }
+
+    return { reservationId, ...outcome };
+  }
+
+  /**
+   * [Consumer redeem] The approved product design (plan §4.6): the
+   * CONSUMER redeems their own reservation — a live-clock phone swipe in
+   * front of shop staff, the defining interaction of this product
+   * category and the reason it needs no merchant hardware at the
+   * counter. The MERCHANT path stays as the documented fallback (a dead
+   * customer phone). `redeemedBy` is a discriminated union rather than
+   * two separate public methods specifically so both actors run through
+   * ONE authorization branch, ONE status/window check, and ONE guarded
+   * update — the same trustworthiness guarantee (a strict server-side
+   * pickup-window check) applies identically to both, and the atomic
+   * `updateMany` below already makes concurrent redeems from DIFFERENT
+   * actors race-safe for free (it only cares about the reservation's
+   * current status, never who's calling) — proven for merchant-vs-
+   * merchant already, extended to consumer-vs-merchant in
+   * reservations.realdb.spec.ts.
+   */
   async redeem(
-    merchantUserId: string,
-    merchantId: string,
+    redeemedBy:
+      | { actorType: "CONSUMER"; userId: string }
+      | { actorType: "MERCHANT"; merchantUserId: string; merchantId: string },
     reservationId: string,
   ): Promise<{ reservationId: string; status: "REDEEMED"; redeemedAt: Date }> {
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
-      include: { store: true, offer: true },
+      include: {
+        store: true,
+        // [Task 9] bagTemplate's original-value range is needed for the
+        // reservation.redeemed.impact.v1 payload below — fetched here
+        // (piggybacking on this same read) rather than a second query.
+        offer: { include: { bagTemplate: true } },
+      },
     });
     if (!reservation) throw reservationNotFoundError();
-    if (reservation.store.merchantId !== merchantId) {
+
+    if (redeemedBy.actorType === "CONSUMER") {
+      if (reservation.userId !== redeemedBy.userId) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          errorCode: "FORBIDDEN",
+          message: "This reservation does not belong to you.",
+        });
+      }
+    } else if (reservation.store.merchantId !== redeemedBy.merchantId) {
       throw new ForbiddenException({
         statusCode: 403,
         errorCode: "FORBIDDEN",
@@ -746,7 +952,13 @@ export class ReservationsService {
         data: {
           status: "REDEEMED",
           redeemedAt: attemptedAt,
-          redeemedByMerchantUserId: merchantUserId,
+          redeemedByActorType: redeemedBy.actorType,
+          redeemedByUserId:
+            redeemedBy.actorType === "CONSUMER" ? redeemedBy.userId : null,
+          redeemedByMerchantUserId:
+            redeemedBy.actorType === "MERCHANT"
+              ? redeemedBy.merchantUserId
+              : null,
         },
       });
       if (updated.count === 0) {
@@ -768,6 +980,44 @@ export class ReservationsService {
         where: { id: reservation.offerId },
         data: { qtyRedeemed: { increment: reservation.qty } },
       });
+
+      // [Task 7] Rating-invite, delayed +2h via scheduledFor — the worker
+      // skips this row entirely until then (outbox-worker.service.ts's
+      // claim query). Only reached on the WINNING branch above (count>0),
+      // never on the idempotent-replay branch, so a race between two
+      // redeem() calls for the same reservation still only ever queues
+      // this once.
+      await this.outbox.publish(tx, {
+        type: OUTBOX_EVENT_TYPES.RESERVATION_REDEEMED_V1,
+        payload: {
+          reservationId,
+          userId: reservation.userId,
+          storeId: reservation.storeId,
+        },
+        idempotencyKey: `reservation-redeemed:${reservationId}`,
+        scheduledFor: new Date(attemptedAt.getTime() + RATING_INVITE_DELAY_MS),
+      });
+
+      // [Task 9] The impact-ledger leg — no scheduledFor (recorded
+      // immediately, unlike the +2h rating invite above). Split into its
+      // own event/handler rather than piggybacking on
+      // ReservationRedeemedHandler — see event-types.ts's doc comment.
+      await this.outbox.publish(tx, {
+        type: OUTBOX_EVENT_TYPES.RESERVATION_REDEEMED_IMPACT_V1,
+        payload: {
+          reservationId,
+          userId: reservation.userId,
+          storeId: reservation.storeId,
+          qty: reservation.qty,
+          totalCents: reservation.totalCents,
+          originalValueCentsMin:
+            reservation.offer.bagTemplate.originalValueCentsMin,
+          originalValueCentsMax:
+            reservation.offer.bagTemplate.originalValueCentsMax,
+        },
+        idempotencyKey: `reservation-redeemed-impact:${reservationId}`,
+      });
+
       return attemptedAt;
     });
 
@@ -777,14 +1027,20 @@ export class ReservationsService {
   async listMine(
     userId: string,
     page: number,
-    limit: number,
+    pageSize: number,
   ): Promise<ListReservationsResult> {
-    const offset = (page - 1) * limit;
+    const offset = (page - 1) * pageSize;
     const [items, total] = await Promise.all([
       // Prisma's query builder has no way to express "order by a custom
       // priority derived from an enum column" — active reservations
       // (PENDING_PAYMENT, CONFIRMED) first, everything terminal after —
-      // so this is raw SQL, same rationale as OfferStockService.
+      // so this is raw SQL, same rationale as OfferStockService. The SQL
+      // `LIMIT` KEYWORD below is unrelated to the `pageSize` parameter
+      // name — it's just what Postgres calls "how many rows," same as
+      // every other paginated query in this codebase already uses
+      // `pageSize` for its OWN param name (this endpoint used to be the
+      // one exception, calling it `limit` — [Consistency fix] renamed to
+      // match every other paginated list's envelope field).
       this.prisma.$queryRaw<Reservation[]>`
         SELECT * FROM "reservations"
         WHERE "userId" = ${userId}
@@ -793,10 +1049,78 @@ export class ReservationsService {
           WHEN 'CONFIRMED' THEN 1
           ELSE 2
         END ASC, "createdAt" DESC
-        LIMIT ${limit} OFFSET ${offset}
+        LIMIT ${pageSize} OFFSET ${offset}
       `,
       this.prisma.reservation.count({ where: { userId } }),
     ]);
-    return { items, total, page, limit };
+    return { items, total, page, pageSize };
+  }
+
+  /**
+   * [Merchant pickup list] The "Bugün" screen's pickup list — what a shop
+   * owner watches while handing bags over during the pickup window.
+   * Scoped to the caller's own merchantId via `store: { merchantId }`, a
+   * Prisma relation filter that compiles to a real SQL JOIN/WHERE — the
+   * scoping happens IN the query Postgres runs, not as a filter over
+   * already-fetched rows, so a mis-scoped query is structurally
+   * impossible to silently widen later (there is no unscoped result set
+   * this ever holds in memory). `date` defaults to today's Europe/
+   * Istanbul calendar day and filters on the OFFER's own offerDate (the
+   * reservation itself has no pickup-window columns — those live on
+   * DailyOffer) — same "today" default offers.service.ts's listMine
+   * already uses for the equivalent merchant-facing offers list.
+   */
+  async listForMerchant(
+    merchantId: string,
+    filters: ListReservationsForMerchantFilters,
+  ): Promise<ListReservationsForMerchantResult> {
+    const dateKey = filters.date ?? istanbulDateKey(new Date());
+    const where: Prisma.ReservationWhereInput = {
+      store: { merchantId },
+      offer: { offerDate: offerDateToDbDate(dateKey) },
+      ...(filters.storeId && { storeId: filters.storeId }),
+      ...(filters.offerId && { offerId: filters.offerId }),
+      ...(filters.status &&
+        filters.status.length > 0 && { status: { in: filters.status } }),
+    };
+
+    const skip = (filters.page - 1) * filters.pageSize;
+    const [rows, total] = await Promise.all([
+      this.prisma.reservation.findMany({
+        where,
+        // Soonest pickup first — what a merchant scanning the list while
+        // handing out bags actually wants to see next.
+        orderBy: [{ offer: { pickupStartAt: "asc" } }, { createdAt: "asc" }],
+        skip,
+        take: filters.pageSize,
+        select: {
+          id: true,
+          storeId: true,
+          offerId: true,
+          code: true,
+          qty: true,
+          status: true,
+          redeemedAt: true,
+          offer: { select: { pickupStartAt: true, pickupEndAt: true } },
+          user: { select: { name: true } },
+        },
+      }),
+      this.prisma.reservation.count({ where }),
+    ]);
+
+    const items: ReservationForMerchantItem[] = rows.map((r) => ({
+      id: r.id,
+      storeId: r.storeId,
+      offerId: r.offerId,
+      code: r.code,
+      qty: r.qty,
+      status: r.status,
+      pickupStartAt: r.offer.pickupStartAt,
+      pickupEndAt: r.offer.pickupEndAt,
+      redeemedAt: r.redeemedAt,
+      customerFirstName: firstNameOnly(r.user.name),
+    }));
+
+    return { items, total, page: filters.page, pageSize: filters.pageSize };
   }
 }

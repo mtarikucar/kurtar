@@ -323,6 +323,405 @@ jobs:
           echo "Every migration folder has a down.sql."
 
   # -----------------------------------------------------------------
+  # [Task 9] OpenAPI contract-drift — docs/openapi.json (the committed
+  # spec Tasks 10-13's four frontends read as their contract) must always
+  # be exactly what `npm run openapi:generate` produces from the current
+  # source. Mirrors migrations-parity's own shape immediately above:
+  # regenerate into a throwaway location, diff against the committed
+  # file, fail loud on any divergence — a controller/DTO change that
+  # forgot to re-run the generator is caught here instead of silently
+  # shipping a stale contract to the frontend teams.
+  #
+  # Needs a reachable Postgres (PrismaService.onModuleInit eagerly
+  # $connect()s during NestFactory.create, and Prisma's own client
+  # requires DATABASE_URL to parse to a real connection string) — no
+  # migrations need to be applied first, since building the OpenAPI
+  # document never queries the database, only introspects route/DTO
+  # metadata. Same postgis image as every other job for consistency,
+  # even though PostGIS itself is never touched here.
+  # -----------------------------------------------------------------
+  openapi-contract-drift:
+    name: OpenAPI contract drift (docs/openapi.json)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: kurtar
+          POSTGRES_PASSWORD: kurtar
+          POSTGRES_DB: kurtar_openapi_ci
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U kurtar -d kurtar_openapi_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://kurtar:kurtar@localhost:5434/kurtar_openapi_ci
+      JWT_SECRET: openapi-ci-jwt-secret-32-chars-min
+      WEBHOOK_SECRET: openapi-ci-webhook-secret
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        working-directory: .
+        run: npm ci --no-audit --no-fund
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Regenerate docs/openapi.json and diff against the committed copy
+        run: |
+          set -euo pipefail
+          cp ../docs/openapi.json /tmp/openapi.committed.json
+          npm run openapi:generate
+          if ! diff -u /tmp/openapi.committed.json ../docs/openapi.json; then
+            echo "::error::docs/openapi.json is out of date — run 'npm run openapi:generate' in backend/ and commit the result."
+            exit 1
+          fi
+          echo "docs/openapi.json matches the current source — no drift."
+
+      # [Contract completion] The drift check above only proves the
+      # COMMITTED file matches what the source currently generates — it
+      # says nothing about whether that generated contract is actually
+      # USABLE by a typed client. 65 of 81 operations had no response
+      # schema at all until this pass (frontend-contract.md §9's finding,
+      # which blocked Tasks 10-13's parallel frontend build); this step is
+      # the tripwire so that gap can never silently reopen — every
+      # operation must keep exactly one 2xx response with a real schema
+      # (see check-openapi-response-types.ts's own doc comment for the
+      # exact two failure classes it catches, including the "has *a*
+      # schema but it's a vacuous {type:object}" trap that a naive
+      # presence check would miss).
+      - name: Every operation has exactly one typed 2xx response
+        run: npm run openapi:check-response-types
+
+  # -----------------------------------------------------------------
+  # [Task 9.5] The four frontend apps (apps/merchant-web, apps/admin-web,
+  # apps/consumer, landing) + the two shared packages (packages/api-client,
+  # packages/ui-tokens). Needs no database/Redis service — @kurtar/
+  # api-client's generated types come from the committed docs/openapi.json
+  # file, not a live server, so this job stays fast and fully independent
+  # of the backend-realdb job above.
+  #
+  # Build order matters: the two shared packages ship COMPILED dist/
+  # output (see each package.json's `main`/`types` fields) — every app
+  # imports that dist/ output, not their TS source, so both packages must
+  # be built before any app is typechecked or built.
+  # -----------------------------------------------------------------
+  frontend-quality:
+    name: Frontend lint + typecheck + unit tests + builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies (every workspace)
+        run: npm ci --no-audit --no-fund
+
+      - name: api-client generated types <-> docs/openapi.json drift
+        run: |
+          set -euo pipefail
+          cp packages/api-client/src/generated/openapi-types.ts /tmp/openapi-types.committed.ts
+          npm run generate -w @kurtar/api-client
+          if ! diff -u /tmp/openapi-types.committed.ts packages/api-client/src/generated/openapi-types.ts; then
+            echo "::error::packages/api-client/src/generated/openapi-types.ts is out of date — run 'npm run generate -w @kurtar/api-client' and commit the result."
+            exit 1
+          fi
+          echo "Generated types match docs/openapi.json — no drift."
+
+      - name: Build @kurtar/ui-tokens
+        run: npm run build -w @kurtar/ui-tokens
+
+      - name: Build @kurtar/api-client
+        run: npm run build -w @kurtar/api-client
+
+      - name: Lint (every workspace)
+        run: |
+          set -euo pipefail
+          npm run lint -w @kurtar/ui-tokens
+          npm run lint -w @kurtar/api-client
+          npm run lint -w merchant-web
+          npm run lint -w admin-web
+          npm run lint -w landing
+          npm run lint -w consumer
+          npm run lint -w e2e
+
+      - name: Typecheck (every workspace)
+        run: |
+          set -euo pipefail
+          npm run typecheck -w @kurtar/ui-tokens
+          npm run typecheck -w @kurtar/api-client
+          npm run typecheck -w merchant-web
+          npm run typecheck -w admin-web
+          npm run typecheck -w landing
+          npm run typecheck -w consumer
+          npm run typecheck -w e2e
+
+      - name: Unit tests (@kurtar/api-client — incl. the single-flight refresh test)
+        run: npm test -w @kurtar/api-client
+
+      # [I8 fix] The four frontend apps' own real test suites (real
+      # bugs this whole task's findings shipped WITH: apps/consumer/src/
+      # __tests__/otp-screen.test.tsx would have caught the C1/C2 token-
+      # persistence defect; apps/admin-web/src/lib/settlementBreakdown.
+      # spec.ts and apps/merchant-web's suites likewise) never actually
+      # ran here before — this job lint+typechecked+built every app but
+      # only ever executed the shared package's own tests. Each script is
+      # already non-watch (merchant-web's `test` was the one exception,
+      # a bare `vitest` that would have hung this job until its 20-minute
+      # timeout — fixed to run once via its own package.json, matching
+      # admin-web/landing's `vitest run` and consumer's default-run-once
+      # jest).
+      - name: Unit tests — merchant-web
+        run: npm test -w merchant-web
+      - name: Unit tests — admin-web
+        run: npm test -w admin-web
+      - name: Unit tests — consumer
+        run: npm test -w consumer
+      - name: Unit tests — landing
+        run: npm test -w landing
+
+      # Regression gate for a bug class that evaded both the two checks
+      # above: openapi-typescript emits response-status keys as NUMERIC
+      # literals, which a naive `K extends \`2${string}\`` conditional
+      # type never matches — collapsing every domain method's COMPILED
+      # return type to `Promise<never>` while `tsc --noEmit` on source
+      # (the Typecheck step above) stayed green throughout, because the
+      # checker fully resolves the conditional at a call site with
+      # concrete literal arguments even when the declaration emitter,
+      # printing an unannotated inferred return type, cannot. This step
+      # rebuilds the package and typechecks a fixture
+      # (test-types/build-output.types.ts) that imports the BUILT dist/
+      # output — the same thing a real consumer's own tsc resolves
+      # against — and asserts real fields exist on the awaited response
+      # types. See core-types.ts's SuccessBody doc comment for the fix.
+      - name: Type-level regression test against the BUILT @kurtar/api-client (not source)
+        run: npm run typecheck:build -w @kurtar/api-client
+
+      - name: Production build — merchant-web (vite build)
+        run: npm run build -w merchant-web
+
+      - name: Production build — admin-web (vite build)
+        run: npm run build -w admin-web
+
+      - name: Production build — landing (next build)
+        run: npm run build -w landing
+
+      # Expo gets expo-doctor + a typecheck (already run above), not a
+      # native build — this job has no Xcode/Android SDK, and a native
+      # build is a separate concern (EAS Build) from source-level quality.
+      #
+      # Mirrors migrations-parity's "one documented, allowed exception"
+      # pattern above: expo-doctor has exactly TWO checks that can never
+      # pass in this monorepo, both structural and both harmless, not
+      # defects —
+      #   1. "Metro config" flags metro.config.js's
+      #      resolver.disableHierarchicalLookup override as risky. It's
+      #      the fix, not a bug: Expo's own documented monorepo setup
+      #      (https://docs.expo.dev/guides/monorepos/) requires exactly
+      #      this override so Metro can find @kurtar/api-client and
+      #      @kurtar/ui-tokens, which npm workspaces hoists/symlinks to
+      #      the repo root's node_modules, not this app's own.
+      #   2. "Duplicate dependencies" flags react/react-dom appearing at
+      #      two versions in the tree — apps/merchant-web and apps/
+      #      admin-web are deliberately pinned to React 18 (brief
+      #      requirement), apps/consumer needs React 19 for its Expo SDK.
+      #      The two never share a bundle or a native build target (npm
+      #      already nests apps/consumer's own React 19 copy precisely
+      #      because of this conflict), so this is a benign cross-
+      #      workspace split, not an actual native-link collision.
+      # Any OTHER finding fails this step loudly — only these two
+      # specific, named checks are ever excused.
+      - name: Expo — expo-doctor (apps/consumer)
+        working-directory: apps/consumer
+        run: |
+          set -euo pipefail
+          set +e
+          output=$(npx expo-doctor 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "expo-doctor: all checks passed."
+            exit 0
+          fi
+          failed_count=$(printf '%s\n' "$output" | grep -c '^✖ ')
+          if [ "$failed_count" -eq 2 ] \
+            && printf '%s\n' "$output" | grep -q 'Check for issues with Metro config' \
+            && printf '%s\n' "$output" | grep -q 'Check that no duplicate dependencies are installed'; then
+            echo "Only the two known, documented, cross-workspace findings are present — treating as pass."
+            exit 0
+          fi
+          echo "::error::expo-doctor reported unexpected issues beyond the two documented exceptions above."
+          exit 1
+
+  # -----------------------------------------------------------------
+  # [Task 14] Cross-surface E2E — the money loop, end to end, against a
+  # real ephemeral Postgres/PostGIS + Redis, the real backend (built,
+  # `node dist/main`, not `nest start --watch`), and the BUILT merchant-
+  # web/admin-web (`vite preview`, not dev servers) — see
+  # e2e/tests/money-loop.spec.ts's own doc comment for exactly what it
+  # proves (consumer discovery -> reserve -> mock PSP webhook -> CONFIRMED
+  # -> merchant-web pickup list -> redeem -> rating -> nightly settlement
+  # batch -> admin-web approve -> retry/payout dispatch -> SENT) and why
+  # the consumer side is driven via the real API rather than a browser
+  # (the Expo app has no browser surface — see apps/consumer's own jest+
+  # RNTL suite for that side instead).
+  #
+  # Timing (measured locally, `time npx playwright test` from e2e/):
+  # the test itself is ~20s; this whole job (checkout, npm ci, Chromium
+  # download, 4 production builds, backend boot+migrate+seed, then the
+  # test) runs in ~3-4 minutes. Deliberately its own job (not folded into
+  # frontend-quality or backend-realdb) so it can be skipped/rerun
+  # independently and so a flake here never blocks the much faster unit-
+  # test gates. Not required for a merge to be technically possible
+  # (branch protection is configured outside this repo), but intended to
+  # block real PRs the same way every other job here does.
+  # -----------------------------------------------------------------
+  e2e-money-loop:
+    name: Cross-surface E2E (the money loop)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: kurtar
+          POSTGRES_PASSWORD: kurtar
+          POSTGRES_DB: kurtar_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kurtar -d kurtar_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://kurtar:kurtar@localhost:5432/kurtar_e2e
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: e2e-ci-jwt-secret-32-characters-minimum
+      WEBHOOK_SECRET: e2e-ci-webhook-secret
+      KURTAR_API_PORT: 4750
+      E2E_API_BASE_URL: http://localhost:4750
+      E2E_MERCHANT_WEB_URL: http://localhost:5173
+      E2E_ADMIN_WEB_URL: http://localhost:5174
+      E2E_WEBHOOK_SECRET: e2e-ci-webhook-secret
+      E2E_BACKEND_LOG_FILE: /tmp/kurtar-backend-e2e.log
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies (every workspace)
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Playwright's Chromium (+ OS deps)
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate
+
+      - name: Apply migrations (prisma migrate deploy)
+        working-directory: backend
+        run: npx prisma migrate deploy
+
+      - name: Seed demo data
+        working-directory: backend
+        run: npm run seed:demo
+
+      - name: Build @kurtar/ui-tokens + @kurtar/api-client
+        run: |
+          npm run build -w @kurtar/ui-tokens
+          npm run build -w @kurtar/api-client
+
+      - name: Build backend, merchant-web, admin-web
+        run: |
+          npm run build -w backend
+          npm run build -w merchant-web
+          npm run build -w admin-web
+
+      # Backed by `node dist/main` (start:prod), the real production
+      # entrypoint — not `nest start --watch`. Backgrounded so later steps
+      # in this SAME job can reach it; GitHub Actions runners keep a
+      # backgrounded process alive across steps within one job.
+      - name: Start backend (background, logging to E2E_BACKEND_LOG_FILE)
+        working-directory: backend
+        run: |
+          nohup npm run start:prod > "$E2E_BACKEND_LOG_FILE" 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:4750/api/health && exit 0
+            sleep 1
+          done
+          echo "::error::Backend did not become healthy in time"
+          cat "$E2E_BACKEND_LOG_FILE"
+          exit 1
+
+      - name: Start merchant-web + admin-web (background, vite preview)
+        run: |
+          nohup npm run preview -w merchant-web > /tmp/merchant-web-preview.log 2>&1 &
+          nohup npm run preview -w admin-web > /tmp/admin-web-preview.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5173 >/dev/null && curl -sf http://localhost:5174 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::merchant-web/admin-web preview servers did not become healthy in time"
+          cat /tmp/merchant-web-preview.log /tmp/admin-web-preview.log
+          exit 1
+
+      - name: Run the money-loop E2E test
+        working-directory: e2e
+        run: npx playwright test --reporter=list
+
+      - name: Upload Playwright report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7
+
+  # -----------------------------------------------------------------
   # Project hard rule: zero AI/Claude traces in commit messages, ever.
   # Greps the commit range this workflow run covers (PR base..head, or
   # the pushed range on a plain push) rather than any single commit.
@@ -396,4 +795,15 @@ jobs:
             printf '%s\n' "$messages" | grep -EiC1 "$pattern"
             exit 1
           fi
-          echo "Commit hygiene OK — no AI/Claude traces found."
+          echo "Commit messages OK — no AI/Claude traces found."
+
+          # The message grep above cannot see a committed file NAMED after an
+          # AI assistant, which is how landing/CLAUDE.md once slipped this very
+          # gate. Tracked filenames are part of the same hard rule.
+          offenders=$(git ls-files | grep -Ei '(^|/)(CLAUDE|AGENTS|COPILOT|CURSOR)\.md$' || true)
+          if [ -n "$offenders" ]; then
+            echo "::error::AI-assistant files are tracked (project hard rule — zero AI/Claude traces in the repo):"
+            printf '%s\n' "$offenders"
+            exit 1
+          fi
+          echo "Tracked filenames OK — no AI-assistant files."

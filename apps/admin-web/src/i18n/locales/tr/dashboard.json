@@ -1,0 +1,31 @@
+{
+  "title": "Panel",
+  "subtitle": "Şu an neyin dikkatinizi gerektirdiğine tek bakışta karar verin.",
+  "tiles": {
+    "pendingMerchantApprovals": "Onay bekleyen işletme",
+    "openComplaints": "Açık şikayet",
+    "complaintsAtRisk": "SLA riski taşıyan şikayet",
+    "openReports": "Açık içerik bildirimi",
+    "settlementsNeedingAttention": "Dikkat gereken ödeme",
+    "todayGmv": "Bugünkü GMV",
+    "todayRedeemed": "Bugün teslim edilen paket"
+  },
+  "sections": {
+    "urgentComplaints": "En acil şikayetler",
+    "urgentReports": "En acil içerik bildirimleri",
+    "settlementsHeld": "Beklemede tutulan ödemeler (HELD)",
+    "settlementsFailed": "Başarısız ödemeler (FAILED)"
+  },
+  "empty": {
+    "complaints": "Şu anda işlem bekleyen şikayet yok.",
+    "reports": "Şu anda açık içerik bildirimi yok.",
+    "settlementsHeld": "Beklemede tutulan ödeme yok.",
+    "settlementsFailed": "Başarısız ödeme yok."
+  },
+  "row": {
+    "merchant": "İşletme: {{merchant}}",
+    "category": "Kategori: {{category}}",
+    "target": "{{targetType}} — {{targetId}}",
+    "dueDate": "Son ödeme tarihi: {{date}}"
+  }
+}

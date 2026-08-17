@@ -39,9 +39,59 @@
 #       twilio: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
 #     PAYMENT_PROVIDER          must be set to a non-"mock" value or boot
 #                              is refused — see the KNOWN GAP note below.
+#     PUSH_PROVIDER             [I17 fix] MUST be "expo" in production —
+#                              "mock" (the default) is REFUSED at boot,
+#                              same shape as SMS_PROVIDER/PAYMENT_PROVIDER
+#                              (backend/src/config/env.validation.ts).
+#     EMAIL_HOST, EMAIL_USER,   [I17 fix] a log-only mail transport is
+#     EMAIL_PASSWORD           REFUSED at boot in production
+#                              (email.service.ts's initializeTransporter).
 #
 #   GHCR push uses the automatic ${{ secrets.GITHUB_TOKEN }} — no extra
 #   secret needed for that.
+#
+#   Required GitHub Actions VARIABLES (Settings -> Secrets and variables ->
+#   Actions -> Variables tab — not the Secrets tab, this one isn't
+#   sensitive):
+#     PUBLIC_API_BASE_URL      the real, public origin the merchant-web/
+#                              admin-web/landing browser bundles call —
+#                              baked in at BUILD time (Vite/Next both
+#                              inline it into the client bundle; see
+#                              apps/merchant-web/Dockerfile's,
+#                              apps/admin-web/Dockerfile's, and
+#                              landing/Dockerfile's own ARG comments).
+#                              The pre-check job below REFUSES to deploy
+#                              if this is unset or empty, exactly like the
+#                              secrets above — it never silently ships a
+#                              build pointed at a Dockerfile's own
+#                              localhost default. All three surfaces share
+#                              ONE backend origin (see docs/architecture/
+#                              decisions and the auth actor-scoping fix),
+#                              so one variable covers all three builds.
+#     CORS_ALLOWED_ORIGINS      [I17 fix] MUST list the real merchant-web/
+#                              admin-web/landing origins — unset means
+#                              main.ts's resolveCorsOrigins() enables NO
+#                              CORS at all in production (every browser
+#                              call from those three origins blocked, even
+#                              once the API itself boots). The pre-check
+#                              job REFUSES to deploy if this is unset,
+#                              same as PUBLIC_API_BASE_URL above.
+#
+#   Optional but load-bearing if you use the feature (rendered into
+#   .env.production either way so setting them later needs no workflow
+#   change — see backend/.env.example for what each one gates):
+#     EXPO_ACCESS_TOKEN (secret), EMAIL_PORT/EMAIL_FROM/APP_NAME (vars),
+#     OPS_ALERT_EMAIL (var), EDOC_PROVIDER (var, defaults "mock" — see
+#     env.validation.ts's own comment on why that's allowed in
+#     production), NILVERA_API_KEY (secret) / NILVERA_API_URL (var),
+#     MERCHANT_DASHBOARD_URL (var).
+#
+# ANOTHER KNOWN GAP: the automated rollback below only reverts the `api`
+# container to its previous image — it does not revert merchant-web/
+# admin-web/landing. Low risk today (all four images share one release
+# version tag, and the built frontends are static/stateless), but a
+# future backend-incompatible frontend contract change would need that
+# extended before this is fully safe to trust blind.
 #
 # KNOWN GAP this workflow does not, and should not, paper over: only a
 # "mock" PaymentProvider adapter exists in the codebase today (see
@@ -97,7 +147,7 @@ jobs:
       - name: Checkout (composite action + compose file + doctor script)
         uses: actions/checkout@v4
 
-      - name: Verify required secrets are present
+      - name: Verify required secrets and variables are present
         env:
           SSH_PRIVATE_KEY_BASE64: ${{ secrets.SSH_PRIVATE_KEY_BASE64 }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
@@ -113,21 +163,36 @@ jobs:
           TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
           TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER }}
           PAYMENT_PROVIDER: ${{ secrets.PAYMENT_PROVIDER }}
+          PUBLIC_API_BASE_URL: ${{ vars.PUBLIC_API_BASE_URL }}
+          # [I17 fix] The three boot-blocking vars the render step below
+          # used to never render at all (backend/src/config/env.
+          # validation.ts / email.service.ts / main.ts's resolveCorsOrigins
+          # all refuse to boot or silently disable CORS without them) — see
+          # this workflow's top-of-file comment for the full list and why
+          # each one matters.
+          PUSH_PROVIDER: ${{ secrets.PUSH_PROVIDER }}
+          EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
         run: |
           set -euo pipefail
           required=(
             SSH_PRIVATE_KEY_BASE64 SSH_KNOWN_HOSTS PROD_SERVER_HOST
             POSTGRES_PASSWORD JWT_SECRET WEBHOOK_SECRET
             SMS_PROVIDER PAYMENT_PROVIDER
+            PUBLIC_API_BASE_URL
+            PUSH_PROVIDER EMAIL_HOST EMAIL_USER EMAIL_PASSWORD
+            CORS_ALLOWED_ORIGINS
           )
           missing=()
           for name in "${required[@]}"; do
             [ -z "${!name:-}" ] && missing+=("$name")
           done
           if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Refusing to deploy — required secrets unset or empty:"
+            echo "::error::Refusing to deploy — required secrets/variables unset or empty:"
             for n in "${missing[@]}"; do echo "::error::  - $n"; done
-            echo "::error::See this workflow file's top-of-file comment for the full secret list."
+            echo "::error::See this workflow file's top-of-file comment for the full list (PUBLIC_API_BASE_URL is a repo VARIABLE, not a secret)."
             exit 1
           fi
 
@@ -158,6 +223,11 @@ jobs:
             exit 1
           fi
 
+          if [ "$PUSH_PROVIDER" = "mock" ]; then
+            echo "::error::PUSH_PROVIDER=mock is refused at boot in production (backend/src/config/env.validation.ts)."
+            exit 1
+          fi
+
           echo "All required secrets present."
 
       - name: Setup SSH and probe the target box
@@ -173,12 +243,17 @@ jobs:
         run: |
           set -euo pipefail
           # Ports kurtar's prod stack owns (ops/docker-compose.prod.yml):
-          # 4750 api, 4754 db, 4755 redis. Anything ELSE already bound in
-          # the reserved 4750-4759 block belongs to some other process on
-          # this (possibly shared) box and would collide.
+          # 4750 api, 4754 db, 4755 redis, 4756 merchant-web, 4757
+          # admin-web, 4758 landing. Anything ELSE already bound in the
+          # reserved 4750-4759 block belongs to some other process on this
+          # (possibly shared) box and would collide. The three frontend
+          # ports are listed here too even though this is a pre-flight
+          # check for a NEW deploy — on every deploy AFTER the first, the
+          # previous deploy's own containers are already listening on
+          # them, and that is expected, not a conflict.
           ssh -n "root@${PROD_SERVER_HOST}" bash -s -- <<'PROBE'
           set -euo pipefail
-          owned="4750 4754 4755"
+          owned="4750 4754 4755 4756 4757 4758"
           bound=$(ss -ltn 2>/dev/null | awk '{print $4}' | grep -oE '[0-9]+$' | sort -un || true)
           conflict=0
           for p in $bound; do
@@ -296,6 +371,62 @@ jobs:
           cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
           cache-to:   type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
 
+      # -----------------------------------------------------------------
+      # The three web frontends `ops/docker-compose.prod.yml` already
+      # declares (merchant-web/admin-web/landing, [Task 9.5]) — until this,
+      # no pipeline ever built or pushed these, so `docker compose pull`
+      # on the prod host 404'd on all three the moment they were added to
+      # that file. Same build-push-action pattern as backend, one image
+      # each, all sharing the SAME version tag (docker-compose.prod.yml's
+      # own `${MERCHANT_WEB_IMAGE_TAG:-${IMAGE_TAG}}` fallback already
+      # expects that as the default). PUBLIC_API_BASE_URL is a repo
+      # VARIABLE, not a secret — see this file's top comment.
+      # -----------------------------------------------------------------
+      - name: Build & push merchant-web
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./apps/merchant-web/Dockerfile
+          target: production
+          push: true
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.PUBLIC_API_BASE_URL }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/kurtar-merchant-web:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/kurtar-merchant-web:latest
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/kurtar-merchant-web:buildcache
+          cache-to:   type=registry,ref=ghcr.io/${{ github.repository_owner }}/kurtar-merchant-web:buildcache,mode=max
+
+      - name: Build & push admin-web
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./apps/admin-web/Dockerfile
+          target: production
+          push: true
+          build-args: |
+            VITE_API_BASE_URL=${{ vars.PUBLIC_API_BASE_URL }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/kurtar-admin-web:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/kurtar-admin-web:latest
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/kurtar-admin-web:buildcache
+          cache-to:   type=registry,ref=ghcr.io/${{ github.repository_owner }}/kurtar-admin-web:buildcache,mode=max
+
+      - name: Build & push landing
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./landing/Dockerfile
+          target: production
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=${{ vars.PUBLIC_API_BASE_URL }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/kurtar-landing:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/kurtar-landing:latest
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/kurtar-landing:buildcache
+          cache-to:   type=registry,ref=ghcr.io/${{ github.repository_owner }}/kurtar-landing:buildcache,mode=max
+
   # -------------------------------------------------------------------
   # SSH deploy: pull the new image, apply migrations against it via the
   # doctor BEFORE the long-running api container is ever swapped to it
@@ -363,6 +494,26 @@ jobs:
           TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
           TWILIO_PHONE_NUMBER: ${{ secrets.TWILIO_PHONE_NUMBER }}
           PAYMENT_PROVIDER: ${{ secrets.PAYMENT_PROVIDER }}
+          # [I17 fix] Every one of these was already boot-blocking or
+          # silently load-bearing (PUSH_PROVIDER/EMAIL_* refuse boot or
+          # CORS silently disables — see env.validation.ts/email.service.ts/
+          # main.ts) but had no rendering site here at all, so the FIRST
+          # real deploy would build/push/migrate successfully and then
+          # crash-loop the api container the moment it tried to start.
+          PUSH_PROVIDER: ${{ secrets.PUSH_PROVIDER }}
+          EXPO_ACCESS_TOKEN: ${{ secrets.EXPO_ACCESS_TOKEN }}
+          EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+          EMAIL_PORT: ${{ vars.EMAIL_PORT }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          CORS_ALLOWED_ORIGINS: ${{ vars.CORS_ALLOWED_ORIGINS }}
+          OPS_ALERT_EMAIL: ${{ vars.OPS_ALERT_EMAIL }}
+          EDOC_PROVIDER: ${{ vars.EDOC_PROVIDER }}
+          NILVERA_API_KEY: ${{ secrets.NILVERA_API_KEY }}
+          NILVERA_API_URL: ${{ vars.NILVERA_API_URL }}
+          MERCHANT_DASHBOARD_URL: ${{ vars.MERCHANT_DASHBOARD_URL }}
         run: |
           set -euo pipefail
           cat > .env.production.rendered <<ENV
@@ -394,6 +545,36 @@ jobs:
           TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
 
           PAYMENT_PROVIDER=${PAYMENT_PROVIDER}
+
+          # [I17 fix] Boot-blocking (PUSH_PROVIDER=mock/unset and a
+          # log-only EMAIL transport are both refused in production).
+          PUSH_PROVIDER=${PUSH_PROVIDER}
+          EXPO_ACCESS_TOKEN=${EXPO_ACCESS_TOKEN}
+
+          EMAIL_HOST=${EMAIL_HOST}
+          EMAIL_PORT=${EMAIL_PORT:-587}
+          EMAIL_USER=${EMAIL_USER}
+          EMAIL_PASSWORD=${EMAIL_PASSWORD}
+          EMAIL_FROM=${EMAIL_FROM}
+          APP_NAME=${APP_NAME:-Kurtar}
+
+          # [I17 fix] Unset here means main.ts's resolveCorsOrigins()
+          # enables NO CORS at all in production — every browser call from
+          # merchant-web/admin-web/landing would be blocked even if the API
+          # boots fine.
+          CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+
+          OPS_ALERT_EMAIL=${OPS_ALERT_EMAIL}
+
+          # Not boot-blocking (see env.validation.ts's own comment on why
+          # EDOC_PROVIDER=mock is deliberately allowed in production until
+          # Nilvera e-invoicing is certified) — rendered anyway so setting
+          # NILVERA_API_KEY/NILVERA_API_URL later needs no workflow change.
+          EDOC_PROVIDER=${EDOC_PROVIDER:-mock}
+          NILVERA_API_KEY=${NILVERA_API_KEY}
+          NILVERA_API_URL=${NILVERA_API_URL}
+
+          MERCHANT_DASHBOARD_URL=${MERCHANT_DASHBOARD_URL}
           ENV
 
       - name: Ship compose file + scripts + env to the server
@@ -498,7 +679,7 @@ jobs:
             docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --workdir /app/backend api npx prisma migrate deploy
           '
 
-      - name: Swap the api container to the new image
+      - name: Swap application containers to the new images
         id: swap
         env:
           PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
@@ -506,7 +687,7 @@ jobs:
           ssh "root@${PROD_SERVER_HOST}" '
             set -euo pipefail
             cd /root/kurtar
-            docker compose -f docker-compose.prod.yml --env-file .env.production up -d api
+            docker compose -f docker-compose.prod.yml --env-file .env.production up -d api merchant-web admin-web landing
           '
 
       - name: Post-deploy health probe (from the box itself)
@@ -522,6 +703,23 @@ jobs:
             done
             echo "::error::api container is not answering /api/health after deploy"
             exit 1
+          '
+
+      - name: Post-deploy health probe — frontends (from the box itself)
+        id: health-frontends
+        env:
+          PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
+        run: |
+          ssh "root@${PROD_SERVER_HOST}" '
+            set -euo pipefail
+            for port in 4756 4757 4758; do
+              ok=""
+              for i in 1 2 3 4 5; do
+                curl -fsS --max-time 10 "http://127.0.0.1:${port}/" > /dev/null && { ok=1; break; }
+                sleep 5
+              done
+              [ -n "$ok" ] || { echo "::error::frontend container on port ${port} is not answering after deploy"; exit 1; }
+            done
           '
 
       # -------------------------------------------------------------------
@@ -543,7 +741,7 @@ jobs:
       # restore from if the schema does need reverting too.
       # -------------------------------------------------------------------
       - name: "Rollback: revert api container to previous image"
-        if: failure() && steps.capture.conclusion == 'success' && (steps.pull.conclusion == 'failure' || steps.migrate.conclusion == 'failure' || steps.swap.conclusion == 'failure' || steps.health.conclusion == 'failure')
+        if: failure() && steps.capture.conclusion == 'success' && (steps.pull.conclusion == 'failure' || steps.migrate.conclusion == 'failure' || steps.swap.conclusion == 'failure' || steps.health.conclusion == 'failure' || steps.health-frontends.conclusion == 'failure')
         env:
           PROD_SERVER_HOST: ${{ secrets.PROD_SERVER_HOST }}
         run: |

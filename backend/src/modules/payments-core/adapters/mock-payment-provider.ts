@@ -12,6 +12,7 @@ import {
   CreateIntentResult,
   ParsedWebhookEvent,
   PaymentProvider,
+  PayoutResult,
   ProviderPaymentStatus,
   QueryStatusResult,
   RefundResult,
@@ -29,6 +30,13 @@ interface MockRefundLogEntry {
   merchantOid: string;
   amountCents: number;
   refundRef: string;
+}
+
+interface MockPayoutLogEntry {
+  merchantRef: string;
+  amountCents: number;
+  ref: string;
+  pspTransferRef: string;
 }
 
 /**
@@ -57,6 +65,15 @@ export class MockPaymentProvider implements PaymentProvider, OnModuleInit {
   private readonly refundLog: MockRefundLogEntry[] = [];
   private readonly webhookSecret: string;
   private readonly forcedRefundFailures = new Set<string>();
+  // [Task 8] Keyed by `ref` (the caller's idempotency key — always a
+  // SettlementBatch id in practice), NOT by merchantRef/amountCents — this
+  // is what makes payout() idempotent: two calls with the same `ref`
+  // return the SAME pspTransferRef and are recorded exactly once, however
+  // many times they're invoked (settlements.service.ts deliberately calls
+  // this OUTSIDE any DB lock, so two racing cron ticks CAN both reach this
+  // method concurrently before either's own guarded UPDATE commits).
+  private readonly payouts = new Map<string, MockPayoutLogEntry>();
+  private readonly forcedPayoutFailures = new Set<string>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -133,6 +150,44 @@ export class MockPaymentProvider implements PaymentProvider, OnModuleInit {
     const refundRef = `mock-refund-${randomBytes(4).toString("hex")}`;
     this.refundLog.push({ merchantOid, amountCents, refundRef });
     return { refundRef };
+  }
+
+  /**
+   * [Task 8] Idempotent by `ref` — see the `payouts` field's doc comment.
+   * `forcePayoutFailure(ref)` is a one-shot test hook (consumed on use,
+   * mirroring `forceRefundFailure`): the realdb spec proving "provider
+   * failure -> batch stays APPROVED, retried next tick, exactly one
+   * payout recorded on eventual success" forces the FIRST call for a
+   * given `ref` to fail, then calls payout() again with the SAME ref to
+   * simulate the next cron tick's retry.
+   */
+  async payout(
+    merchantRef: string,
+    amountCents: number,
+    ref: string,
+  ): Promise<PayoutResult> {
+    const existing = this.payouts.get(ref);
+    if (existing) {
+      // [Fix round, C3] A repeated call for the same ref MUST carry the
+      // same amount — the caller (settlement-payout.service.ts) is
+      // supposed to guarantee this via SettlementBatch.payoutAttemptedAt
+      // freezing netPayoutCents before ever reaching here; this assertion
+      // is what makes a regression in that guarantee fail LOUD in tests
+      // instead of silently returning a stale transfer ref for a batch
+      // whose books now say something different.
+      if (existing.amountCents !== amountCents) {
+        throw new Error(
+          `Payout amount mismatch for ref ${ref}: first attempt was ${existing.amountCents} kuruş, this call is ${amountCents} kuruş — the amount for a given payout ref must never change once attempted.`,
+        );
+      }
+      return { pspTransferRef: existing.pspTransferRef };
+    }
+    if (this.forcedPayoutFailures.delete(ref)) {
+      throw new Error(`Simulated payout failure for ref ${ref}`);
+    }
+    const pspTransferRef = `mock-payout-${randomBytes(4).toString("hex")}`;
+    this.payouts.set(ref, { merchantRef, amountCents, ref, pspTransferRef });
+    return { pspTransferRef };
   }
 
   async parseWebhook(
@@ -256,5 +311,15 @@ export class MockPaymentProvider implements PaymentProvider, OnModuleInit {
   /** Test-only escape hatch for specs that need an intent to exist without going through createIntent(). */
   seedIntent(merchantOid: string, amountCents: number): void {
     this.intents.set(merchantOid, { amountCents, status: "pending" });
+  }
+
+  getPayoutLog(): readonly MockPayoutLogEntry[] {
+    return Array.from(this.payouts.values());
+  }
+
+  /** [Task 8] Test-only: make the NEXT payout() call for this `ref` throw
+   * once (see the `forcedPayoutFailures` field's doc comment). */
+  forcePayoutFailure(ref: string): void {
+    this.forcedPayoutFailures.add(ref);
   }
 }

@@ -4,6 +4,14 @@ node_modules/
 # Build output
 dist/
 coverage/
+.next/
+.expo/
+*.tsbuildinfo
+
+# Playwright (e2e/) run artifacts — reports/traces/videos, never source
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
 
 # Environment variables — never commit real env files, only *.example
 .env
@@ -18,3 +26,9 @@ coverage/
 
 # OS
 .DS_Store
+
+# AI assistant scratch files must never be committed (project hard rule)
+CLAUDE.md
+AGENTS.md
+**/CLAUDE.md
+**/AGENTS.md

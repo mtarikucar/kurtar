@@ -1,0 +1,112 @@
+.filterRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.filterLabel {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-label);
+  color: var(--color-neutral-700);
+}
+
+.filterSelect {
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-neutral-300);
+  font-size: var(--font-size-caption);
+}
+
+.table {
+  width: 100%;
+  background-color: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: var(--space-md) var(--space-lg);
+  font-size: var(--font-size-caption);
+  border-bottom: 1px solid var(--color-neutral-100);
+}
+
+.table th {
+  background-color: var(--color-neutral-50);
+  color: var(--color-neutral-700);
+  font-weight: var(--font-weight-label);
+}
+
+.actionsCell {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.actionButton {
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-neutral-300);
+  background-color: var(--color-neutral-0);
+  cursor: pointer;
+  font-size: var(--font-size-caption);
+}
+
+.actionButton:hover {
+  background-color: var(--color-neutral-100);
+}
+
+.dangerActionButton {
+  composes: actionButton;
+  border-color: var(--color-danger-500);
+  color: var(--color-danger-700);
+}
+
+.dangerActionButton:hover {
+  background-color: var(--color-danger-50);
+}
+
+.reverifySection {
+  margin-top: var(--space-3xl);
+  padding: var(--space-xl);
+  background-color: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-lg);
+}
+
+.reverifyTitle {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-h3);
+  color: var(--color-neutral-900);
+}
+
+.reverifySubtitle {
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-600);
+  margin-top: var(--space-xs);
+  margin-bottom: var(--space-lg);
+}
+
+.reverifyList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.reverifyRow {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--color-neutral-100);
+  font-size: var(--font-size-caption);
+}
+
+.reverifyOverdue {
+  color: var(--color-danger-700);
+  font-weight: var(--font-weight-bodyStrong);
+}

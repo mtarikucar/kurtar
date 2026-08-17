@@ -1,6 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { createHash } from "crypto";
-import { Prisma, Payment, Reservation } from "@prisma/client";
+import { Prisma, Payment, Reservation, DailyOffer } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { isUniqueConstraintViolation } from "../../common/utils/prisma-error.util";
 import { OfferStockService } from "../reservations/offer-stock.service";
@@ -8,6 +8,8 @@ import { PaymentsFacadeService } from "../payments-core/payments-facade.service"
 import { toPrismaPaymentProvider } from "../payments-core/payment-provider.mapping";
 import { ParsedWebhookEvent } from "../payments-core/payment-provider.interface";
 import { allowedFromStatusesFor } from "../reservations/reservation-transitions";
+import { OutboxService } from "../outbox/outbox.service";
+import { OUTBOX_EVENT_TYPES } from "../outbox/event-types";
 
 export type SettleOutcome =
   | "confirmed"
@@ -19,7 +21,11 @@ export type SettleOutcome =
   | "charged_after_failed"
   | "orphaned_success";
 
-type PaymentWithReservation = Payment & { reservation: Reservation };
+type PaymentWithReservation = Payment & {
+  reservation: Reservation & {
+    offer: Pick<DailyOffer, "pickupStartAt" | "pickupEndAt">;
+  };
+};
 
 function hashEvent(event: ParsedWebhookEvent): string {
   return createHash("sha256").update(JSON.stringify(event)).digest("hex");
@@ -98,6 +104,7 @@ export class PaymentSettleService {
     private readonly prisma: PrismaService,
     private readonly offerStock: OfferStockService,
     private readonly facade: PaymentsFacadeService,
+    private readonly outbox: OutboxService,
   ) {}
 
   async settle(event: ParsedWebhookEvent): Promise<SettleOutcome> {
@@ -124,7 +131,17 @@ export class PaymentSettleService {
       return await this.prisma.$transaction(async (tx) => {
         const payment = await tx.payment.findUnique({
           where: { merchantOid: event.merchantOid },
-          include: { reservation: true },
+          include: {
+            reservation: {
+              include: {
+                // [Task 7] pickupStartAt/pickupEndAt feed
+                // reservation.confirmed.v1's push copy — fetched here,
+                // in the same read as everything else settleSuccess
+                // needs, rather than a second query.
+                offer: { select: { pickupStartAt: true, pickupEndAt: true } },
+              },
+            },
+          },
         });
         if (!payment) {
           this.logger.warn(
@@ -227,6 +244,26 @@ export class PaymentSettleService {
       );
       throw new SettleRollback("orphaned_success");
     }
+
+    // [Task 7] Only reached once the CONFIRMED transition itself actually
+    // committed (both guarded updates above matched) — a concurrent
+    // duplicate settle (webhook idempotency dedup already returned
+    // "duplicate" before this transaction even started) or the
+    // orphaned_success rollback path never reach here, so this can never
+    // double-queue for one reservation.
+    await this.outbox.publish(tx, {
+      type: OUTBOX_EVENT_TYPES.RESERVATION_CONFIRMED_V1,
+      payload: {
+        reservationId: payment.reservationId,
+        userId: payment.reservation.userId,
+        storeId: payment.reservation.storeId,
+        offerId: payment.reservation.offerId,
+        code: payment.reservation.code,
+        pickupStartAt: payment.reservation.offer.pickupStartAt.toISOString(),
+        pickupEndAt: payment.reservation.offer.pickupEndAt.toISOString(),
+      },
+      idempotencyKey: `reservation-confirmed:${payment.reservationId}`,
+    });
 
     return "confirmed";
   }

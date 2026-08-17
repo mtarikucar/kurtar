@@ -41,6 +41,18 @@
  *    "Unknown payment provider" error the moment such a provider is
  *    actually dispatched to (modules/payments-core/payment-provider.registry.ts)
  *    — no adapter ever self-registers for an id nothing implements.
+ *  - PUSH_PROVIDER (Task 7) is the exact same enum-and-refuse shape as
+ *    PAYMENT_PROVIDER just above, for the exact same reason: the brief
+ *    asks for "mock refused in production", mirroring SmsService's own
+ *    mock-in-production refusal. Structurally the push seam mirrors
+ *    payments-core (interface + registry + facade, adapters self-register
+ *    in onModuleInit — modules/notifications/push/), so its boot-time
+ *    refusal point mirrors PAYMENT_PROVIDER's (env.validation.ts) rather
+ *    than SmsService's own constructor-throw — SmsService's shape doesn't
+ *    apply here since PushFacadeService resolves its provider lazily per
+ *    call, not once at construction. MockPushProvider.onModuleInit also
+ *    guards its own registration in production, same defense-in-depth as
+ *    MockPaymentProvider.
  *  - WEBHOOK_SECRET is required in production alongside DATABASE_URL/
  *    REDIS_URL (added to REQUIRED_IN_PRODUCTION below), not left to be
  *    enforced only incidentally by MockPaymentProvider's own constructor
@@ -80,6 +92,22 @@ const REQUIRED_IN_PRODUCTION = [
 export const VALID_PAYMENT_PROVIDERS = ["mock", "iyzico", "paytr"] as const;
 export type ValidPaymentProvider = (typeof VALID_PAYMENT_PROVIDERS)[number];
 
+export const VALID_PUSH_PROVIDERS = ["mock", "expo"] as const;
+export type ValidPushProvider = (typeof VALID_PUSH_PROVIDERS)[number];
+
+// [Task 8] EDOC_PROVIDER selects the commission-invoice e-document
+// adapter. Enum-validated like PAYMENT_PROVIDER/PUSH_PROVIDER above, but
+// deliberately NOT refused as "mock" in production — unlike payments/push
+// (core to the product functioning at all), Nilvera e-invoicing is an
+// explicitly INERT, not-yet-certified integration for this task (brief
+// §6): it self-refuses to activate without NILVERA_API_KEY/
+// NILVERA_API_URL regardless of EDOC_PROVIDER's value (see
+// invoicing/adapters/nilvera.adapter.ts), so forcing this enum's default
+// away from "mock" in production would block every prod deploy on an
+// unrelated e-invoicing certification question this task does not resolve.
+export const VALID_EDOC_PROVIDERS = ["mock", "nilvera"] as const;
+export type ValidEDocProvider = (typeof VALID_EDOC_PROVIDERS)[number];
+
 function isBlank(value: unknown): boolean {
   return value === undefined || value === null || value === "";
 }
@@ -95,6 +123,20 @@ function isValidPaymentProvider(value: unknown): value is ValidPaymentProvider {
   return (
     typeof value === "string" &&
     (VALID_PAYMENT_PROVIDERS as readonly string[]).includes(value)
+  );
+}
+
+function isValidPushProvider(value: unknown): value is ValidPushProvider {
+  return (
+    typeof value === "string" &&
+    (VALID_PUSH_PROVIDERS as readonly string[]).includes(value)
+  );
+}
+
+function isValidEDocProvider(value: unknown): value is ValidEDocProvider {
+  return (
+    typeof value === "string" &&
+    (VALID_EDOC_PROVIDERS as readonly string[]).includes(value)
   );
 }
 
@@ -157,6 +199,37 @@ export function validate(
         "once that adapter is implemented.",
     );
   }
+
+  const rawPushProvider = config.PUSH_PROVIDER;
+  if (!isBlank(rawPushProvider) && !isValidPushProvider(rawPushProvider)) {
+    throw new Error(
+      `Refusing to boot: PUSH_PROVIDER must be one of ${VALID_PUSH_PROVIDERS.join(", ")} (got ${JSON.stringify(
+        rawPushProvider,
+      )}).`,
+    );
+  }
+  const pushProvider: ValidPushProvider = isBlank(rawPushProvider)
+    ? "mock"
+    : (rawPushProvider as ValidPushProvider);
+
+  if (pushProvider === "mock" && isProduction) {
+    throw new Error(
+      "Refusing to boot: PUSH_PROVIDER=mock (or unset) is not allowed in " +
+        "production. The mock provider only records sends in memory and " +
+        "never reaches a real device — configure PUSH_PROVIDER=expo.",
+    );
+  }
+
+  const rawEDocProvider = config.EDOC_PROVIDER;
+  if (!isBlank(rawEDocProvider) && !isValidEDocProvider(rawEDocProvider)) {
+    throw new Error(
+      `Refusing to boot: EDOC_PROVIDER must be one of ${VALID_EDOC_PROVIDERS.join(", ")} (got ${JSON.stringify(
+        rawEDocProvider,
+      )}).`,
+    );
+  }
+  // No production refusal for "mock" here — see VALID_EDOC_PROVIDERS's doc
+  // comment above.
 
   return config;
 }

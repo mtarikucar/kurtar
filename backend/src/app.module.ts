@@ -18,6 +18,18 @@ import { MerchantsModule } from "./modules/merchants/merchants.module";
 import { StoresModule } from "./modules/stores/stores.module";
 import { OffersModule } from "./modules/offers/offers.module";
 import { DiscoveryModule } from "./modules/discovery/discovery.module";
+import { OutboxCoreModule } from "./modules/outbox/outbox-core.module";
+import { OutboxModule } from "./modules/outbox/outbox.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { MembershipsModule } from "./modules/memberships/memberships.module";
+import { InvoicingModule } from "./modules/invoicing/invoicing.module";
+import { SettlementsModule } from "./modules/settlements/settlements.module";
+import { FavoritesModule } from "./modules/favorites/favorites.module";
+import { RatingsModule } from "./modules/ratings/ratings.module";
+import { ImpactModule } from "./modules/impact/impact.module";
+import { ComplaintsModule } from "./modules/complaints/complaints.module";
+import { ModerationModule } from "./modules/moderation/moderation.module";
+import { AdminModule } from "./modules/admin/admin.module";
 
 @Module({
   imports: [
@@ -48,6 +60,18 @@ import { DiscoveryModule } from "./modules/discovery/discovery.module";
     MerchantsModule,
     StoresModule,
     DiscoveryModule,
+    OutboxCoreModule,
+    OutboxModule,
+    NotificationsModule,
+    MembershipsModule,
+    InvoicingModule,
+    SettlementsModule,
+    FavoritesModule,
+    RatingsModule,
+    ImpactModule,
+    ComplaintsModule,
+    ModerationModule,
+    AdminModule,
   ],
   providers: [
     // Applies the matching THROTTLER_PROFILES tier to every route; auth

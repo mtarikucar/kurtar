@@ -22,6 +22,8 @@ import {
   offerDateToDbDate,
 } from "../../common/utils/istanbul-date.util";
 import { allowedFromStatusesFor } from "./offer-transitions";
+import { OutboxService } from "../outbox/outbox.service";
+import { OUTBOX_EVENT_TYPES } from "../outbox/event-types";
 
 export interface OfferCancelResult {
   offerId: string;
@@ -83,6 +85,7 @@ export class OffersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly reservations: ReservationsService,
+    private readonly outbox: OutboxService,
   ) {}
 
   private async assertOwnedOffer(
@@ -194,20 +197,20 @@ export class OffersService {
       const offer = await tx.dailyOffer.findUniqueOrThrow({
         where: { id: offerId },
       });
-      // No jitter yet — jitter is a push-fan-out concern (spreading
-      // notification bursts), which lands with the notifications worker,
-      // not this task.
-      await tx.outboxEvent.create({
-        data: {
-          type: "offer.published.v1",
-          payload: {
-            offerId,
-            storeId: offer.storeId,
-            bagTemplateId: offer.bagTemplateId,
-            publishedAt: now.toISOString(),
-          },
-          idempotencyKey: `offer-published:${offerId}`,
+      // [Task 7] No jitter — jitter is a push-fan-out concern (spreading
+      // notification bursts), which would live in the outbox worker/
+      // handler, not here; OfferPublishedHandler dispatches on the
+      // worker's normal 15s cadence, which already spreads a publish
+      // burst across ticks.
+      await this.outbox.publish(tx, {
+        type: OUTBOX_EVENT_TYPES.OFFER_PUBLISHED_V1,
+        payload: {
+          offerId,
+          storeId: offer.storeId,
+          bagTemplateId: offer.bagTemplateId,
+          publishedAt: now.toISOString(),
         },
+        idempotencyKey: `offer-published:${offerId}`,
       });
 
       return { offerId, status: "PUBLISHED" as const, publishedAt: now };
@@ -397,19 +400,45 @@ export class OffersService {
   }
 
   /**
-   * The composite "cancel" operation both cancel() and
-   * cancelAllActiveForMerchant() funnel into: guarded DailyOffer status
-   * transition + the reservation-level fan-out
-   * (ReservationsService.cancelAllForOffer) + the offer.cancelled.v1
-   * outbox row, all in ONE transaction (all three commit or roll back
-   * together — an offer that turns out not to be cancellable never
-   * reaches the fan-out at all, since the guarded update runs FIRST in the
-   * same tx and throws before cancelAllForOffer is even called). Refund
-   * provider I/O runs strictly AFTER that transaction commits.
+   * [Task 9] Admin/content-report entry point — reuses cancelOne exactly
+   * like cancel()/cancelAllActiveForMerchant() do (never a second copy of
+   * the fan-out), no ownership check (an admin isn't the store's owner),
+   * with an AuditLog row written in the SAME transaction as the cancel
+   * (see cancelOne's `auditActorId` parameter). The one entity a content-
+   * report "action" on an OFFER target actually mutates
+   * (modules/moderation/moderation.service.ts).
+   */
+  async adminCancel(
+    adminId: string,
+    offerId: string,
+  ): Promise<OfferCancelResult> {
+    return this.cancelOne(offerId, "ADMIN", adminId);
+  }
+
+  /**
+   * The composite "cancel" operation cancel()/cancelAllActiveForMerchant()/
+   * adminCancel() all funnel into: guarded DailyOffer status transition +
+   * the reservation-level fan-out (ReservationsService.cancelAllForOffer)
+   * + the offer.cancelled.v1 outbox row, all in ONE transaction (all
+   * three commit or roll back together — an offer that turns out not to
+   * be cancellable never reaches the fan-out at all, since the guarded
+   * update runs FIRST in the same tx and throws before cancelAllForOffer
+   * is even called). Refund provider I/O runs strictly AFTER that
+   * transaction commits.
+   *
+   * `auditActorId` is optional and ONLY set by adminCancel() — a plain
+   * merchant self-cancel already has its own audit trail (the merchant IS
+   * the actor, nothing to attribute), so cancel()/
+   * cancelAllActiveForMerchant() never pass it and never write an
+   * AuditLog row. When set, the write happens inside THIS SAME
+   * transaction (brief §5: "every admin moderation action writes an
+   * AuditLog row in the same transaction") — an additive instrumentation
+   * parameter, not a second copy of the cancel logic.
    */
   private async cancelOne(
     offerId: string,
     reason: OfferCancelReason,
+    auditActorId?: string,
   ): Promise<OfferCancelResult> {
     const { expiredCount, cancelledCount, toRefund } =
       await this.prisma.$transaction(async (tx) => {
@@ -435,19 +464,51 @@ export class OffersService {
 
         const fanOut = await this.reservations.cancelAllForOffer(tx, offerId);
 
-        await tx.outboxEvent.create({
-          data: {
-            type: "offer.cancelled.v1",
-            payload: {
-              offerId,
-              storeId: offer.storeId,
-              expiredCount: fanOut.expiredCount,
-              cancelledCount: fanOut.cancelledCount,
-              reason,
-            },
-            idempotencyKey: `offer-cancelled:${offerId}`,
+        // [Task 7] reservationIds is exactly the toRefund set — the
+        // CONFIRMED -> CANCELLED_BY_MERCHANT reservations THIS cancellation
+        // actually refunds — not the expiredCount PENDING_PAYMENT ones,
+        // which were never charged. OfferCancelledHandler pushes only
+        // these ids ("your money is being refunded").
+        //
+        // [Fix round 2] TWO events, not one — the consumer-push leg and
+        // the merchant-email leg used to share a single offer.cancelled.v1
+        // event/handler; a persistently-failing email retried the WHOLE
+        // handler (re-pushing consumers who'd already been notified) up
+        // to MAX_OUTBOX_ATTEMPTS times. Splitting them means each leg
+        // retries independently — see event-types.ts's doc comment.
+        await this.outbox.publish(tx, {
+          type: OUTBOX_EVENT_TYPES.OFFER_CANCELLED_V1,
+          payload: {
+            offerId,
+            storeId: offer.storeId,
+            reservationIds: fanOut.toRefund.map((r) => r.reservationId),
           },
+          idempotencyKey: `offer-cancelled:${offerId}`,
         });
+        await this.outbox.publish(tx, {
+          type: OUTBOX_EVENT_TYPES.OFFER_CANCELLED_MERCHANT_EMAIL_V1,
+          payload: {
+            offerId,
+            storeId: offer.storeId,
+            expiredCount: fanOut.expiredCount,
+            cancelledCount: fanOut.cancelledCount,
+            reason,
+          },
+          idempotencyKey: `offer-cancelled-merchant-email:${offerId}`,
+        });
+
+        if (auditActorId) {
+          await tx.auditLog.create({
+            data: {
+              actorType: "ADMIN",
+              actorId: auditActorId,
+              action: "offer.admin_cancel",
+              entity: "DailyOffer",
+              entityId: offerId,
+              diffJson: { reason },
+            },
+          });
+        }
 
         return fanOut;
       });

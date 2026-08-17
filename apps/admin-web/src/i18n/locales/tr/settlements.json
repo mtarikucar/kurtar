@@ -1,0 +1,67 @@
+{
+  "title": "Finans",
+  "subtitle": "Ödeme yükümlülüğü, hesaplama tarihinden itibaren 5 iş günüdür.",
+  "filter": {
+    "label": "Durum",
+    "ALL": "Tümü",
+    "NEEDS_ATTENTION": "Dikkat gereken (Beklemede + Başarısız)",
+    "PENDING": "Beklemede",
+    "CALCULATED": "Hesaplandı",
+    "APPROVED": "Onaylandı",
+    "SENT": "Gönderildi",
+    "SETTLED": "Ödendi",
+    "FAILED": "Başarısız",
+    "HELD": "Beklemeye alındı"
+  },
+  "table": {
+    "merchant": "İşletme",
+    "status": "Durum",
+    "net": "Net ödeme",
+    "dueDate": "Son ödeme tarihi",
+    "period": "Dönem"
+  },
+  "detail": {
+    "back": "Finans listesine dön",
+    "period": "Dönem: {{start}} — {{end}}",
+    "breakdownTitle": "Tutar dökümü",
+    "gross": "Brüt ciro",
+    "bagFee": "Paket komisyonu",
+    "bagFeeVat": "Paket komisyonu KDV",
+    "withholding": "Stopaj",
+    "membershipOffset": "Üyelik mahsubu",
+    "membershipOffsetVatIncluded": "{{amount}} KDV dahil",
+    "refundClawback": "İade geri alımı",
+    "totalDeductions": "Toplam kesinti",
+    "net": "Net ödeme",
+    "inconsistencyWarning": "Uyarı: brüt tutar eksi kesintiler, net ödeme tutarına eşit değil. Lütfen bu kaydı inceleyin.",
+    "dueDateTitle": "Ödeme yükümlülüğü (5 iş günü)",
+    "holdReasonLabel": "Bekletme gerekçesi",
+    "merchantInfoTitle": "İşletme bilgileri",
+    "iban": "IBAN",
+    "actions": {
+      "approve": "Onayla",
+      "hold": "Beklet",
+      "retry": "Tekrar dene"
+    },
+    "holdDialog": {
+      "title": "Ödemeyi beklet",
+      "consequence": "Bu ödeme kaydı \"Beklemede\" durumuna alınacak ve ödeme gönderilmeyecektir. İnceleme tamamlanana kadar yükümlülük süresi işlemeye devam eder.",
+      "noteLabel": "Bekletme gerekçesi"
+    },
+    "approveDialog": {
+      "title": "Ödemeyi onayla",
+      "consequence": "Bu ödeme kaydı onaylanacak ve işletmeye ödeme gönderim sürecine alınacaktır."
+    },
+    "retryDialog": {
+      "title": "Ödemeyi tekrar dene",
+      "consequence": "Bu ödeme kaydı yeniden hesaplanacak ve uygunsa ödeme gönderimi tekrar denenecektir."
+    }
+  },
+  "errors": {
+    "notApprovable": "Bu ödeme kaydı artık onaylanabilir durumda değil — sayfa güncellendi.",
+    "notHoldable": "Bu ödeme kaydı artık beklemeye alınabilir durumda değil.",
+    "notRetryable": "Bu ödeme kaydı artık tekrar denenebilir durumda değil.",
+    "notFound": "Ödeme kaydı bulunamadı.",
+    "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin."
+  }
+}

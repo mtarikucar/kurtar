@@ -1,8 +1,10 @@
 import { Type } from "class-transformer";
 import { IsEnum, IsInt, IsOptional, Max, Min } from "class-validator";
+import { ApiPropertyOptional } from "@nestjs/swagger";
 import { MerchantVerificationStatus } from "@prisma/client";
 
 export class AdminListMerchantsQueryDto {
+  @ApiPropertyOptional({ enum: MerchantVerificationStatus })
   @IsOptional()
   @IsEnum(MerchantVerificationStatus)
   status?: MerchantVerificationStatus;

@@ -145,12 +145,35 @@ export class TokenService {
    * reasoning. Reuse of an already-rotated/already-revoked token (or the
    * principal having gone inactive since the token was issued) revokes the
    * ENTIRE family and rejects with a uniform 401.
+   *
+   * `expectedActor` is the actor whose route was called — kurtar has one
+   * refresh endpoint PER actor (`/api/auth/{consumer,merchant,admin}/
+   * refresh`; see refresh-cookie-transport.util.ts's ACTOR SCOPING note).
+   * A token minted for a DIFFERENT actor is rejected outright, which is
+   * what makes "a merchant's refresh token can never mint an ADMIN access
+   * token" a property of the server rather than of the browser's cookie
+   * jar. Deliberately checked BEFORE the atomic claim, and deliberately
+   * NOT routed through handleClaimFailure(): an actor mismatch must never
+   * revoke the presenting actor's own perfectly valid family, or any
+   * surface could log another actor out at will simply by replaying a
+   * cookie it legitimately holds onto the wrong route.
    */
-  async refresh(presentedToken: string): Promise<IssuedTokens> {
+  async refresh(
+    presentedToken: string,
+    expectedActor: PrincipalType,
+  ): Promise<IssuedTokens> {
     const tokenHash = this.hashToken(presentedToken);
     const now = new Date();
 
     const result = await this.prisma.$transaction(async (tx) => {
+      const bound = await tx.refreshToken.findUnique({
+        where: { tokenHash },
+        select: { principalType: true },
+      });
+      if (bound && bound.principalType !== expectedActor) {
+        return { ok: false as const, reason: "actor_mismatch" as const };
+      }
+
       const claimed = await tx.refreshToken.updateMany({
         where: {
           tokenHash,
@@ -279,13 +302,24 @@ export class TokenService {
     return { id: adminUser.id, actor: "ADMIN" };
   }
 
-  /** Revoke the entire refresh family the presented token belongs to. */
-  async revokeFamilyByToken(presentedToken: string): Promise<void> {
+  /**
+   * Revoke the entire refresh family the presented token belongs to.
+   *
+   * Actor-bound for the same reason `refresh()` is: logout is reachable
+   * per actor (`/api/auth/{consumer,merchant,admin}/logout`), and a token
+   * presented on the wrong actor's logout route is a no-op rather than a
+   * free "sign that other actor out of this browser" primitive.
+   */
+  async revokeFamilyByToken(
+    presentedToken: string,
+    expectedActor: PrincipalType,
+  ): Promise<void> {
     const tokenHash = this.hashToken(presentedToken);
     const stored = await this.prisma.refreshToken.findUnique({
       where: { tokenHash },
     });
     if (!stored) return;
+    if (stored.principalType !== expectedActor) return;
     await this.prisma.refreshToken.updateMany({
       where: { familyId: stored.familyId, revokedAt: null },
       data: { revokedAt: new Date() },

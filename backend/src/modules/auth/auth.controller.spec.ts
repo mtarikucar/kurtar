@@ -27,11 +27,19 @@ describe("AuthController — route @Public() wiring", () => {
     ["verifyOtp", true],
     ["merchantLogin", true],
     ["adminLogin", true],
-    ["refresh", true],
+    // One refresh + one logout route PER ACTOR (the cross-actor
+    // session-bleed fix — see refresh-cookie-transport.util.ts). Every
+    // one of them must carry @Public() individually; a new actor route
+    // added without it regresses exactly the bug this spec pins.
+    ["refreshConsumer", true],
+    ["refreshMerchant", true],
+    ["refreshAdmin", true],
     // logout is keyed purely off the presented refresh token (cookie or
     // body) — never off the authenticated principal — so it must stay
     // reachable even with an expired/absent access token.
-    ["logout", true],
+    ["logoutConsumer", true],
+    ["logoutMerchant", true],
+    ["logoutAdmin", true],
   ] as const)("%s is @Public(): %p", (method, expected) => {
     expect(isPublic(method)).toBe(expected);
   });

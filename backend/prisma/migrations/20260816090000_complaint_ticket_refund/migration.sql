@@ -1,0 +1,11 @@
+-- [I3 fix] Closes the "no production path can refund a REDEEMED
+-- reservation" gap: adds the single-fire guard column
+-- ComplaintsService.adminRefund needs to atomically claim a complaint
+-- ticket before ever calling ReservationsService.refundRedeemed. NULL
+-- means "no refund triggered from this ticket yet" — the same nullable
+-- sentinel-column shape as slaWarningSentAt on the same table.
+--
+-- NULLABLE with no DEFAULT — safe to add to this non-empty table with no
+-- NOT NULL to backfill (every existing row's implicit value, "no refund
+-- yet", is exactly what NULL already means).
+ALTER TABLE "complaint_tickets" ADD COLUMN "refundedAt" TIMESTAMP(3);

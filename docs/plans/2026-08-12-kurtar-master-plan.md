@@ -20,7 +20,7 @@ Kurucu (tarik), HummyTummy restoran SaaS'ının sahibi. Hedef: Too Good To Go mo
 | Gelir modeli | TGTG-usulü: **sabit ₺/paket + yıllık işletme üyeliği** (₺ tutarları iş planında önerilecek; enflasyona karşı yıllık endeksleme mekanizmalı) |
 | Coğrafya | **İstanbul-önce saha satışı + ulusal self-serve** kayıt (gel-al modeli kuryesiz → teknik olarak ulusal açık) |
 | MVP genişliği | **Tam TGTG paritesi** (harita+liste keşif, arama/filtre, favoriler, satın alma, iptal pencereleri, gel-al penceresi + personel önünde swipe-to-redeem, puanlama, push bildirim, etki sayaçları (CO₂/öğün), işletme self-signup+onboarding, günlük paket yönetimi, hakediş ekstreleri, admin panel) |
-| Stack (Claude kararı, kullanıcı yetkilendirdi) | Tüketici: **Expo/React Native** (iOS+Android, OTA). Backend: **NestJS + Prisma + PostgreSQL + Redis** (kds kalıpları taşınır). İşletme+admin panelleri: React (Vite) web. Landing: Next.js (kds landing kalıbı, 5-dil). Deploy: kds-marketing emsali (aynı VPS'te kendi port bloğu + kendi Postgres, tag-driven CI). |
+| Stack (teknik karar, kullanıcı yetkilendirdi) | Tüketici: **Expo/React Native** (iOS+Android, OTA). Backend: **NestJS + Prisma + PostgreSQL + Redis** (kds kalıpları taşınır). İşletme+admin panelleri: React (Vite) web. Landing: Next.js (kds landing kalıbı, 5-dil). Deploy: kds-marketing emsali (aynı VPS'te kendi port bloğu + kendi Postgres, tag-driven CI). |
 
 ## 3. Düzenleyici çerçeve (mimarinin kodlaması gereken kurallar — doğrulanmış)
 

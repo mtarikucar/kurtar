@@ -9,6 +9,7 @@ import {
   IsString,
   Min,
 } from "class-validator";
+import { ApiPropertyOptional } from "@nestjs/swagger";
 import { BagCategory, DietFlag } from "@prisma/client";
 
 /**
@@ -26,10 +27,12 @@ export class UpdateBagTemplateDto {
   @IsNotEmpty()
   title?: string;
 
+  @ApiPropertyOptional({ enum: BagCategory })
   @IsOptional()
   @IsEnum(BagCategory)
   category?: BagCategory;
 
+  @ApiPropertyOptional({ enum: DietFlag, isArray: true })
   @IsOptional()
   @IsArray()
   @ArrayUnique()

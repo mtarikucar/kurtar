@@ -7,14 +7,30 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
+import { ApiCreatedResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Request, Response } from "express";
 import { AuthService } from "./auth.service";
-import { TokenService, IssuedTokens } from "./services/token.service";
+import { TokenService } from "./services/token.service";
 import { OtpRequestDto } from "./dto/otp-request.dto";
 import { OtpVerifyDto } from "./dto/otp-verify.dto";
 import { LoginDto } from "./dto/login.dto";
 import { RefreshTokenBodyDto } from "./dto/refresh-token.dto";
 import { Public } from "./decorators/public.decorator";
+import {
+  AdminAuthResponseDto,
+  AuthTokensDto,
+  ConsumerAuthResponseDto,
+  LogoutResponseDto,
+  MerchantAuthResponseDto,
+  OtpRequestResponseDto,
+} from "./dto/auth-response.dto";
+import { PrincipalType } from "@prisma/client";
+import {
+  clearRefreshCookie,
+  readRefreshCookie,
+  respondWithTokens,
+  wantsCookieOnlyTransport,
+} from "./refresh-cookie-transport.util";
 
 // Per-route throttle tiers for the auth surface. All auth endpoints are
 // either unauthenticated (@Public) or credential/OTP-bearing, so every one
@@ -25,13 +41,6 @@ const OTP_REQUEST_THROTTLE = { default: { limit: 3, ttl: 60_000 } };
 const OTP_VERIFY_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
 const LOGIN_THROTTLE = { default: { limit: 5, ttl: 60_000 } };
 const REFRESH_THROTTLE = { default: { limit: 10, ttl: 60_000 } };
-
-// Refresh-token cookie. Path scopes it to the auth surface only; httpOnly
-// blocks JS access (XSS mitigation); sameSite: strict blocks CSRF; secure
-// is on outside development. Mirrors kds's
-// backend/src/modules/auth/auth.controller.ts convention exactly.
-const REFRESH_COOKIE = "refreshToken";
-const REFRESH_COOKIE_PATH = "/api/auth";
 
 /**
  * A web panel MUST declare cookie-only transport on every auth call
@@ -44,45 +53,12 @@ const REFRESH_COOKIE_PATH = "/api/auth";
  * for exactly the token it exists to protect.) Callers that omit the
  * header (the RN mobile app, which has no meaningful cookie jar and reads
  * the token from SecureStore instead) get the token in the body, as
- * before.
+ * before. The cookie/header/strip machinery itself now lives in
+ * refresh-cookie-transport.util.ts — shared with merchants.controller.ts's
+ * signup(), the second endpoint that mints a fresh session in a
+ * browser-reachable response.
  */
-const CLIENT_TRANSPORT_HEADER = "x-client-transport";
-const COOKIE_TRANSPORT_VALUE = "cookie";
-
-function wantsCookieOnlyTransport(req: Request): boolean {
-  const value = req.header(CLIENT_TRANSPORT_HEADER);
-  return (
-    typeof value === "string" && value.toLowerCase() === COOKIE_TRANSPORT_VALUE
-  );
-}
-
-function setRefreshCookie(res: Response, token: string, expiresAt: Date) {
-  res.cookie(REFRESH_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict" as const,
-    path: REFRESH_COOKIE_PATH,
-    expires: expiresAt,
-  });
-}
-
-function clearRefreshCookie(res: Response) {
-  res.clearCookie(REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
-}
-
-/**
- * Strip the refresh token from the JSON body so it travels only in the
- * httpOnly cookie for callers already using cookie transport. Mobile
- * (React Native SecureStore) callers have no cookie jar in that sense, so
- * they keep receiving it in the body — see respond() below.
- */
-function stripRefreshToken<T extends { refreshToken: string }>(
-  result: T,
-): Omit<T, "refreshToken"> {
-  const { refreshToken: _r, ...rest } = result;
-  return rest;
-}
-
+@ApiTags("auth")
 @Controller("auth")
 export class AuthController {
   constructor(
@@ -90,26 +66,10 @@ export class AuthController {
     private readonly tokenService: TokenService,
   ) {}
 
-  /**
-   * Sets the refresh cookie on every response (harmless for callers that
-   * ignore it) and returns the raw refresh token in the JSON body UNLESS
-   * `stripBody` is set. Every call site below computes `stripBody` from
-   * `wantsCookieOnlyTransport(req)` — i.e. the caller's OWN declared
-   * transport, checked on every issuing endpoint (login/verify AND
-   * refresh), not inferred after the fact from whether a cookie happened
-   * to be presented. `/refresh` additionally ORs in "a cookie was actually
-   * presented this call" as a defense-in-depth fallback for a web client
-   * that, for whatever reason, didn't send the header on a later refresh.
-   */
-  private respond<T extends IssuedTokens>(
-    res: Response,
-    result: T,
-    stripBody: boolean,
-  ) {
-    setRefreshCookie(res, result.refreshToken, result.refreshTokenExpiresAt);
-    return stripBody ? stripRefreshToken(result) : result;
-  }
-
+  @ApiOperation({
+    summary: "Request a consumer OTP code by phone. No auth required.",
+  })
+  @ApiCreatedResponse({ type: OtpRequestResponseDto })
   @Public()
   @Throttle(OTP_REQUEST_THROTTLE)
   @Post("otp/request")
@@ -117,6 +77,11 @@ export class AuthController {
     return this.authService.requestConsumerOtp(dto.phone);
   }
 
+  @ApiOperation({
+    summary:
+      "Verify a consumer OTP code and issue a token pair. No auth required.",
+  })
+  @ApiCreatedResponse({ type: ConsumerAuthResponseDto })
   @Public()
   @Throttle(OTP_VERIFY_THROTTLE)
   @Post("otp/verify")
@@ -129,9 +94,16 @@ export class AuthController {
       dto.phone,
       dto.code,
     );
-    return this.respond(res, result, wantsCookieOnlyTransport(req));
+    return respondWithTokens(
+      res,
+      "CONSUMER",
+      result,
+      wantsCookieOnlyTransport(req),
+    );
   }
 
+  @ApiOperation({ summary: "Merchant email/password login. No auth required." })
+  @ApiCreatedResponse({ type: MerchantAuthResponseDto })
   @Public()
   @Throttle(LOGIN_THROTTLE)
   @Post("merchant/login")
@@ -144,9 +116,16 @@ export class AuthController {
       dto.email,
       dto.password,
     );
-    return this.respond(res, result, wantsCookieOnlyTransport(req));
+    return respondWithTokens(
+      res,
+      "MERCHANT",
+      result,
+      wantsCookieOnlyTransport(req),
+    );
   }
 
+  @ApiOperation({ summary: "Admin email/password login. No auth required." })
+  @ApiCreatedResponse({ type: AdminAuthResponseDto })
   @Public()
   @Throttle(LOGIN_THROTTLE)
   @Post("admin/login")
@@ -156,33 +135,83 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.authService.adminLogin(dto.email, dto.password);
-    return this.respond(res, result, wantsCookieOnlyTransport(req));
+    return respondWithTokens(
+      res,
+      "ADMIN",
+      result,
+      wantsCookieOnlyTransport(req),
+    );
   }
 
+  // ---------------------------------------------------------------
+  // Refresh + logout: ONE ROUTE PER ACTOR, not one shared route.
+  //
+  // There used to be a single `POST /auth/refresh` and a single `POST
+  // /auth/logout`, both reading one unscoped `refreshToken` cookie. That
+  // is the cross-actor session-bleed defect written up in full in
+  // refresh-cookie-transport.util.ts: three actors sharing one cookie on
+  // one origin means the last one to sign in owns the browser's only
+  // session, and any surface's JS can trade that cookie for whatever
+  // actor's access token happens to be behind it.
+  //
+  // Splitting the routes gives each actor's cookie a Path the browser
+  // will only ever match for that actor (`/api/auth/admin/...`), so a
+  // merchant page's refresh call does not even TRANSMIT the admin
+  // cookie. TokenService then re-checks the stored token's
+  // `principalType` against the actor argument below, so the guarantee
+  // does not rest on cookie attributes alone.
+  //
+  // The three handlers are deliberately thin wrappers over one private
+  // implementation each — the duplication is three decorator blocks, not
+  // three copies of the logic.
+  // ---------------------------------------------------------------
+
+  @ApiOperation({
+    summary:
+      "Rotate a CONSUMER refresh token for a fresh token pair. No auth required (the refresh token IS the credential).",
+  })
+  @ApiCreatedResponse({ type: AuthTokensDto })
   @Public()
   @Throttle(REFRESH_THROTTLE)
-  @Post("refresh")
-  async refresh(
+  @Post("consumer/refresh")
+  async refreshConsumer(
     @Req() req: Request,
     @Body() body: RefreshTokenBodyDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const fromCookie: string | undefined = req.cookies?.[REFRESH_COOKIE];
-    const token = fromCookie || body.refreshToken;
-    if (!token) {
-      throw new UnauthorizedException("Missing refresh token");
-    }
+    return this.rotate("CONSUMER", req, body, res);
+  }
 
-    const result = await this.tokenService.refresh(token);
-    // Strip when the caller declared cookie transport OR actually
-    // presented a cookie this call (the cookie already carries the new
-    // token forward either way; repeating it in JS-readable JSON adds
-    // exposure for no benefit — kds's stripRefreshToken pattern).
-    return this.respond(
-      res,
-      result,
-      wantsCookieOnlyTransport(req) || !!fromCookie,
-    );
+  @ApiOperation({
+    summary:
+      "Rotate a MERCHANT refresh token for a fresh token pair. No auth required (the refresh token IS the credential).",
+  })
+  @ApiCreatedResponse({ type: AuthTokensDto })
+  @Public()
+  @Throttle(REFRESH_THROTTLE)
+  @Post("merchant/refresh")
+  async refreshMerchant(
+    @Req() req: Request,
+    @Body() body: RefreshTokenBodyDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.rotate("MERCHANT", req, body, res);
+  }
+
+  @ApiOperation({
+    summary:
+      "Rotate an ADMIN refresh token for a fresh token pair. No auth required (the refresh token IS the credential).",
+  })
+  @ApiCreatedResponse({ type: AuthTokensDto })
+  @Public()
+  @Throttle(REFRESH_THROTTLE)
+  @Post("admin/refresh")
+  async refreshAdmin(
+    @Req() req: Request,
+    @Body() body: RefreshTokenBodyDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.rotate("ADMIN", req, body, res);
   }
 
   // @Public(): logout's whole job is "revoke the presented refresh token's
@@ -194,20 +223,90 @@ export class AuthController {
   // both pointless (that mints a token pair only to immediately destroy
   // it) and not meaningfully more secure: anyone holding a still-valid
   // refresh token could get a fresh access token via /refresh anyway.
+  @ApiOperation({
+    summary:
+      "Revoke a CONSUMER refresh token's whole family. No auth required (the refresh token IS the credential).",
+  })
+  @ApiCreatedResponse({ type: LogoutResponseDto })
   @Public()
   @Throttle(REFRESH_THROTTLE)
-  @Post("logout")
-  async logout(
+  @Post("consumer/logout")
+  async logoutConsumer(
     @Req() req: Request,
     @Body() body: RefreshTokenBodyDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const token: string | undefined =
-      req.cookies?.[REFRESH_COOKIE] || body.refreshToken;
-    if (token) {
-      await this.tokenService.revokeFamilyByToken(token);
+    return this.revoke("CONSUMER", req, body, res);
+  }
+
+  @ApiOperation({
+    summary:
+      "Revoke a MERCHANT refresh token's whole family. No auth required (the refresh token IS the credential).",
+  })
+  @ApiCreatedResponse({ type: LogoutResponseDto })
+  @Public()
+  @Throttle(REFRESH_THROTTLE)
+  @Post("merchant/logout")
+  async logoutMerchant(
+    @Req() req: Request,
+    @Body() body: RefreshTokenBodyDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.revoke("MERCHANT", req, body, res);
+  }
+
+  @ApiOperation({
+    summary:
+      "Revoke an ADMIN refresh token's whole family. No auth required (the refresh token IS the credential).",
+  })
+  @ApiCreatedResponse({ type: LogoutResponseDto })
+  @Public()
+  @Throttle(REFRESH_THROTTLE)
+  @Post("admin/logout")
+  async logoutAdmin(
+    @Req() req: Request,
+    @Body() body: RefreshTokenBodyDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.revoke("ADMIN", req, body, res);
+  }
+
+  private async rotate(
+    actor: PrincipalType,
+    req: Request,
+    body: RefreshTokenBodyDto,
+    res: Response,
+  ) {
+    const fromCookie = readRefreshCookie(req, actor);
+    const token = fromCookie || body.refreshToken;
+    if (!token) {
+      throw new UnauthorizedException("Missing refresh token");
     }
-    clearRefreshCookie(res);
+
+    const result = await this.tokenService.refresh(token, actor);
+    // Strip when the caller declared cookie transport OR actually
+    // presented a cookie this call (the cookie already carries the new
+    // token forward either way; repeating it in JS-readable JSON adds
+    // exposure for no benefit — kds's stripRefreshToken pattern).
+    return respondWithTokens(
+      res,
+      actor,
+      result,
+      wantsCookieOnlyTransport(req) || !!fromCookie,
+    );
+  }
+
+  private async revoke(
+    actor: PrincipalType,
+    req: Request,
+    body: RefreshTokenBodyDto,
+    res: Response,
+  ) {
+    const token = readRefreshCookie(req, actor) || body.refreshToken;
+    if (token) {
+      await this.tokenService.revokeFamilyByToken(token, actor);
+    }
+    clearRefreshCookie(res, actor);
     return { success: true };
   }
 }

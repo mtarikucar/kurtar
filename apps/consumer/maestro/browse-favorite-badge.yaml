@@ -1,0 +1,26 @@
+# Maestro E2E flow: browse -> favorite a store -> see the "bugün paketi
+# var" badge on the Favorites tab.
+#
+# Requires: a signed-in session (this flow assumes one already exists —
+# chain it after onboarding-browse-buy-redeem.yaml, or seed
+# expo-secure-store's persisted refresh token before launch in CI) and at
+# least one store with a live PUBLISHED offer today.
+appId: app.kurtar.consumer
+---
+- launchApp
+
+# ---- Discover -> open a store ----
+- assertVisible: "Keşfet"
+- tapOn:
+    text: ".*" # the first offer card
+- tapOn: "Mağazayı gör"
+
+# ---- Favorite it ----
+- assertVisible:
+    text: ".*" # store name header
+- tapOn:
+    id: "favorite-toggle"
+
+# ---- Favorites tab shows the badge ----
+- tapOn: "Favoriler"
+- assertVisible: "Bugün paketi var"

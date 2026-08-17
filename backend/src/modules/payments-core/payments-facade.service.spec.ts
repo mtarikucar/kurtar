@@ -9,6 +9,7 @@ function fakeProvider(id: "mock" | "iyzico" | "paytr"): PaymentProvider {
     createIntent: jest.fn().mockResolvedValue({ providerRef: "ref" }),
     queryStatus: jest.fn().mockResolvedValue({ status: "pending" }),
     refund: jest.fn().mockResolvedValue({ refundRef: "r" }),
+    payout: jest.fn().mockResolvedValue({ pspTransferRef: "p" }),
     parseWebhook: jest.fn().mockResolvedValue({
       merchantOid: "m",
       status: "success",

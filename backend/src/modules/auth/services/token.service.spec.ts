@@ -20,6 +20,10 @@ function makePrisma() {
   const tx = {
     refreshToken: {
       updateMany: jest.fn(),
+      // The actor pre-check refresh() runs before the atomic claim. null
+      // = "no such token row", which is exactly what an unknown token
+      // looks like and lets the claim itself decide the outcome.
+      findUnique: jest.fn().mockResolvedValue(null),
       findUniqueOrThrow: jest.fn(),
       create: jest.fn().mockResolvedValue({}),
     },
@@ -164,11 +168,14 @@ describe("TokenService.refresh", () => {
       adminUserId: null,
       familyId: "fam-1",
     });
+    prisma.tx.refreshToken.findUnique.mockResolvedValue({
+      principalType: "CONSUMER",
+    });
     prisma.tx.user.findUnique.mockResolvedValue({ id: "u1", status: "ACTIVE" });
     const jwt = makeJwt();
     const svc = new TokenService(prisma as any, jwt as any, makeConfig());
 
-    const result = await svc.refresh("old-raw-token");
+    const result = await svc.refresh("old-raw-token", "CONSUMER");
 
     expect(result.accessToken).toBe("signed-access-token");
     expect(result.refreshToken).toMatch(/^[0-9a-f]{64}$/);
@@ -194,7 +201,7 @@ describe("TokenService.refresh", () => {
     prisma.refreshToken.findUnique.mockResolvedValue(null);
     const svc = new TokenService(prisma as any, makeJwt() as any, makeConfig());
 
-    await expect(svc.refresh("nonexistent")).rejects.toBeInstanceOf(
+    await expect(svc.refresh("nonexistent", "CONSUMER")).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
     expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
@@ -209,7 +216,7 @@ describe("TokenService.refresh", () => {
     });
     const svc = new TokenService(prisma as any, makeJwt() as any, makeConfig());
 
-    await expect(svc.refresh("expired")).rejects.toBeInstanceOf(
+    await expect(svc.refresh("expired", "CONSUMER")).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
     expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
@@ -225,7 +232,7 @@ describe("TokenService.refresh", () => {
     prisma.refreshToken.updateMany.mockResolvedValue({ count: 3 });
     const svc = new TokenService(prisma as any, makeJwt() as any, makeConfig());
 
-    await expect(svc.refresh("already-rotated")).rejects.toThrow(
+    await expect(svc.refresh("already-rotated", "CONSUMER")).rejects.toThrow(
       /Invalid refresh token/,
     );
     expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
@@ -244,10 +251,13 @@ describe("TokenService.refresh", () => {
       adminUserId: null,
       familyId: "fam-1",
     });
+    prisma.tx.refreshToken.findUnique.mockResolvedValue({
+      principalType: "CONSUMER",
+    });
     prisma.tx.user.findUnique.mockResolvedValue({ id: "u1", status: "BANNED" });
     const svc = new TokenService(prisma as any, makeJwt() as any, makeConfig());
 
-    await expect(svc.refresh("stale-banned")).rejects.toThrow(
+    await expect(svc.refresh("stale-banned", "CONSUMER")).rejects.toThrow(
       /Invalid refresh token/,
     );
     // Revoked INSIDE the transaction, not via the outside diagnostic path.
@@ -269,10 +279,13 @@ describe("TokenService.refresh", () => {
       adminUserId: null,
       familyId: "fam-2",
     });
+    prisma.tx.refreshToken.findUnique.mockResolvedValue({
+      principalType: "MERCHANT",
+    });
     prisma.tx.merchantUser.findUnique.mockResolvedValue(null);
     const svc = new TokenService(prisma as any, makeJwt() as any, makeConfig());
 
-    await expect(svc.refresh("deleted-merchant")).rejects.toThrow(
+    await expect(svc.refresh("deleted-merchant", "MERCHANT")).rejects.toThrow(
       /Invalid refresh token/,
     );
     expect(prisma.tx.refreshToken.create).not.toHaveBeenCalled();
@@ -288,26 +301,86 @@ describe("TokenService.refresh", () => {
       adminUserId: "au1",
       familyId: "fam-3",
     });
+    prisma.tx.refreshToken.findUnique.mockResolvedValue({
+      principalType: "ADMIN",
+    });
     prisma.tx.adminUser.findUnique.mockResolvedValue({
       id: "au1",
       active: false,
     });
     const svc = new TokenService(prisma as any, makeJwt() as any, makeConfig());
 
-    await expect(svc.refresh("deactivated-admin")).rejects.toThrow(
+    await expect(svc.refresh("deactivated-admin", "ADMIN")).rejects.toThrow(
       /Invalid refresh token/,
     );
     expect(prisma.tx.refreshToken.create).not.toHaveBeenCalled();
+  });
+
+  // --- actor binding (the cross-actor session-bleed fix) -------------
+  // See refresh-cookie-transport.util.ts's ACTOR SCOPING note. Per-actor
+  // cookie names/paths stop the browser from volunteering the wrong
+  // cookie; THIS is what stops a hand-crafted request that presents one
+  // anyway (an XSS on a merchant surface replaying the cookie it can
+  // reach onto /api/auth/admin/refresh).
+  it("refuses to mint an ADMIN session from a MERCHANT-bound refresh token", async () => {
+    const prisma = makePrisma();
+    prisma.tx.refreshToken.findUnique.mockResolvedValue({
+      principalType: "MERCHANT",
+    });
+    // Everything below would make this a perfectly claimable, perfectly
+    // valid MERCHANT rotation — the ONLY thing wrong is the route it
+    // arrived on.
+    prisma.tx.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+    prisma.tx.refreshToken.findUniqueOrThrow.mockResolvedValue({
+      principalType: "MERCHANT",
+      userId: null,
+      merchantUserId: "mu1",
+      adminUserId: null,
+      familyId: "fam-x",
+    });
+    prisma.tx.merchantUser.findUnique.mockResolvedValue({
+      id: "mu1",
+      merchantId: "m1",
+      role: "OWNER",
+    });
+    const svc = new TokenService(prisma as any, makeJwt() as any, makeConfig());
+
+    await expect(svc.refresh("merchant-token", "ADMIN")).rejects.toThrow(
+      /Invalid refresh token/,
+    );
+    // Rejected BEFORE the claim: no rotation, no successor row, and
+    // above all no ADMIN access token.
+    expect(prisma.tx.refreshToken.updateMany).not.toHaveBeenCalled();
+    expect(prisma.tx.refreshToken.create).not.toHaveBeenCalled();
+  });
+
+  it("does not revoke the merchant's own family when its token is replayed on the admin route", async () => {
+    const prisma = makePrisma();
+    prisma.tx.refreshToken.findUnique.mockResolvedValue({
+      principalType: "MERCHANT",
+    });
+    const svc = new TokenService(prisma as any, makeJwt() as any, makeConfig());
+
+    await expect(svc.refresh("merchant-token", "ADMIN")).rejects.toThrow(
+      /Invalid refresh token/,
+    );
+    // Family-revoking on a mismatch would hand every same-site surface a
+    // free "log that other actor out of this browser" primitive.
+    expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    expect(prisma.tx.refreshToken.updateMany).not.toHaveBeenCalled();
   });
 });
 
 describe("TokenService.revokeFamilyByToken", () => {
   it("revokes every active row in the token's family", async () => {
     const prisma = makePrisma();
-    prisma.refreshToken.findUnique.mockResolvedValue({ familyId: "fam-9" });
+    prisma.refreshToken.findUnique.mockResolvedValue({
+      familyId: "fam-9",
+      principalType: "MERCHANT",
+    });
     const svc = new TokenService(prisma as any, makeJwt() as any, makeConfig());
 
-    await svc.revokeFamilyByToken("some-token");
+    await svc.revokeFamilyByToken("some-token", "MERCHANT");
 
     expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
       where: { familyId: "fam-9", revokedAt: null },
@@ -320,7 +393,20 @@ describe("TokenService.revokeFamilyByToken", () => {
     prisma.refreshToken.findUnique.mockResolvedValue(null);
     const svc = new TokenService(prisma as any, makeJwt() as any, makeConfig());
 
-    await svc.revokeFamilyByToken("unknown-token");
+    await svc.revokeFamilyByToken("unknown-token", "MERCHANT");
+
+    expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("no-ops for a token belonging to a different actor (logout is not a cross-actor weapon)", async () => {
+    const prisma = makePrisma();
+    prisma.refreshToken.findUnique.mockResolvedValue({
+      familyId: "fam-9",
+      principalType: "ADMIN",
+    });
+    const svc = new TokenService(prisma as any, makeJwt() as any, makeConfig());
+
+    await svc.revokeFamilyByToken("admin-token", "MERCHANT");
 
     expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
   });

@@ -1,0 +1,75 @@
+{
+  "title": "Bugün",
+  "urgent": {
+    "heading": "Bugün için paket yayınlamadınız",
+    "body": "Yayınlamadığınız sürece müşteriler bugünkü paketinizi göremez.",
+    "cta": "Hemen yayınla"
+  },
+  "noTemplate": {
+    "heading": "Önce bir paket şablonu oluşturun",
+    "body": "Yayınlayabilmek için en az bir mağaza ve bir paket şablonu gerekir.",
+    "cta": "Paket şablonu oluştur"
+  },
+  "quickPublish": {
+    "heading": "Tek dokunuşla yayınla",
+    "planLabel": "{{title}} · {{qty}} {{unit}} · {{start}}–{{end}}",
+    "editLabel": "Ayarları düzenle",
+    "publish": "Yayınla",
+    "publishing": "Yayınlanıyor…",
+    "storeLabel": "Mağaza",
+    "templateLabel": "Paket",
+    "qtyLabel": "Adet",
+    "startLabel": "Başlangıç",
+    "endLabel": "Bitiş",
+    "confirm": "Yayınla"
+  },
+  "counters": {
+    "published": "Yayında",
+    "reserved": "Rezerve",
+    "redeemed": "Teslim edildi",
+    "left": "Kalan"
+  },
+  "offerCard": {
+    "close": "Satışı durdur",
+    "closeConfirm": "Bu teklif için yeni rezervasyon alınmaz. Mevcut rezervasyonlar etkilenmez. Devam edilsin mi?",
+    "cancel": "Teklifi iptal et",
+    "cancelConfirm": "Bu teklif iptal edilecek ve tüm alıcılara tam iade yapılacak. Bu işlem geri alınamaz. Devam edilsin mi?",
+    "cancelling": "İptal ediliyor…",
+    "closing": "Durduruluyor…",
+    "status": {
+      "DRAFT": "Taslak",
+      "SCHEDULED": "Zamanlandı",
+      "PUBLISHED": "Yayında",
+      "SOLD_OUT": "Tükendi",
+      "CLOSED": "Kapatıldı",
+      "CANCELLED": "İptal edildi"
+    }
+  },
+  "pickup": {
+    "heading": "Teslim listesi",
+    "empty": "Bugün için henüz rezervasyon yok.",
+    "unknownCustomer": "Müşteri",
+    "qty_one": "{{count}} adet",
+    "qty_other": "{{count}} adet",
+    "redeemCta": "Teslim et",
+    "status": {
+      "PENDING_PAYMENT": "Ödeme bekleniyor",
+      "CONFIRMED": "Teslim bekleniyor",
+      "REDEEMED": "Teslim edildi",
+      "CANCELLED_BY_USER": "Müşteri iptal etti",
+      "CANCELLED_BY_MERCHANT": "İşletme iptal etti",
+      "NO_SHOW": "Gelinmedi",
+      "EXPIRED": "Süresi doldu"
+    },
+    "manualHeading": "Manuel teslim",
+    "manualBody": "Müşterinin telefonu çalışmıyorsa, rezervasyon kimliğini girerek teslim edildi olarak işaretleyebilirsiniz.",
+    "manualLabel": "Rezervasyon kimliği",
+    "manualSubmit": "Teslim edildi olarak işaretle",
+    "manualSubmitting": "İşaretleniyor…",
+    "manualSuccess": "Rezervasyon teslim edildi olarak işaretlendi."
+  },
+  "empty": {
+    "heading": "Bugün için paket eklemediniz",
+    "body": "Aşağıdaki butonla saniyeler içinde yayına alabilirsiniz."
+  }
+}

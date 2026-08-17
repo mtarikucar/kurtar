@@ -1,0 +1,102 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.title {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-h1);
+}
+
+.tabs {
+  display: flex;
+  gap: var(--space-sm);
+  border-bottom: 1px solid var(--color-neutral-200);
+}
+
+.tab {
+  min-height: 44px;
+  padding: 0 var(--space-lg);
+  border: none;
+  background: transparent;
+  font-size: var(--font-size-bodyStrong);
+  font-weight: var(--font-weight-bodyStrong);
+  color: var(--color-neutral-500);
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+}
+
+.tabActive {
+  color: var(--color-primary-600);
+  border-bottom-color: var(--color-primary-500);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.listItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  cursor: pointer;
+  text-align: left;
+  border: none;
+  background: none;
+  width: 100%;
+  padding: 0;
+}
+
+.listItemHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.listItemTitle {
+  font-size: var(--font-size-bodyStrong);
+  font-weight: var(--font-weight-bodyStrong);
+}
+
+.listItemMeta {
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-500);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.row {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.row > * {
+  flex: 1;
+  /* see shared/ui/Form.module.css's .field comment — belt-and-suspenders
+     here too, though .field's own min-width:0 already covers every
+     TextField/SelectField this row wraps. */
+  min-width: 0;
+}
+
+.checkboxGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+}
+
+.formActions {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.formActions > * {
+  flex: 1;
+}

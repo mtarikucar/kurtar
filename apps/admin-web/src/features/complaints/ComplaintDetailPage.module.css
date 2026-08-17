@@ -1,0 +1,149 @@
+.backLink {
+  display: inline-block;
+  margin-bottom: var(--space-lg);
+  font-size: var(--font-size-caption);
+  color: var(--color-primary-700);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  margin-bottom: var(--space-lg);
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-700);
+}
+
+.description {
+  background-color: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-2xl);
+}
+
+.resolveButton,
+.escalateButton,
+.refundButton {
+  padding: var(--space-sm) var(--space-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-neutral-300);
+  background-color: var(--color-neutral-0);
+  cursor: pointer;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bodyStrong);
+}
+
+.refundButton {
+  border-color: var(--color-danger-500);
+  color: var(--color-danger-700);
+}
+
+.refundButton:hover {
+  background-color: var(--color-danger-50);
+}
+
+.resolveButton {
+  border-color: var(--color-success-500);
+  color: var(--color-success-700);
+}
+
+.resolveButton:hover {
+  background-color: var(--color-success-50);
+}
+
+.escalateButton {
+  border-color: var(--color-warning-500);
+  color: var(--color-warning-700);
+}
+
+.escalateButton:hover {
+  background-color: var(--color-warning-50);
+}
+
+.threadSection {
+  background-color: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+}
+
+.threadTitle {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-h3);
+  margin-bottom: var(--space-lg);
+}
+
+.thread {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.message {
+  border-bottom: 1px solid var(--color-neutral-100);
+  padding-bottom: var(--space-lg);
+}
+
+.messageHeader {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-600);
+  margin-bottom: var(--space-xs);
+}
+
+.messageAuthor {
+  font-weight: var(--font-weight-bodyStrong);
+  color: var(--color-neutral-900);
+}
+
+.messageBody {
+  white-space: pre-wrap;
+}
+
+.messageForm {
+  border-top: 1px solid var(--color-neutral-100);
+  padding-top: var(--space-lg);
+}
+
+.messageLabel {
+  display: block;
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-label);
+  margin-bottom: var(--space-xs);
+  color: var(--color-neutral-700);
+}
+
+.messageInput {
+  width: 100%;
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-neutral-300);
+  font-family: inherit;
+  font-size: var(--font-size-caption);
+  resize: vertical;
+  margin-bottom: var(--space-md);
+}
+
+.sendButton {
+  padding: var(--space-sm) var(--space-xl);
+  border-radius: var(--radius-md);
+  border: none;
+  background-color: var(--color-primary-500);
+  color: var(--color-neutral-0);
+  font-weight: var(--font-weight-bodyStrong);
+  cursor: pointer;
+}
+
+.sendButton:hover:not(:disabled) {
+  background-color: var(--color-primary-600);
+}
+
+.sendButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

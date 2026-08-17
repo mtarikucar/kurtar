@@ -1,0 +1,43 @@
+{
+  "title": "Puanlar & Şikayetler",
+  "tabs": {
+    "ratings": "Puanlar",
+    "complaints": "Şikayetler"
+  },
+  "ratings": {
+    "storeLabel": "Mağaza",
+    "avg": "Ortalama puan",
+    "count_one": "{{count}} değerlendirme",
+    "count_other": "{{count}} değerlendirme",
+    "pending": "{{count}} değerlendirme onay bekliyor",
+    "distribution": "Dağılım",
+    "empty": "Bu mağaza için henüz değerlendirme yok.",
+    "noComment": "Yorum yok"
+  },
+  "complaints": {
+    "empty": "Size atanmış şikayet yok.",
+    "category": {
+      "FOOD_QUALITY": "Ürün kalitesi",
+      "MISSING_ITEMS": "Eksik ürün",
+      "WRONG_ITEMS": "Yanlış ürün",
+      "STORE_CLOSED_NO_SHOW": "Mağaza kapalıydı",
+      "RUDE_STAFF": "Personel davranışı",
+      "PAYMENT_BILLING": "Ödeme / fatura",
+      "SAFETY_HYGIENE": "Güvenlik / hijyen",
+      "OTHER": "Diğer"
+    },
+    "status": {
+      "OPEN": "Açık",
+      "MERCHANT_RESPONDED": "Yanıtlandı",
+      "RESOLVED": "Çözüldü",
+      "ESCALATED": "Yükseltildi"
+    },
+    "slaDeadline": "Son yanıt tarihi",
+    "thread": "Mesajlar",
+    "replyLabel": "Yanıtınız",
+    "replyPlaceholder": "Müşteriye yanıtınızı yazın…",
+    "replySubmit": "Gönder",
+    "replySubmitting": "Gönderiliyor…",
+    "replyEmpty": "Lütfen bir mesaj yazın."
+  }
+}

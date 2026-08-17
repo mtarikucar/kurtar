@@ -6,6 +6,7 @@ import {
   CreateIntentResult,
   ParsedWebhookEvent,
   PaymentProvider,
+  PayoutResult,
   QueryStatusResult,
   RefundResult,
 } from "./payment-provider.interface";
@@ -64,6 +65,14 @@ export class PaymentsFacadeService {
     amountCents: number,
   ): Promise<RefundResult> {
     return this.activeProvider().refund(merchantOid, amountCents);
+  }
+
+  async payout(
+    merchantRef: string,
+    amountCents: number,
+    ref: string,
+  ): Promise<PayoutResult> {
+    return this.activeProvider().payout(merchantRef, amountCents, ref);
   }
 
   async parseWebhook(

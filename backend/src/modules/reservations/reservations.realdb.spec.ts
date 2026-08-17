@@ -6,6 +6,7 @@ import * as reservationCodeUtil from "./reservation-code.util";
 import { PaymentProviderRegistry } from "../payments-core/payment-provider.registry";
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { MockPaymentProvider } from "../payments-core/adapters/mock-payment-provider";
+import { OutboxService } from "../outbox/outbox.service";
 
 /**
  * Real-DB concurrency proof for the reservations state machine — Task 4's
@@ -51,7 +52,13 @@ function buildReservationsHarness(prisma: PrismaClient) {
   mockProvider.onModuleInit();
   const facade = new PaymentsFacadeService(registry, config);
   const offerStock = new OfferStockService();
-  const service = new ReservationsService(prisma as any, offerStock, facade);
+  const outbox = new OutboxService();
+  const service = new ReservationsService(
+    prisma as any,
+    offerStock,
+    facade,
+    outbox,
+  );
   return { service, mockProvider };
 }
 
@@ -171,6 +178,32 @@ d("ReservationsService — real DB concurrency", () => {
 
   afterAll(async () => {
     if (!prisma) return;
+    // ReservationsService.redeem() (the redeem-idempotency/[Consumer redeem]
+    // tests below) publishes reservation.redeemed.v1 +
+    // reservation.redeemed.impact.v1 outbox rows, keyed off the reservation
+    // id — nothing in this suite drains them, so uncleaned they sit QUEUED
+    // and get swept into outbox-worker.realdb.spec.ts's platform-wide claim
+    // (see that file's own doc comment for why that breaks its exact-count
+    // assertions).
+    const reservationsForCleanup = await prisma.reservation.findMany({
+      where: { storeId },
+      select: { id: true },
+    });
+    await safeCleanup("outboxEvent (reservation-redeemed)", () =>
+      prisma.outboxEvent.deleteMany({
+        where: {
+          type: {
+            in: ["reservation.redeemed.v1", "reservation.redeemed.impact.v1"],
+          },
+          idempotencyKey: {
+            in: reservationsForCleanup.flatMap((r) => [
+              `reservation-redeemed:${r.id}`,
+              `reservation-redeemed-impact:${r.id}`,
+            ]),
+          },
+        },
+      }),
+    );
     await safeCleanup("refund", () =>
       prisma.refund.deleteMany({
         where: { payment: { reservation: { storeId } } },
@@ -327,13 +360,19 @@ d("ReservationsService — real DB concurrency", () => {
 
     const results = await Promise.allSettled([
       service.redeem(
-        "realdb-merchant-user-1",
-        merchantId,
+        {
+          actorType: "MERCHANT",
+          merchantUserId: "realdb-merchant-user-1",
+          merchantId,
+        },
         created.reservationId,
       ),
       service.redeem(
-        "realdb-merchant-user-1",
-        merchantId,
+        {
+          actorType: "MERCHANT",
+          merchantUserId: "realdb-merchant-user-1",
+          merchantId,
+        },
         created.reservationId,
       ),
     ]);
@@ -346,6 +385,78 @@ d("ReservationsService — real DB concurrency", () => {
       where: { id: created.reservationId },
     });
     expect(finalReservation.status).toBe("REDEEMED");
+
+    const finalOffer = await prisma.dailyOffer.findUniqueOrThrow({
+      where: { id: offer.id },
+    });
+    expect(finalOffer.qtyRedeemed).toBe(2); // reservation.qty, exactly once — not 4
+  }, 15_000);
+
+  // [Consumer redeem] The race this whole feature exists to make safe:
+  // the CONSUMER swipes on their own phone at (almost) the same moment
+  // MERCHANT staff taps "redeem" in the panel — a real double-tap
+  // scenario now that both paths exist. Exactly one REDEEMED transition,
+  // exactly one qtyRedeemed increment, and the row records WHICHEVER
+  // actor's guarded update actually won (real Postgres decides the
+  // winner, not a mock) — asserted by checking redeemedByActorType is one
+  // of the two valid values and matches whichever soft-reference column
+  // actually got set, never both.
+  it("[Consumer redeem] a CONSUMER swipe and a MERCHANT tap racing for the SAME reservation produce exactly one REDEEMED transition and one qtyRedeemed increment, attributed to whichever actor won", async () => {
+    const { service } = buildReservationsHarness(prisma);
+    const now = Date.now();
+    const bagTemplate = await createBagTemplate(prisma, storeId, 5000);
+    const offer = await seedOffer(
+      prisma,
+      bagTemplate.id,
+      storeId,
+      2,
+      new Date(now - 30 * 60 * 1000),
+      new Date(now + 30 * 60 * 1000),
+    );
+    const [user] = await seedUsers(prisma, 1);
+
+    const created = await service.create(user.id, offer.id, 2);
+    await prisma.reservation.update({
+      where: { id: created.reservationId },
+      data: { status: "CONFIRMED" },
+    });
+
+    const results = await Promise.allSettled([
+      service.redeem(
+        { actorType: "CONSUMER", userId: user.id },
+        created.reservationId,
+      ),
+      service.redeem(
+        {
+          actorType: "MERCHANT",
+          merchantUserId: "realdb-merchant-user-2",
+          merchantId,
+        },
+        created.reservationId,
+      ),
+    ]);
+
+    // Idempotent by design regardless of who wins — BOTH calls resolve
+    // successfully.
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+
+    const finalReservation = await prisma.reservation.findUniqueOrThrow({
+      where: { id: created.reservationId },
+    });
+    expect(finalReservation.status).toBe("REDEEMED");
+    // Attributed to exactly one actor — never both, never neither.
+    expect(["CONSUMER", "MERCHANT"]).toContain(
+      finalReservation.redeemedByActorType,
+    );
+    if (finalReservation.redeemedByActorType === "CONSUMER") {
+      expect(finalReservation.redeemedByUserId).toBe(user.id);
+      expect(finalReservation.redeemedByMerchantUserId).toBeNull();
+    } else {
+      expect(finalReservation.redeemedByMerchantUserId).toBe(
+        "realdb-merchant-user-2",
+      );
+      expect(finalReservation.redeemedByUserId).toBeNull();
+    }
 
     const finalOffer = await prisma.dailyOffer.findUniqueOrThrow({
       where: { id: offer.id },
@@ -566,3 +677,242 @@ d("ReservationsService — real DB concurrency", () => {
     }
   }, 15_000);
 });
+
+/**
+ * [Merchant pickup list] listForMerchant's WHOLE reason to exist is
+ * "a merchant may see only their own reservations" — the strongest proof
+ * that's actually true is two REAL merchants, two real stores, two real
+ * reservations, and asserting each merchant's call structurally never
+ * returns the other's row (not "filtered client-side and we didn't
+ * notice," an actual empty result from the query itself). Runs against
+ * its own pair of merchants/stores, independent of the shared fixture
+ * above.
+ */
+d(
+  "ReservationsService.listForMerchant — real DB cross-merchant isolation",
+  () => {
+    let prisma: PrismaClient;
+    let merchantA: Awaited<ReturnType<typeof seedMerchantStoreTemplate>>;
+    let merchantB: Awaited<ReturnType<typeof seedMerchantStoreTemplate>>;
+
+    beforeAll(async () => {
+      prisma = new PrismaClient({
+        datasources: { db: { url: TEST_DATABASE_URL! } },
+      });
+      merchantA = await seedMerchantStoreTemplate(prisma, 5000);
+      merchantB = await seedMerchantStoreTemplate(prisma, 5000);
+    });
+
+    afterAll(async () => {
+      if (!prisma) return;
+      const storeIds = [merchantA.store.id, merchantB.store.id];
+      await safeCleanup("reservation", () =>
+        prisma.reservation.deleteMany({ where: { storeId: { in: storeIds } } }),
+      );
+      await safeCleanup("dailyOffer", () =>
+        prisma.dailyOffer.deleteMany({ where: { storeId: { in: storeIds } } }),
+      );
+      await safeCleanup("user", () =>
+        prisma.user.deleteMany({
+          where: { phoneE164: { startsWith: PHONE_PREFIX } },
+        }),
+      );
+      await safeCleanup("bagTemplate", () =>
+        prisma.bagTemplate.deleteMany({ where: { storeId: { in: storeIds } } }),
+      );
+      await safeCleanup("store", () =>
+        prisma.store.deleteMany({ where: { id: { in: storeIds } } }),
+      );
+      await safeCleanup("merchant", () =>
+        prisma.merchant.deleteMany({
+          where: { id: { in: [merchantA.merchant.id, merchantB.merchant.id] } },
+        }),
+      );
+      await prisma.$disconnect();
+    });
+
+    it("[Security] a second merchant's reservations are structurally invisible — scoped in the query, not a post-filter", async () => {
+      const { service } = buildReservationsHarness(prisma);
+      const pickupStartAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+      const pickupEndAt = new Date(Date.now() + 4 * 60 * 60 * 1000);
+      const dateKey = pickupStartAt.toISOString().slice(0, 10);
+
+      const offerA = await seedOffer(
+        prisma,
+        merchantA.bagTemplate.id,
+        merchantA.store.id,
+        5,
+        pickupStartAt,
+        pickupEndAt,
+      );
+      const offerB = await seedOffer(
+        prisma,
+        merchantB.bagTemplate.id,
+        merchantB.store.id,
+        5,
+        pickupStartAt,
+        pickupEndAt,
+      );
+      const [userA] = await seedUsers(prisma, 1);
+      const [userB] = await seedUsers(prisma, 1);
+      // Exercises firstNameOnly() at the same time: userA gets a
+      // multi-word name (only the first token should come back), userB
+      // stays nameless (the common OTP-signup case) to prove that path
+      // returns null rather than throwing.
+      await prisma.user.update({
+        where: { id: userA.id },
+        data: { name: "Ayşe Yılmaz" },
+      });
+
+      const reservationA = await prisma.reservation.create({
+        data: {
+          code: `ISOA${Date.now()}`.slice(0, 12),
+          userId: userA.id,
+          offerId: offerA.id,
+          storeId: merchantA.store.id,
+          qty: 1,
+          unitPriceCents: 5000,
+          totalCents: 5000,
+          status: "CONFIRMED",
+          cancelDeadlineAt: new Date(
+            pickupStartAt.getTime() - 2 * 60 * 60 * 1000,
+          ),
+        },
+      });
+      const reservationB = await prisma.reservation.create({
+        data: {
+          code: `ISOB${Date.now()}`.slice(0, 12),
+          userId: userB.id,
+          offerId: offerB.id,
+          storeId: merchantB.store.id,
+          qty: 2,
+          unitPriceCents: 5000,
+          totalCents: 10000,
+          status: "CONFIRMED",
+          cancelDeadlineAt: new Date(
+            pickupStartAt.getTime() - 2 * 60 * 60 * 1000,
+          ),
+        },
+      });
+
+      const resultA = await service.listForMerchant(merchantA.merchant.id, {
+        date: dateKey,
+        page: 1,
+        pageSize: 20,
+      });
+      const resultB = await service.listForMerchant(merchantB.merchant.id, {
+        date: dateKey,
+        page: 1,
+        pageSize: 20,
+      });
+
+      expect(resultA.items.map((i) => i.id)).toEqual([reservationA.id]);
+      expect(resultA.items.map((i) => i.id)).not.toContain(reservationB.id);
+      expect(resultA.total).toBe(1);
+      expect(resultA.items[0].customerFirstName).toBe("Ayşe");
+      expect(resultA.items[0].storeId).toBe(merchantA.store.id);
+
+      expect(resultB.items.map((i) => i.id)).toEqual([reservationB.id]);
+      expect(resultB.items.map((i) => i.id)).not.toContain(reservationA.id);
+      expect(resultB.total).toBe(1);
+      expect(resultB.items[0].customerFirstName).toBeNull();
+      expect(resultB.items[0].storeId).toBe(merchantB.store.id);
+    });
+
+    it("filters by storeId, offerId, and status together", async () => {
+      const { service } = buildReservationsHarness(prisma);
+      const pickupStartAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+      const pickupEndAt = new Date(Date.now() + 4 * 60 * 60 * 1000);
+      const dateKey = pickupStartAt.toISOString().slice(0, 10);
+
+      // Two FRESH bag templates, not merchantA.bagTemplate.id — DailyOffer
+      // has a real @@unique([bagTemplateId, offerDate]) constraint, and the
+      // isolation test above already used merchantA.bagTemplate.id for an
+      // offer on this same calendar day. Mirrors this file's existing
+      // convention (see createBagTemplate's own call sites elsewhere in
+      // this file): each test seeds its own template(s) so same-day offers
+      // can never collide across tests.
+      const bagTemplate = await createBagTemplate(
+        prisma,
+        merchantA.store.id,
+        5000,
+      );
+      const otherBagTemplate = await createBagTemplate(
+        prisma,
+        merchantA.store.id,
+        5000,
+      );
+      const offer = await seedOffer(
+        prisma,
+        bagTemplate.id,
+        merchantA.store.id,
+        5,
+        pickupStartAt,
+        pickupEndAt,
+      );
+      const otherOffer = await seedOffer(
+        prisma,
+        otherBagTemplate.id,
+        merchantA.store.id,
+        5,
+        pickupStartAt,
+        pickupEndAt,
+      );
+      const [confirmedUser, redeemedUser] = await seedUsers(prisma, 2);
+
+      const confirmed = await prisma.reservation.create({
+        data: {
+          code: `ISOC${Date.now()}`.slice(0, 12),
+          userId: confirmedUser.id,
+          offerId: offer.id,
+          storeId: merchantA.store.id,
+          qty: 1,
+          unitPriceCents: 5000,
+          totalCents: 5000,
+          status: "CONFIRMED",
+          cancelDeadlineAt: new Date(
+            pickupStartAt.getTime() - 2 * 60 * 60 * 1000,
+          ),
+        },
+      });
+      await prisma.reservation.create({
+        data: {
+          code: `ISOR${Date.now()}`.slice(0, 12),
+          userId: redeemedUser.id,
+          offerId: otherOffer.id,
+          storeId: merchantA.store.id,
+          qty: 1,
+          unitPriceCents: 5000,
+          totalCents: 5000,
+          status: "REDEEMED",
+          redeemedAt: new Date(),
+          cancelDeadlineAt: new Date(
+            pickupStartAt.getTime() - 2 * 60 * 60 * 1000,
+          ),
+        },
+      });
+
+      const result = await service.listForMerchant(merchantA.merchant.id, {
+        date: dateKey,
+        offerId: offer.id,
+        status: ["CONFIRMED"],
+        page: 1,
+        pageSize: 20,
+      });
+
+      expect(result.items.map((i) => i.id)).toEqual([confirmed.id]);
+      expect(result.total).toBe(1);
+
+      await safeCleanup("reservation (filter test)", () =>
+        prisma.reservation.deleteMany({
+          where: { offerId: { in: [offer.id, otherOffer.id] } },
+        }),
+      );
+      await safeCleanup("dailyOffer (filter test)", () =>
+        prisma.dailyOffer.deleteMany({
+          where: { id: { in: [offer.id, otherOffer.id] } },
+        }),
+      );
+    });
+  },
+);

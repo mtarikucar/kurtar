@@ -44,6 +44,21 @@ export interface RefundResult {
 }
 
 /**
+ * [Task 8] A merchant payout (settlement batch payment) call. `ref` is the
+ * caller's idempotency key — settlements.service.ts always passes the
+ * SettlementBatch id, so calling payout() twice for the same batch (e.g. a
+ * second cron tick after the first's response was lost, or two concurrent
+ * ticks both reaching this call before either's DB write commits) MUST
+ * return the SAME pspTransferRef rather than moving money twice. Every
+ * adapter implementing this interface is responsible for that guarantee —
+ * see MockPaymentProvider.payout()'s in-memory ledger for the reference
+ * implementation.
+ */
+export interface PayoutResult {
+  pspTransferRef: string;
+}
+
+/**
  * The result of verifying + parsing an inbound webhook delivery. Producing
  * one of these IS the verification step — a provider whose signature check
  * fails must throw rather than return, so a forged callback never reaches
@@ -66,6 +81,20 @@ export interface PaymentProvider {
   queryStatus(merchantOid: string): Promise<QueryStatusResult>;
 
   refund(merchantOid: string, amountCents: number): Promise<RefundResult>;
+
+  /**
+   * [Task 8] Pay a merchant out for a settlement batch. `merchantRef` is
+   * the destination account reference (the merchant's IBAN, or a PSP sub-
+   * merchant key once onboarding assigns one — provider-specific which it
+   * actually uses); `ref` is the idempotency key (see PayoutResult's doc
+   * comment). Idempotent: same `ref` -> the same PayoutResult, never a
+   * second transfer.
+   */
+  payout(
+    merchantRef: string,
+    amountCents: number,
+    ref: string,
+  ): Promise<PayoutResult>;
 
   /**
    * Verify the inbound webhook's authenticity (signature / shared secret /

@@ -9,6 +9,7 @@ import { PaymentSettleService } from "./payment-settle.service";
 import { PaymentsSweeperService } from "./payments-sweeper.service";
 import { PaymentsWebhookController } from "./payments-webhook.controller";
 import { ParsedWebhookEvent } from "../payments-core/payment-provider.interface";
+import { OutboxService } from "../outbox/outbox.service";
 
 /**
  * Real-DB concurrency proof for the webhook settle path — the other three
@@ -46,12 +47,19 @@ function buildHarness(prisma: PrismaClient) {
   mockProvider.onModuleInit();
   const facade = new PaymentsFacadeService(registry, config);
   const offerStock = new OfferStockService();
+  const outbox = new OutboxService();
   const reservations = new ReservationsService(
     prisma as any,
     offerStock,
     facade,
+    outbox,
   );
-  const settle = new PaymentSettleService(prisma as any, offerStock, facade);
+  const settle = new PaymentSettleService(
+    prisma as any,
+    offerStock,
+    facade,
+    outbox,
+  );
   const sweeper = new PaymentsSweeperService(prisma as any, facade, settle);
   const webhookController = new PaymentsWebhookController(facade, settle);
   return { reservations, settle, sweeper, webhookController, mockProvider };
@@ -179,6 +187,28 @@ d("PaymentSettleService — real DB concurrency", () => {
     await safeCleanup("webhookEventLog", () =>
       prisma.webhookEventLog.deleteMany({
         where: { externalEventId: { in: externalEventIds } },
+      }),
+    );
+    // PaymentSettleService's successful-settle path publishes a
+    // reservation.confirmed.v1 outbox row keyed off the reservation id —
+    // nothing in this suite drains it, so uncleaned it sits QUEUED and gets
+    // swept into outbox-worker.realdb.spec.ts's platform-wide claim (see
+    // that file's own doc comment for why that breaks its exact-count
+    // assertions).
+    const reservationsForCleanup = await prisma.reservation.findMany({
+      where: { storeId },
+      select: { id: true },
+    });
+    await safeCleanup("outboxEvent (reservation-confirmed)", () =>
+      prisma.outboxEvent.deleteMany({
+        where: {
+          type: "reservation.confirmed.v1",
+          idempotencyKey: {
+            in: reservationsForCleanup.map(
+              (r) => `reservation-confirmed:${r.id}`,
+            ),
+          },
+        },
       }),
     );
     await safeCleanup("refund", () =>

@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { ReservationsService } from "./reservations.service";
+import { OutboxService } from "../outbox/outbox.service";
 
 function buildFakeTx(overrides: Record<string, any> = {}) {
   return {
@@ -29,6 +30,10 @@ function buildFakeTx(overrides: Record<string, any> = {}) {
       create: jest.fn(),
       ...overrides.refund,
     },
+    outboxEvent: {
+      create: jest.fn().mockResolvedValue({}),
+      ...overrides.outboxEvent,
+    },
     $executeRaw: jest.fn(),
   };
 }
@@ -44,6 +49,7 @@ function buildDeps() {
     reservation: {
       findUnique: jest.fn(),
       count: jest.fn(),
+      findMany: jest.fn().mockResolvedValue([]),
       $queryRaw: jest.fn(),
     },
     refund: { create: jest.fn() },
@@ -55,7 +61,12 @@ function buildDeps() {
     createIntent: jest.fn(),
     refund: jest.fn(),
   };
-  return { tx, prisma, offerStock, facade };
+  // Real OutboxService (no constructor deps) — its own dedicated spec
+  // covers its behavior; here it just needs tx.outboxEvent.create to
+  // exist on the fake tx (above), which every redeem()-exercising test
+  // gets via buildFakeTx().
+  const outbox = new OutboxService();
+  return { tx, prisma, offerStock, facade, outbox };
 }
 
 /**
@@ -81,12 +92,13 @@ function uniqueCodeViolation() {
 
 describe("ReservationsService.create", () => {
   it("throws OFFER_NOT_FOUND when the offer does not exist", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue(null);
     const service = new ReservationsService(
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     await expect(service.create("user1", "offer1", 1)).rejects.toMatchObject({
@@ -96,7 +108,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("throws the uniform OFFER_UNAVAILABLE error when the atomic claim fails", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -108,6 +120,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const err = await service.create("user1", "offer1", 2).catch((e) => e);
@@ -116,7 +129,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("computes price/total/cancelDeadline server-side and never from client input", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -134,6 +147,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     const result = await service.create("user1", "offer1", 3);
 
@@ -149,7 +163,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("[I3] retries the WHOLE transaction (fresh stock claim included) on a reservation-code collision, not just the failed INSERT", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -166,6 +180,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     const result = await service.create("user1", "offer1", 1);
 
@@ -181,7 +196,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("[I3] gives up after MAX_CODE_ATTEMPTS consecutive collisions and propagates the error", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -195,13 +210,14 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.create("user1", "offer1", 1)).rejects.toThrow();
     expect(prisma.$transaction).toHaveBeenCalledTimes(5); // MAX_CODE_ATTEMPTS
   });
 
   it("compensates (Payment FAILED, Reservation EXPIRED, stock released) when createIntent fails, and returns 503", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -219,6 +235,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.create("user1", "offer1", 1)).rejects.toBeInstanceOf(
       ServiceUnavailableException,
@@ -239,7 +256,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("skips compensation writes when a concurrent path already moved the Payment out of INTENT", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -255,6 +272,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.create("user1", "offer1", 1)).rejects.toBeInstanceOf(
       ServiceUnavailableException,
@@ -265,7 +283,7 @@ describe("ReservationsService.create", () => {
   });
 
   it("[C1] does NOT double-release stock in compensation when the Reservation already left PENDING_PAYMENT (e.g. the user cancelled it first)", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     tx.dailyOffer.findUnique.mockResolvedValue({
       id: "offer1",
       storeId: "store1",
@@ -282,6 +300,7 @@ describe("ReservationsService.create", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.create("user1", "offer1", 1)).rejects.toBeInstanceOf(
       ServiceUnavailableException,
@@ -306,12 +325,13 @@ describe("ReservationsService.cancel", () => {
   }
 
   it("throws RESERVATION_NOT_FOUND for a nonexistent reservation", async () => {
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(null);
     const service = new ReservationsService(
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.cancel("user1", "nope")).rejects.toBeInstanceOf(
       NotFoundException,
@@ -319,7 +339,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("throws FORBIDDEN when the reservation belongs to a different user", async () => {
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ userId: "someone-else" }),
     );
@@ -327,6 +347,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(service.cancel("user1", "resv1")).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -334,7 +355,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("throws the uniform RESERVATION_NOT_CANCELLABLE error past the deadline (neither candidate status matches)", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ cancelDeadlineAt: new Date(Date.now() - 1000) }),
     );
@@ -343,6 +364,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const err = await service.cancel("user1", "resv1").catch((e) => e);
@@ -352,7 +374,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("[C1] terminates a still-live Payment intent in the SAME transaction as the cancel", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -363,6 +385,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await service.cancel("user1", "resv1");
 
@@ -373,7 +396,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("PENDING_PAYMENT cancel releases stock and does NOT call refund", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -383,6 +406,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const result = await service.cancel("user1", "resv1");
@@ -392,7 +416,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("CONFIRMED cancel calls facade.refund with the full amount and records a Refund row", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ status: "CONFIRMED" }),
     );
@@ -404,6 +428,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await service.cancel("user1", "resv1");
 
@@ -420,7 +445,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("[I2] derives the refund decision from the IN-TRANSACTION match, not the stale pre-transaction read — a webhook confirming concurrently must still trigger a refund", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     // The pre-transaction read (used only for not-found/not-owner checks)
     // is stale: it still shows PENDING_PAYMENT.
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
@@ -437,6 +462,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await service.cancel("user1", "resv1");
 
@@ -444,7 +470,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("a provider-side refund failure records a FAILED Refund row (no money moved, safe to retry)", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ status: "CONFIRMED" }),
     );
@@ -457,6 +483,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     const result = await service.cancel("user1", "resv1");
 
@@ -471,7 +498,7 @@ describe("ReservationsService.cancel", () => {
   });
 
   it("[I1] a bookkeeping failure AFTER a successful provider refund is recorded as SENT with the real refundRef, never FAILED (prevents a double-refund on manual retry)", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ status: "CONFIRMED" }),
     );
@@ -495,6 +522,7 @@ describe("ReservationsService.cancel", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     const result = await service.cancel("user1", "resv1");
 
@@ -515,25 +543,186 @@ describe("ReservationsService.cancel", () => {
   });
 });
 
+// [I3 fix] The refund path cancel()/refundMany() never reach — REDEEMED is
+// terminal, so this is the only production way to refund an
+// already-picked-up reservation. Unlike cancel(), there's no reservation
+// status transition to piggyback the single-fire guard on, so this claims
+// the Payment itself (PAID -> REFUND_PENDING) before ever calling the
+// provider.
+describe("ReservationsService.refundRedeemed", () => {
+  function redeemedReservation(overrides: Record<string, any> = {}) {
+    return {
+      id: "resv1",
+      status: "REDEEMED",
+      payment: {
+        id: "pay1",
+        merchantOid: "KRVxxx",
+        amountCents: 5000,
+        status: "PAID",
+      },
+      ...overrides,
+    };
+  }
+
+  it("throws RESERVATION_NOT_FOUND when the reservation doesn't exist", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(null);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+    await expect(service.refundRedeemed("resv1")).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+
+  it("throws RESERVATION_NOT_REFUNDABLE (409) when the reservation is not REDEEMED, without ever touching Payment", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      redeemedReservation({ status: "CONFIRMED" }),
+    );
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+    const err = await service.refundRedeemed("resv1").catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.response.errorCode).toBe("RESERVATION_NOT_REFUNDABLE");
+    expect(prisma.payment.updateMany).not.toHaveBeenCalled();
+    expect(facade.refund).not.toHaveBeenCalled();
+  });
+
+  it("claims the payment (PAID -> REFUND_PENDING), refunds at the provider, and records DONE against REFUND_PENDING", async () => {
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      redeemedReservation(),
+    );
+    facade.refund.mockResolvedValue({ refundRef: "mock-refund-redeemed-1" });
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.refundRedeemed("resv1");
+
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: "pay1", status: "PAID" },
+      data: { status: "REFUND_PENDING" },
+    });
+    expect(facade.refund).toHaveBeenCalledWith("KRVxxx", 5000);
+    // The DONE-path refund row is created INSIDE refundForCancellation's
+    // own $transaction (tx.refund.create) — buildDeps' $transaction mock
+    // invokes the callback with `tx`, so this is where it lands, not
+    // prisma.refund.create directly.
+    expect(tx.refund.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        paymentId: "pay1",
+        reason: "COMPLAINT",
+        requestedByType: "ADMIN",
+        status: "DONE",
+        pspRefundId: "mock-refund-redeemed-1",
+      }),
+    });
+    expect(tx.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: "pay1", status: "REFUND_PENDING" },
+      data: { status: "REFUNDED" },
+    });
+    expect(result).toEqual({
+      reservationId: "resv1",
+      ok: true,
+      refundRef: "mock-refund-redeemed-1",
+    });
+  });
+
+  it("throws RESERVATION_NOT_REFUNDABLE when the claim itself fails (payment already refunded / a concurrent refund won) — the provider is never called", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      redeemedReservation(),
+    );
+    prisma.payment.updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const err = await service.refundRedeemed("resv1").catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.response.errorCode).toBe("RESERVATION_NOT_REFUNDABLE");
+    expect(facade.refund).not.toHaveBeenCalled();
+  });
+
+  it("releases the claim (REFUND_PENDING back to PAID) when the provider call itself fails — no money moved, retry stays possible", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      redeemedReservation(),
+    );
+    facade.refund.mockRejectedValue(new Error("provider down"));
+    prisma.refund.create = jest.fn().mockResolvedValue({});
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.refundRedeemed("resv1");
+
+    expect(result).toEqual({
+      reservationId: "resv1",
+      ok: false,
+      error: "provider down",
+    });
+    expect(prisma.refund.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ status: "FAILED" }),
+    });
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: "pay1", status: "REFUND_PENDING" },
+      data: { status: "PAID" },
+    });
+  });
+});
+
 describe("ReservationsService.redeem", () => {
+  const MERCHANT_REDEEMER = {
+    actorType: "MERCHANT" as const,
+    merchantUserId: "mu1",
+    merchantId: "merchant1",
+  };
+  const CONSUMER_REDEEMER = { actorType: "CONSUMER" as const, userId: "u1" };
+
   function baseReservation(overrides: Record<string, any> = {}) {
     return {
       id: "resv1",
       offerId: "offer1",
+      userId: "u1",
+      storeId: "store1",
       qty: 1,
+      totalCents: 5000,
       status: "CONFIRMED",
       redeemedAt: null,
       store: { merchantId: "merchant1" },
       offer: {
         pickupStartAt: new Date(Date.now() - 60_000),
         pickupEndAt: new Date(Date.now() + 60_000),
+        bagTemplate: {
+          originalValueCentsMin: 10000,
+          originalValueCentsMax: 20000,
+        },
       },
       ...overrides,
     };
   }
 
   it("throws FORBIDDEN when the reservation's store belongs to a different merchant", async () => {
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -541,14 +730,41 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     await expect(
-      service.redeem("mu1", "other-merchant", "resv1"),
+      service.redeem(
+        {
+          actorType: "MERCHANT",
+          merchantUserId: "mu1",
+          merchantId: "other-merchant",
+        },
+        "resv1",
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  // [Consumer redeem] The owner-only mirror of the FORBIDDEN test above —
+  // a consumer can never redeem someone ELSE's reservation, only their
+  // own.
+  it("throws FORBIDDEN when a CONSUMER tries to redeem a reservation that isn't theirs", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation({ userId: "the-real-owner" }),
+    );
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+    await expect(
+      service.redeem(CONSUMER_REDEEMER, "resv1"),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it("throws RESERVATION_NOT_REDEEMABLE outside the pickup window", async () => {
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({
         offer: {
@@ -561,16 +777,42 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
     const err = await service
-      .redeem("mu1", "merchant1", "resv1")
+      .redeem(MERCHANT_REDEEMER, "resv1")
       .catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
     expect(err.response.errorCode).toBe("RESERVATION_NOT_REDEEMABLE");
   });
 
-  it("first redeem transitions to REDEEMED and increments qtyRedeemed", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+  // [Consumer redeem] The SAME strict window check applies to the
+  // consumer path — no relaxation for the owner-initiated swipe.
+  it("throws RESERVATION_NOT_REDEEMABLE outside the pickup window for a CONSUMER too", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation({
+        offer: {
+          pickupStartAt: new Date(Date.now() + 60_000),
+          pickupEndAt: new Date(Date.now() + 120_000),
+        },
+      }),
+    );
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+    const err = await service
+      .redeem(CONSUMER_REDEEMER, "resv1")
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.response.errorCode).toBe("RESERVATION_NOT_REDEEMABLE");
+  });
+
+  it("first redeem by a MERCHANT transitions to REDEEMED, records redeemedByActorType/MerchantUserId, and increments qtyRedeemed", async () => {
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -579,24 +821,87 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
-    const result = await service.redeem("mu1", "merchant1", "resv1");
+    const result = await service.redeem(MERCHANT_REDEEMER, "resv1");
     expect(result.status).toBe("REDEEMED");
     // [I4] Derived from allowedFromStatusesFor("REDEEMED") = ["CONFIRMED"].
     expect(tx.reservation.updateMany).toHaveBeenCalledWith({
       where: { id: "resv1", status: { in: ["CONFIRMED"] } },
-      data: expect.objectContaining({ status: "REDEEMED" }),
+      data: {
+        status: "REDEEMED",
+        redeemedAt: expect.any(Date),
+        redeemedByActorType: "MERCHANT",
+        redeemedByUserId: null,
+        redeemedByMerchantUserId: "mu1",
+      },
     });
     expect(tx.dailyOffer.update).toHaveBeenCalledWith({
       where: { id: "offer1" },
       data: { qtyRedeemed: { increment: 1 } },
     });
+    // [Task 9] Both the rating-invite AND the impact-ledger outbox rows
+    // are written on the winning branch — two independent events, per
+    // event-types.ts's doc comment.
+    expect(tx.outboxEvent.create).toHaveBeenCalledTimes(2);
+    const impactCall = (tx.outboxEvent.create as jest.Mock).mock.calls.find(
+      ([args]: any[]) => args.data.type === "reservation.redeemed.impact.v1",
+    );
+    expect(impactCall[0].data).toMatchObject({
+      idempotencyKey: "reservation-redeemed-impact:resv1",
+      payload: {
+        reservationId: "resv1",
+        userId: "u1",
+        storeId: "store1",
+        qty: 1,
+        totalCents: 5000,
+        originalValueCentsMin: 10000,
+        originalValueCentsMax: 20000,
+      },
+    });
+  });
+
+  // [Consumer redeem] The mirror of the MERCHANT test above — same
+  // transition, same outbox events (the rating-invite/impact-ledger
+  // payloads never reference WHO redeemed, only WHAT/WHOM the reservation
+  // is for), but records redeemedByActorType=CONSUMER/redeemedByUserId
+  // instead, with redeemedByMerchantUserId left null.
+  it("first redeem by the owning CONSUMER transitions to REDEEMED, records redeemedByActorType/UserId, and increments qtyRedeemed", async () => {
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation(),
+    );
+    tx.reservation.updateMany.mockResolvedValue({ count: 1 });
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.redeem(CONSUMER_REDEEMER, "resv1");
+    expect(result.status).toBe("REDEEMED");
+    expect(tx.reservation.updateMany).toHaveBeenCalledWith({
+      where: { id: "resv1", status: { in: ["CONFIRMED"] } },
+      data: {
+        status: "REDEEMED",
+        redeemedAt: expect.any(Date),
+        redeemedByActorType: "CONSUMER",
+        redeemedByUserId: "u1",
+        redeemedByMerchantUserId: null,
+      },
+    });
+    expect(tx.dailyOffer.update).toHaveBeenCalledWith({
+      where: { id: "offer1" },
+      data: { qtyRedeemed: { increment: 1 } },
+    });
+    expect(tx.outboxEvent.create).toHaveBeenCalledTimes(2);
   });
 
   it("a second call after already REDEEMED short-circuits — same success, no DB writes", async () => {
     const redeemedAt = new Date();
-    const { prisma, offerStock, facade } = buildDeps();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({ status: "REDEEMED", redeemedAt }),
     );
@@ -604,9 +909,35 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
-    const result = await service.redeem("mu1", "merchant1", "resv1");
+    const result = await service.redeem(MERCHANT_REDEEMER, "resv1");
+    expect(result).toEqual({
+      reservationId: "resv1",
+      status: "REDEEMED",
+      redeemedAt,
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  // [Consumer redeem] Idempotent replay must hold for the consumer path
+  // too — e.g. the offline-queue reconciliation retrying a swipe that
+  // already landed.
+  it("a second call by the CONSUMER after already REDEEMED (by either actor) short-circuits the same way", async () => {
+    const redeemedAt = new Date();
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation({ status: "REDEEMED", redeemedAt }),
+    );
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.redeem(CONSUMER_REDEEMER, "resv1");
     expect(result).toEqual({
       reservationId: "resv1",
       status: "REDEEMED",
@@ -617,7 +948,7 @@ describe("ReservationsService.redeem", () => {
 
   it("losing the in-transaction race to a concurrent redeem is treated as idempotent success, not an error", async () => {
     const winnerRedeemedAt = new Date();
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -630,9 +961,41 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
-    const result = await service.redeem("mu1", "merchant1", "resv1");
+    const result = await service.redeem(MERCHANT_REDEEMER, "resv1");
+    expect(result).toEqual({
+      reservationId: "resv1",
+      status: "REDEEMED",
+      redeemedAt: winnerRedeemedAt,
+    });
+    expect(tx.dailyOffer.update).not.toHaveBeenCalled();
+  });
+
+  // [Consumer redeem] The exact race this whole feature exists to make
+  // safe: the consumer swipes AND the merchant taps at (almost) the same
+  // moment. Whichever the DB's guarded updateMany lets through wins;
+  // the other must land here, not double-increment qtyRedeemed.
+  it("a CONSUMER losing the in-transaction race to a MERCHANT's concurrent redeem is treated as idempotent success", async () => {
+    const winnerRedeemedAt = new Date();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation(),
+    );
+    tx.reservation.updateMany.mockResolvedValue({ count: 0 });
+    tx.reservation.findUniqueOrThrow.mockResolvedValue({
+      status: "REDEEMED",
+      redeemedAt: winnerRedeemedAt,
+    });
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.redeem(CONSUMER_REDEEMER, "resv1");
     expect(result).toEqual({
       reservationId: "resv1",
       status: "REDEEMED",
@@ -642,7 +1005,7 @@ describe("ReservationsService.redeem", () => {
   });
 
   it("losing the race to a genuine conflict (e.g. cancelled concurrently) throws the uniform 409", async () => {
-    const { tx, prisma, offerStock, facade } = buildDeps();
+    const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
     );
@@ -655,10 +1018,11 @@ describe("ReservationsService.redeem", () => {
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const err = await service
-      .redeem("mu1", "merchant1", "resv1")
+      .redeem(MERCHANT_REDEEMER, "resv1")
       .catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
     expect(err.response.errorCode).toBe("RESERVATION_NOT_REDEEMABLE");
@@ -666,14 +1030,15 @@ describe("ReservationsService.redeem", () => {
 });
 
 describe("ReservationsService.listMine", () => {
-  it("passes page/limit through to the LIMIT/OFFSET raw query and returns total from count()", async () => {
-    const { prisma, offerStock, facade } = buildDeps();
+  it("passes page/pageSize through to the LIMIT/OFFSET raw query and returns total from count()", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ id: "r1" }]);
     (prisma.reservation.count as jest.Mock).mockResolvedValue(1);
     const service = new ReservationsService(
       prisma as any,
       offerStock as any,
       facade as any,
+      outbox as any,
     );
 
     const result = await service.listMine("user1", 2, 10);
@@ -681,7 +1046,181 @@ describe("ReservationsService.listMine", () => {
       items: [{ id: "r1" }],
       total: 1,
       page: 2,
-      limit: 10,
+      pageSize: 10,
     });
+  });
+
+  // [Consistency fix] Regression coverage for the field-name rename
+  // itself — `listMine` used to return `limit`, the one paginated list in
+  // this API that didn't match every other list's `{items,total,page,
+  // pageSize}` envelope.
+  it("names its 4th field pageSize, not limit — matches every other paginated list in this API", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(0);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.listMine("user1", 1, 20);
+    expect(result).toHaveProperty("pageSize", 20);
+    expect(result).not.toHaveProperty("limit");
+  });
+});
+
+describe("ReservationsService.listForMerchant — the merchant pickup list", () => {
+  function buildRow(overrides: Record<string, any> = {}) {
+    return {
+      id: "resv1",
+      storeId: "store1",
+      offerId: "offer1",
+      code: "K-ABCD",
+      qty: 1,
+      status: "CONFIRMED",
+      redeemedAt: null,
+      offer: {
+        pickupStartAt: new Date("2026-08-15T10:00:00.000Z"),
+        pickupEndAt: new Date("2026-08-15T12:00:00.000Z"),
+      },
+      user: { name: "Ayşe Yılmaz" },
+      ...overrides,
+    };
+  }
+
+  // [Security] The structural half of the isolation proof — the
+  // behavioral half (a second merchant's row is genuinely absent from a
+  // real query result) is reservations.realdb.spec.ts's real-DB test;
+  // this one proves the WHERE clause this service hands to Prisma is the
+  // thing doing the scoping, not some filter applied afterward.
+  it("scopes the query itself to the caller's own merchantId via a store relation filter — never a post-filter", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findMany as jest.Mock).mockResolvedValue([buildRow()]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(1);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    await service.listForMerchant("merchant-caller", {
+      date: "2026-08-15",
+      page: 1,
+      pageSize: 20,
+    });
+
+    const findManyArgs = (prisma.reservation.findMany as jest.Mock).mock
+      .calls[0][0];
+    expect(findManyArgs.where.store).toEqual({ merchantId: "merchant-caller" });
+    const countArgs = (prisma.reservation.count as jest.Mock).mock.calls[0][0];
+    expect(countArgs.where.store).toEqual({ merchantId: "merchant-caller" });
+  });
+
+  it("defaults `date` to today's Istanbul calendar day when omitted", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(0);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    await service.listForMerchant("m1", { page: 1, pageSize: 20 });
+
+    const findManyArgs = (prisma.reservation.findMany as jest.Mock).mock
+      .calls[0][0];
+    expect(findManyArgs.where.offer.offerDate).toBeInstanceOf(Date);
+  });
+
+  it("folds storeId/offerId/status filters into the WHERE clause when given", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findMany as jest.Mock).mockResolvedValue([]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(0);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    await service.listForMerchant("m1", {
+      storeId: "store1",
+      offerId: "offer1",
+      status: ["CONFIRMED", "REDEEMED"],
+      date: "2026-08-15",
+      page: 1,
+      pageSize: 20,
+    });
+
+    const findManyArgs = (prisma.reservation.findMany as jest.Mock).mock
+      .calls[0][0];
+    expect(findManyArgs.where.storeId).toBe("store1");
+    expect(findManyArgs.where.offerId).toBe("offer1");
+    expect(findManyArgs.where.status).toEqual({
+      in: ["CONFIRMED", "REDEEMED"],
+    });
+  });
+
+  // [PII minimization] The deliberate customer-identity narrowing — see
+  // firstNameOnly()'s own doc comment in reservations.service.ts.
+  it("projects the customer down to a first name only — no userId/phone/email/surname in the mapped item", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findMany as jest.Mock).mockResolvedValue([
+      buildRow({ user: { name: "Mehmet Can Öztürk" } }),
+    ]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(1);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.listForMerchant("m1", {
+      date: "2026-08-15",
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(result.items[0]).toEqual({
+      id: "resv1",
+      storeId: "store1",
+      offerId: "offer1",
+      code: "K-ABCD",
+      qty: 1,
+      status: "CONFIRMED",
+      pickupStartAt: new Date("2026-08-15T10:00:00.000Z"),
+      pickupEndAt: new Date("2026-08-15T12:00:00.000Z"),
+      redeemedAt: null,
+      customerFirstName: "Mehmet",
+    });
+    expect(result.items[0]).not.toHaveProperty("userId");
+  });
+
+  it("returns null customerFirstName when the consumer never set a name", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findMany as jest.Mock).mockResolvedValue([
+      buildRow({ user: { name: null } }),
+    ]);
+    (prisma.reservation.count as jest.Mock).mockResolvedValue(1);
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+
+    const result = await service.listForMerchant("m1", {
+      date: "2026-08-15",
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(result.items[0].customerFirstName).toBeNull();
   });
 });

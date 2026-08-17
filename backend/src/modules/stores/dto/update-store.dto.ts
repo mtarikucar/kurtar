@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
 } from "class-validator";
+import { ApiPropertyOptional } from "@nestjs/swagger";
 import { BagCategory } from "@prisma/client";
 
 /**
@@ -52,6 +53,7 @@ export class UpdateStoreDto {
   @IsString()
   coverImageUrl?: string;
 
+  @ApiPropertyOptional({ enum: BagCategory, isArray: true })
   @IsOptional()
   @IsArray()
   @ArrayUnique()

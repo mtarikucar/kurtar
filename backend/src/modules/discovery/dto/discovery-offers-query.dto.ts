@@ -11,6 +11,7 @@ import {
   MaxLength,
   Min,
 } from "class-validator";
+import { ApiPropertyOptional } from "@nestjs/swagger";
 import { BagCategory } from "@prisma/client";
 
 export class DiscoveryOffersQueryDto {
@@ -29,6 +30,7 @@ export class DiscoveryOffersQueryDto {
   @Max(20000)
   radiusM: number = 3000;
 
+  @ApiPropertyOptional({ enum: BagCategory })
   @IsOptional()
   @IsEnum(BagCategory)
   category?: BagCategory;

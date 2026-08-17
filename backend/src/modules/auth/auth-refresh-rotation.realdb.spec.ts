@@ -79,8 +79,8 @@ d("TokenService.refresh — real DB concurrency", () => {
     const { familyId, rawToken } = await seedFamily();
 
     const results = await Promise.allSettled([
-      tokenService.refresh(rawToken),
-      tokenService.refresh(rawToken),
+      tokenService.refresh(rawToken, "CONSUMER"),
+      tokenService.refresh(rawToken, "CONSUMER"),
     ]);
 
     const fulfilled = results.filter(
@@ -110,11 +110,11 @@ d("TokenService.refresh — real DB concurrency", () => {
   it("reusing an already-rotated token revokes the entire family, including tokens issued after it", async () => {
     const { familyId, rawToken } = await seedFamily();
 
-    const first = await tokenService.refresh(rawToken);
+    const first = await tokenService.refresh(rawToken, "CONSUMER");
     expect(first.refreshToken).not.toBe(rawToken);
 
     // Replay the ORIGINAL (now-rotated) token — classic reuse.
-    await expect(tokenService.refresh(rawToken)).rejects.toThrow(
+    await expect(tokenService.refresh(rawToken, "CONSUMER")).rejects.toThrow(
       /Invalid refresh token/,
     );
 
@@ -125,8 +125,8 @@ d("TokenService.refresh — real DB concurrency", () => {
     // The successor minted by the legitimate first refresh is dead too —
     // reuse anywhere in a family kills the whole chain, not just the
     // replayed token's own row.
-    await expect(tokenService.refresh(first.refreshToken)).rejects.toThrow(
-      /Invalid refresh token/,
-    );
+    await expect(
+      tokenService.refresh(first.refreshToken, "CONSUMER"),
+    ).rejects.toThrow(/Invalid refresh token/);
   });
 });

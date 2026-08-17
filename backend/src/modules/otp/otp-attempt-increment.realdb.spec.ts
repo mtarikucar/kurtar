@@ -32,7 +32,8 @@ d("OtpService — real DB concurrency", () => {
   } as unknown as SmsService;
 
   beforeAll(() => {
-    process.env.JWT_SECRET = process.env.JWT_SECRET || "realdb-test-secret";
+    // [Fix round #3] JWT_SECRET no longer set here — test/jest.setup.ts
+    // now guarantees it globally, order-independent, for every spec file.
     prisma = new PrismaClient({
       datasources: { db: { url: TEST_DATABASE_URL } },
     });
