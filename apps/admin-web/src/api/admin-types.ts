@@ -20,8 +20,6 @@
  * hand-maintained copy that could silently drift from the real contract
  * again.
  *
- * ONE exception, kept hand-written with a narrow, documented cast: see the
- * "Ratings" section below.
  */
 
 import { client } from "./client";
@@ -67,60 +65,14 @@ export type PlatformPricing = Awaited<
 
 // ---------------------------------------------------------------------
 // Ratings — backend/src/modules/ratings/dto/rating-response.dto.ts
-//
-// NOT derived from the client, unlike everything else in this file. The
-// COMMITTED `packages/api-client/src/generated/openapi-types.ts` has its
-// own, separate drift bug: its `RatingDto` schema is a stale leftover —
-// `{ average: number; count: number }` (the shape of an unrelated
-// aggregate, `DiscoveryStoreRatingDto`) — from before the ratings module's
-// real per-rating `RatingDto` existed. `docs/openapi.json` (the real,
-// regenerated, committed contract) has the correct schema (id/
-// reservationId/userId/storeId/overallStars/foodQuality/service/comment/
-// moderationStatus/createdAt/updatedAt, confirmed against
-// backend/src/modules/ratings/dto/rating-response.dto.ts), so this is a
-// genuine `packages/api-client` codegen-staleness bug — a DIFFERENT,
-// separate defect from the `SuccessBody` `never`-collapse this file used
-// to work around, and out of scope for apps/admin-web to fix (it requires
-// re-running `npm run generate -w @kurtar/api-client` and committing the
-// result). Confirmed by removing the cast here and re-running
-// `npm run typecheck -w apps/admin-web`: `RatingsPage.tsx`/`useRatings.ts`
-// reading `.id`/`.overallStars`/`.comment`/`.moderationStatus`/`.createdAt`
-// off a list item fails against the stale generated `{average,count}`
-// shape. Until the generated file is regenerated, `client.admin.ratings.*`
-// call sites keep this one hand-written type + the narrow `castAdminResponse`
-// below (not a general escape hatch anymore — scoped to exactly this).
 // ---------------------------------------------------------------------
 
 export type ModerationStatus = "PENDING" | "APPROVED" | "REJECTED";
 
-/** RatingDto */
-export interface Rating {
-  id: string;
-  reservationId: string;
-  userId: string;
-  storeId: string;
-  overallStars: number;
-  foodQuality: number | null;
-  service: number | null;
-  comment: string | null;
-  moderationStatus: ModerationStatus;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** AdminRatingListResponseDto — GET /admin/ratings */
-export interface AdminRatingListResponse {
-  items: Rating[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-/** Scoped to the ratings staleness issue documented above — see that
- * comment before adding a new use of this. */
-export function castAdminResponse<T>(value: unknown): T {
-  return value as T;
-}
+export type AdminRatingListResponse = Awaited<
+  ReturnType<typeof client.admin.ratings.list>
+>;
+export type Rating = AdminRatingListResponse["items"][number];
 
 // ---------------------------------------------------------------------
 // Reports

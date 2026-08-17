@@ -73,7 +73,7 @@ export function ComplaintDetailPage() {
   if (detail.isError) {
     return (
       <ErrorState
-        message={fallbackErrorMessage(detail.error)}
+        message={fallbackErrorMessage(detail.error, t)}
         onRetry={() => detail.refetch()}
       />
     );

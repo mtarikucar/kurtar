@@ -37,7 +37,7 @@ export function DashboardPage() {
       {summary.isLoading ? <LoadingState /> : null}
       {summary.isError ? (
         <ErrorState
-          message={fallbackErrorMessage(summary.error)}
+          message={fallbackErrorMessage(summary.error, t)}
           onRetry={() => summary.refetch()}
         />
       ) : null}
@@ -92,7 +92,7 @@ export function DashboardPage() {
           {urgentComplaints.isLoading ? <LoadingState /> : null}
           {urgentComplaints.isError ? (
             <ErrorState
-              message={fallbackErrorMessage(urgentComplaints.error)}
+              message={fallbackErrorMessage(urgentComplaints.error, t)}
               onRetry={() => urgentComplaints.refetch()}
             />
           ) : null}
@@ -124,7 +124,7 @@ export function DashboardPage() {
           {urgentReports.isLoading ? <LoadingState /> : null}
           {urgentReports.isError ? (
             <ErrorState
-              message={fallbackErrorMessage(urgentReports.error)}
+              message={fallbackErrorMessage(urgentReports.error, t)}
               onRetry={() => urgentReports.refetch()}
             />
           ) : null}
@@ -158,7 +158,7 @@ export function DashboardPage() {
           {settlementsAttention.isLoading ? <LoadingState /> : null}
           {settlementsAttention.isError ? (
             <ErrorState
-              message={fallbackErrorMessage(settlementsAttention.error)}
+              message={fallbackErrorMessage(settlementsAttention.error, t)}
               onRetry={() => settlementsAttention.refetch()}
             />
           ) : null}

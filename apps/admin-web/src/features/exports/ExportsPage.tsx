@@ -51,7 +51,7 @@ export function ExportsPage() {
       const csv = await EXPORT_FN[kind]({ from, to });
       downloadTextFile(`${FILENAME_PREFIX[kind]}_${from}_${to}.csv`, csv);
     } catch (err) {
-      setErrorMessage(fallbackErrorMessage(err) || t("downloadError"));
+      setErrorMessage(fallbackErrorMessage(err, t) || t("downloadError"));
     } finally {
       setDownloading(null);
     }

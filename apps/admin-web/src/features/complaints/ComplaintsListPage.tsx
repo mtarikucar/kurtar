@@ -141,7 +141,7 @@ export function ComplaintsListPage() {
       {list.isLoading ? <LoadingState /> : null}
       {list.isError ? (
         <ErrorState
-          message={fallbackErrorMessage(list.error)}
+          message={fallbackErrorMessage(list.error, t)}
           onRetry={() => list.refetch()}
         />
       ) : null}

@@ -1,16 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client } from "../../api/client";
-import { castAdminResponse } from "../../api/admin-types";
-import type {
-  AdminRatingListResponse,
-  ModerationStatus,
-  Rating,
-} from "../../api/admin-types";
-
-// NOTE: unlike every other feature's useXyz.ts, this file's `.approve()`/
-// `.reject()` mutations below still cast — see admin-types.ts's "Ratings"
-// section for why (a separate, out-of-scope generated-client staleness
-// bug, not the SuccessBody bug this whole cleanup removes elsewhere).
+import type { ModerationStatus } from "../../api/admin-types";
 
 export type RatingStatusFilter = ModerationStatus | "ALL";
 
@@ -21,14 +11,12 @@ export function useRatingsList(
 ) {
   return useQuery({
     queryKey: ["admin", "ratings", filter, page, pageSize],
-    queryFn: async (): Promise<AdminRatingListResponse> => {
-      const res = await client.admin.ratings.list({
+    queryFn: () =>
+      client.admin.ratings.list({
         status: filter === "ALL" ? undefined : filter,
         page,
         pageSize,
-      });
-      return castAdminResponse<AdminRatingListResponse>(res);
-    },
+      }),
   });
 }
 
@@ -41,10 +29,7 @@ function useInvalidateRatings() {
 export function useApproveRating() {
   const invalidate = useInvalidateRatings();
   return useMutation({
-    mutationFn: (id: string) =>
-      client.admin.ratings
-        .approve(id)
-        .then((res) => castAdminResponse<Rating>(res)),
+    mutationFn: (id: string) => client.admin.ratings.approve(id),
     onSuccess: invalidate,
   });
 }
@@ -58,10 +43,7 @@ export function useRejectRating() {
     // (`RequestBody<...>` resolves to `unknown`, not `never`, here) rather
     // than a real body the backend reads. `undefined` satisfies the type;
     // no field is actually sent.
-    mutationFn: (id: string) =>
-      client.admin.ratings
-        .reject(id, undefined)
-        .then((res) => castAdminResponse<Rating>(res)),
+    mutationFn: (id: string) => client.admin.ratings.reject(id, undefined),
     onSuccess: invalidate,
   });
 }

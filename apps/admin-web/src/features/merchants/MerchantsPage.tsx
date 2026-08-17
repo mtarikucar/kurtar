@@ -198,7 +198,7 @@ export function MerchantsPage() {
       {list.isLoading ? <LoadingState /> : null}
       {list.isError ? (
         <ErrorState
-          message={fallbackErrorMessage(list.error)}
+          message={fallbackErrorMessage(list.error, t)}
           onRetry={() => list.refetch()}
         />
       ) : null}
@@ -282,7 +282,7 @@ export function MerchantsPage() {
         {reverify.isLoading ? <LoadingState /> : null}
         {reverify.isError ? (
           <ErrorState
-            message={fallbackErrorMessage(reverify.error)}
+            message={fallbackErrorMessage(reverify.error, t)}
             onRetry={() => reverify.refetch()}
           />
         ) : null}
