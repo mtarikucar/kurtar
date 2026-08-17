@@ -194,6 +194,26 @@ d("MerchantsService.adminSuspend — real DB kill-switch", () => {
         },
       }),
     );
+    // MerchantsService.transition (called by adminSuspend) also publishes a
+    // merchant.suspended.v1 outbox row, keyed off the
+    // MerchantVerificationEvent id — nothing in this suite drains it, so
+    // uncleaned it sits QUEUED and gets swept into
+    // outbox-worker.realdb.spec.ts's platform-wide claim (see that file's
+    // own doc comment for why that breaks its exact-count assertions).
+    const verificationEvents = await prisma.merchantVerificationEvent.findMany({
+      where: { merchantId },
+      select: { id: true },
+    });
+    await safeCleanup("outboxEvent (merchant-status)", () =>
+      prisma.outboxEvent.deleteMany({
+        where: {
+          type: "merchant.suspended.v1",
+          idempotencyKey: {
+            in: verificationEvents.map((e) => `merchant-status:${e.id}`),
+          },
+        },
+      }),
+    );
     await safeCleanup("merchantVerificationEvent", () =>
       prisma.merchantVerificationEvent.deleteMany({ where: { merchantId } }),
     );

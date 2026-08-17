@@ -189,6 +189,28 @@ d("PaymentSettleService — real DB concurrency", () => {
         where: { externalEventId: { in: externalEventIds } },
       }),
     );
+    // PaymentSettleService's successful-settle path publishes a
+    // reservation.confirmed.v1 outbox row keyed off the reservation id —
+    // nothing in this suite drains it, so uncleaned it sits QUEUED and gets
+    // swept into outbox-worker.realdb.spec.ts's platform-wide claim (see
+    // that file's own doc comment for why that breaks its exact-count
+    // assertions).
+    const reservationsForCleanup = await prisma.reservation.findMany({
+      where: { storeId },
+      select: { id: true },
+    });
+    await safeCleanup("outboxEvent (reservation-confirmed)", () =>
+      prisma.outboxEvent.deleteMany({
+        where: {
+          type: "reservation.confirmed.v1",
+          idempotencyKey: {
+            in: reservationsForCleanup.map(
+              (r) => `reservation-confirmed:${r.id}`,
+            ),
+          },
+        },
+      }),
+    );
     await safeCleanup("refund", () =>
       prisma.refund.deleteMany({
         where: { payment: { reservation: { storeId } } },

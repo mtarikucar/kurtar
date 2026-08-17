@@ -435,7 +435,16 @@ d("OutboxWorkerService — real DB concurrency + retry + scheduling", () => {
     const resultA = await drainAPromise;
 
     expect(dispatchLogA).toEqual([blockedId]); // worker A only ever dispatched the blocked one
-    expect(resultA.skipped).toBe(2); // the two reclaimed-out-from-under-it events
+    // >= rather than ===: resultA.skipped is drainOnce's own platform-wide
+    // tally (this worker's WHOLE claimed batch, not just our 3 seeded
+    // rows), so a sibling realdb spec's undrained debris landing in the
+    // SAME claim could in principle add its own skip to this count. The
+    // load-bearing guarantee — that our two reclaimed-out-from-under-it
+    // events were genuinely skipped rather than double-dispatched — is
+    // already fully proven by the scoped dispatchLogA/dispatchLogB/
+    // allDispatched checks around this line; this is corroborating
+    // evidence, not the thing under test, so it only needs a floor.
+    expect(resultA.skipped).toBeGreaterThanOrEqual(2);
 
     // Every seeded event was dispatched EXACTLY once, across both
     // workers.

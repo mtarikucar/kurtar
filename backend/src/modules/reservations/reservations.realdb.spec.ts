@@ -178,6 +178,32 @@ d("ReservationsService — real DB concurrency", () => {
 
   afterAll(async () => {
     if (!prisma) return;
+    // ReservationsService.redeem() (the redeem-idempotency/[Consumer redeem]
+    // tests below) publishes reservation.redeemed.v1 +
+    // reservation.redeemed.impact.v1 outbox rows, keyed off the reservation
+    // id — nothing in this suite drains them, so uncleaned they sit QUEUED
+    // and get swept into outbox-worker.realdb.spec.ts's platform-wide claim
+    // (see that file's own doc comment for why that breaks its exact-count
+    // assertions).
+    const reservationsForCleanup = await prisma.reservation.findMany({
+      where: { storeId },
+      select: { id: true },
+    });
+    await safeCleanup("outboxEvent (reservation-redeemed)", () =>
+      prisma.outboxEvent.deleteMany({
+        where: {
+          type: {
+            in: ["reservation.redeemed.v1", "reservation.redeemed.impact.v1"],
+          },
+          idempotencyKey: {
+            in: reservationsForCleanup.flatMap((r) => [
+              `reservation-redeemed:${r.id}`,
+              `reservation-redeemed-impact:${r.id}`,
+            ]),
+          },
+        },
+      }),
+    );
     await safeCleanup("refund", () =>
       prisma.refund.deleteMany({
         where: { payment: { reservation: { storeId } } },

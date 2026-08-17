@@ -196,6 +196,26 @@ async function cleanupMerchant(prisma: PrismaClient, merchantId: string) {
     select: { id: true },
   });
   const batchIds = batches.map((b) => b.id);
+  // SettlementPayoutService.sendBatch publishes two outbox rows per batch
+  // (settlement.batch.sent.v1 + settlement.batch.sent.invoice.v1, keyed off
+  // the batch id) that nothing in this suite ever drains — left uncleaned,
+  // they sit QUEUED and get swept into outbox-worker.realdb.spec.ts's
+  // platform-wide claim (that file's own doc comment already establishes
+  // why: claimBatch is intentionally NOT type-scoped, so a shared DB's
+  // undrained debris crowds its bounded-batch LIMIT).
+  await prisma.outboxEvent.deleteMany({
+    where: {
+      type: {
+        in: ["settlement.batch.sent.v1", "settlement.batch.sent.invoice.v1"],
+      },
+      idempotencyKey: {
+        in: batchIds.flatMap((id) => [
+          `settlement-batch-sent:${id}`,
+          `settlement-batch-sent-invoice:${id}`,
+        ]),
+      },
+    },
+  });
   await prisma.settlementCarriedDemandClaim.deleteMany({
     where: { claimantBatchId: { in: batchIds } },
   });
