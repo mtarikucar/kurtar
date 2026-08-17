@@ -467,6 +467,7 @@ jobs:
           npm run lint -w admin-web
           npm run lint -w landing
           npm run lint -w consumer
+          npm run lint -w e2e
 
       - name: Typecheck (every workspace)
         run: |
@@ -477,6 +478,7 @@ jobs:
           npm run typecheck -w admin-web
           npm run typecheck -w landing
           npm run typecheck -w consumer
+          npm run typecheck -w e2e
 
       - name: Unit tests (@kurtar/api-client — incl. the single-flight refresh test)
         run: npm test -w @kurtar/api-client

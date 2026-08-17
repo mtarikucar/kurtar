@@ -46,6 +46,15 @@ COPY apps/merchant-web ./apps/merchant-web
 # source.
 RUN npm run build -w @kurtar/ui-tokens
 RUN npm run build -w @kurtar/api-client
+
+# VITE_API_BASE_URL is inlined into the client bundle at BUILD time
+# (`apps/merchant-web/src/api/client.ts` falls back to
+# `http://localhost:4750` when it's unset) — pass the real backend origin
+# via --build-arg on release, same convention as landing/Dockerfile's
+# NEXT_PUBLIC_API_BASE_URL. Defaulting to the local dev backend so a bare
+# `docker build` here still succeeds without one.
+ARG VITE_API_BASE_URL=http://localhost:4750
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 RUN npm run build -w merchant-web
 
 ########################################################################

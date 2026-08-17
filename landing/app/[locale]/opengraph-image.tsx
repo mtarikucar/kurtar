@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 import { getTranslations } from "next-intl/server";
+import { colors } from "@kurtar/ui-tokens";
 import type { AppLocale } from "@/i18n/routing";
 
 export const size = { width: 1200, height: 630 };
@@ -33,7 +34,7 @@ export default async function OpengraphImage({
           flexDirection: "column",
           justifyContent: "center",
           padding: "80px",
-          backgroundColor: "#161410",
+          backgroundColor: colors.neutral[900],
           fontFamily: "sans-serif",
         }}
       >
@@ -42,7 +43,7 @@ export default async function OpengraphImage({
             display: "flex",
             fontSize: 96,
             fontWeight: 700,
-            color: "#F2542D",
+            color: colors.primary[500],
             letterSpacing: "-0.02em",
           }}
         >
@@ -53,7 +54,7 @@ export default async function OpengraphImage({
             display: "flex",
             marginTop: 32,
             fontSize: 36,
-            color: "#FAF9F7",
+            color: colors.neutral[50],
             maxWidth: 900,
           }}
         >
@@ -66,7 +67,7 @@ export default async function OpengraphImage({
             width: 64,
             height: 8,
             borderRadius: 4,
-            backgroundColor: "#1F7A46",
+            backgroundColor: colors.secondary[500],
           }}
         />
       </div>
