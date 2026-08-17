@@ -52,6 +52,15 @@
     "qty_one": "{{count}} adet",
     "qty_other": "{{count}} adet",
     "redeemCta": "Teslim et",
+    "status": {
+      "PENDING_PAYMENT": "Ödeme bekleniyor",
+      "CONFIRMED": "Teslim bekleniyor",
+      "REDEEMED": "Teslim edildi",
+      "CANCELLED_BY_USER": "Müşteri iptal etti",
+      "CANCELLED_BY_MERCHANT": "İşletme iptal etti",
+      "NO_SHOW": "Gelinmedi",
+      "EXPIRED": "Süresi doldu"
+    },
     "manualHeading": "Manuel teslim",
     "manualBody": "Müşterinin telefonu çalışmıyorsa, rezervasyon kimliğini girerek teslim edildi olarak işaretleyebilirsiniz.",
     "manualLabel": "Rezervasyon kimliği",

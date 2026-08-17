@@ -24,13 +24,9 @@ export const RESERVATION_STATUS_TONE: Record<
   EXPIRED: "neutral",
 };
 
-export const RESERVATION_STATUS_LABEL: Record<ReservationStatusValue, string> =
-  {
-    PENDING_PAYMENT: "Ödeme bekleniyor",
-    CONFIRMED: "Teslim bekleniyor",
-    REDEEMED: "Teslim edildi",
-    CANCELLED_BY_USER: "Müşteri iptal etti",
-    CANCELLED_BY_MERCHANT: "İşletme iptal etti",
-    NO_SHOW: "Gelinmedi",
-    EXPIRED: "Süresi doldu",
-  };
+// Labels are NOT hardcoded here (unlike this file's earlier version) — see
+// offerStatus.ts's own precedent: this file only owns the non-text tone
+// mapping, and every status LABEL is resolved via i18next at the call
+// site (`t(\`today:pickup.status.${status}\`)`, mirroring OfferCard.tsx's
+// `t(\`today:offerCard.status.${offer.status}\`)`), sourced from
+// i18n/locales/tr/today.json's `pickup.status` block.

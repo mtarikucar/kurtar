@@ -8,10 +8,7 @@ import { Button } from "../shared/ui/Button";
 import { Spinner } from "../shared/ui/Spinner";
 import { StatusPill } from "../shared/ui/StatusPill";
 import { formatTime } from "../shared/format";
-import {
-  RESERVATION_STATUS_TONE,
-  RESERVATION_STATUS_LABEL,
-} from "../shared/reservationStatus";
+import { RESERVATION_STATUS_TONE } from "../shared/reservationStatus";
 import { usePickupList, useManualRedeem } from "./hooks";
 import styles from "./PickupListSection.module.css";
 
@@ -97,7 +94,7 @@ export function PickupListSection() {
                   {formatTime(item.pickupEndAt)}
                 </span>
                 <StatusPill tone={RESERVATION_STATUS_TONE[item.status]}>
-                  {RESERVATION_STATUS_LABEL[item.status]}
+                  {t(`today:pickup.status.${item.status}`)}
                 </StatusPill>
               </div>
               {item.status === "CONFIRMED" ? (
