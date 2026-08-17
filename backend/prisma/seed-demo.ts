@@ -36,7 +36,7 @@
  *   npm run seed:demo -w backend        # teardown + recreate
  *   npm run seed:demo:down -w backend   # teardown only
  */
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { generateReservationCode } from "../src/modules/reservations/reservation-code.util";
 import { generateMerchantOid } from "../src/modules/reservations/merchant-oid.util";
@@ -349,48 +349,67 @@ const CONSUMERS: ConsumerSeed[] = [
 // this file's `kd-demo-` id prefix (or, where a model has no independent
 // id, the matching foreign key) — never a bare deleteMany({}).
 // =======================================================================
-export async function teardownDemo(): Promise<void> {
+/**
+ * `client` defaults to the module-level `prisma` (its own implicit
+ * transaction per statement) for standalone use — `npm run seed:demo:down`
+ * and this file's own CLI entry point both call it that way. `seedDemo()`
+ * instead passes its own `tx` (a `Prisma.TransactionClient`) so the
+ * teardown runs INSIDE the same transaction as the recreate below — see
+ * that function's own comment for why that matters.
+ */
+export async function teardownDemo(
+  client: PrismaClient | Prisma.TransactionClient = prisma,
+): Promise<void> {
   const byPrefix = { id: { startsWith: PREFIX } };
 
-  await prisma.contentReport.deleteMany({ where: byPrefix });
-  await prisma.complaintMessage.deleteMany({
+  await client.contentReport.deleteMany({ where: byPrefix });
+  await client.complaintMessage.deleteMany({
     where: { complaintId: { startsWith: PREFIX } },
   });
-  await prisma.complaintTicket.deleteMany({ where: byPrefix });
+  await client.complaintTicket.deleteMany({ where: byPrefix });
 
-  await prisma.commissionInvoice.deleteMany({ where: byPrefix });
-  await prisma.settlementLine.deleteMany({ where: byPrefix });
-  await prisma.settlementBatch.deleteMany({ where: byPrefix });
+  await client.commissionInvoice.deleteMany({ where: byPrefix });
+  await client.settlementLine.deleteMany({ where: byPrefix });
+  await client.settlementBatch.deleteMany({ where: byPrefix });
 
-  await prisma.rating.deleteMany({ where: byPrefix });
-  await prisma.impactLedger.deleteMany({ where: byPrefix });
-  await prisma.refund.deleteMany({ where: byPrefix });
-  await prisma.payment.deleteMany({ where: byPrefix });
-  await prisma.reservation.deleteMany({ where: byPrefix });
+  await client.rating.deleteMany({ where: byPrefix });
+  await client.impactLedger.deleteMany({ where: byPrefix });
+  await client.refund.deleteMany({ where: byPrefix });
+  await client.payment.deleteMany({ where: byPrefix });
+  await client.reservation.deleteMany({ where: byPrefix });
 
-  await prisma.dailyOffer.deleteMany({ where: byPrefix });
-  await prisma.bagTemplate.deleteMany({ where: byPrefix });
-  await prisma.store.deleteMany({ where: byPrefix });
+  await client.dailyOffer.deleteMany({ where: byPrefix });
+  await client.bagTemplate.deleteMany({ where: byPrefix });
+  await client.store.deleteMany({ where: byPrefix });
 
-  await prisma.membershipSubscription.deleteMany({ where: byPrefix });
-  await prisma.merchantUser.deleteMany({ where: byPrefix });
-  await prisma.merchant.deleteMany({ where: byPrefix });
+  await client.membershipSubscription.deleteMany({ where: byPrefix });
+  await client.merchantUser.deleteMany({ where: byPrefix });
+  await client.merchant.deleteMany({ where: byPrefix });
 
-  await prisma.user.deleteMany({ where: byPrefix });
-  await prisma.adminUser.deleteMany({ where: byPrefix });
+  await client.user.deleteMany({ where: byPrefix });
+  await client.adminUser.deleteMany({ where: byPrefix });
 }
 
 // =======================================================================
 // SEED
 // =======================================================================
 export async function seedDemo(): Promise<void> {
-  await teardownDemo();
-
   const passwordHash = await hashPassword();
   const now = new Date();
 
+  // Teardown runs AS THE FIRST STATEMENT INSIDE this same transaction, not
+  // as a separate call before it (as this used to work): the old shape
+  // committed the teardown's deletes on their own, so a failure ANYWHERE
+  // in the recreate that follows rolled back only the recreate — leaving
+  // the database with NO demo data at all instead of either the old
+  // dataset (untouched) or the new one. One transaction means a mid-seed
+  // failure is a true no-op: either the whole teardown+recreate commits,
+  // or none of it does, and the previous run's demo data (if any) is
+  // exactly what's left.
   await prisma.$transaction(
     async (tx) => {
+      await teardownDemo(tx);
+
       // ---- Admin ---------------------------------------------------
       await tx.adminUser.create({
         data: {
@@ -555,12 +574,22 @@ export async function seedDemo(): Promise<void> {
         });
         if (live) {
           // Overwrite with a genuinely "now"-anchored window (not a whole
-          // day span) — see the reservation section below.
+          // day span) — see the reservation section below. Ends 6 hours
+          // from seed time, not 50 minutes: a demo that stops being
+          // demonstrable under an hour after seeding is a real gap for
+          // anyone giving a walkthrough later the same day. Clamped to
+          // "no later than today, Istanbul-local 23:59" so this can never
+          // cross into tomorrow's calendar day (validateOfferWindow's own
+          // same-day rule — this write bypasses that validator, being a
+          // raw seed update, but there is no reason for the seed's own
+          // data to violate a rule the real API enforces).
+          const sixHoursOut = now.getTime() + 6 * 3_600_000;
+          const todayEnd = istanbulInstant(0, 23, 59).getTime();
           await tx.dailyOffer.update({
             where: { id: did(`offer-${o.n}-today`) },
             data: {
               pickupStartAt: new Date(now.getTime() - 10 * 60_000),
-              pickupEndAt: new Date(now.getTime() + 50 * 60_000),
+              pickupEndAt: new Date(Math.min(sixHoursOut, todayEnd)),
             },
           });
         }
@@ -1197,7 +1226,12 @@ export async function seedDemo(): Promise<void> {
         },
       });
     },
-    { timeout: 30_000 },
+    // 45s, not the default 5s — this transaction now also runs
+    // teardownDemo()'s 18 deleteMany statements as its first step (see
+    // seedDemo()'s own comment), on top of the full recreate. 30s already
+    // comfortably covered the recreate alone; a wider margin here is
+    // cheap insurance, not a sign this is actually slow.
+    { timeout: 45_000 },
   );
 }
 
