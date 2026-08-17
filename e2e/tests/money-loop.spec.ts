@@ -1,4 +1,9 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import {
+  test,
+  expect,
+  type APIRequestContext,
+  type BrowserContext,
+} from "@playwright/test";
 import * as fs from "fs";
 import { randomUUID } from "crypto";
 import { Client as PgClient } from "pg";
@@ -159,11 +164,118 @@ async function step<T>(name: string, fn: () => Promise<T>): Promise<T> {
   });
 }
 
+// ---------------------------------------------------------------------
+// Cleanup fixture state — deliberately module-scoped, not local to the
+// test body. The pg cleanup below used to be the LAST `step()` inside the
+// test itself; Playwright aborts a test at its first failed assertion, so
+// any failure in an earlier step skipped cleanup entirely and left real,
+// non-`kd-demo-`-prefixed rows referencing the seeded merchant behind —
+// exactly the FK breakage `seed-demo.ts`'s own teardown would then hit on
+// its next run. Moving cleanup into `test.afterEach` (this file has
+// exactly one test, so afterEach and afterAll are equivalent here; afterEach
+// reads more honestly as "runs after every test that touched this state")
+// wrapped in try/finally means it always runs — pass, fail, or thrown
+// exception mid-flight — using whatever ids the test managed to set before
+// it stopped. Every delete below is safe to run against an id that was
+// never set (still ""): a `WHERE col = ''` matches zero rows, it does not
+// error.
+// ---------------------------------------------------------------------
+let cleanupState = {
+  merchantContext: undefined as BrowserContext | undefined,
+  adminContext: undefined as BrowserContext | undefined,
+  offerId: "",
+  reservationId: "",
+  batchId: "",
+  bagTemplateId: "",
+  consumerPhone: "",
+};
+
+test.afterEach(async () => {
+  const { merchantContext, adminContext, ...ids } = cleanupState;
+  try {
+    const pg = new PgClient({ connectionString: DATABASE_URL });
+    await pg.connect();
+    try {
+      await pg.query(
+        'DELETE FROM "settlement_lines" WHERE "reservationId" = $1',
+        [ids.reservationId],
+      );
+      // The payout-dispatch step issues a commission invoice for the
+      // batch — a real, non-`kd-demo-`-prefixed row referencing this
+      // merchant directly (Restrict), independent of the batch/line
+      // cleanup above (CommissionInvoice.batchId is SetNull-on-delete,
+      // so it would NOT block deleting the batch, but it WOULD block
+      // seed-demo.ts's own teardown from later deleting the merchant).
+      await pg.query('DELETE FROM "commission_invoices" WHERE "batchId" = $1', [
+        ids.batchId,
+      ]);
+      // Only drop the batch this run touched if nothing else claims it
+      // any more (a same-day re-run of this test adds a SECOND line to
+      // the SAME batch — settlement-batch-builder.service.ts groups by
+      // merchant+day — so an earlier run's cleanup must never delete a
+      // batch a later run is still using).
+      await pg.query(
+        `DELETE FROM "settlement_batches"
+         WHERE "id" = $1
+           AND NOT EXISTS (SELECT 1 FROM "settlement_lines" WHERE "batchId" = $1)`,
+        [ids.batchId],
+      );
+      await pg.query('DELETE FROM "ratings" WHERE "reservationId" = $1', [
+        ids.reservationId,
+      ]);
+      await pg.query(
+        'DELETE FROM "impact_ledgers" WHERE "reservationId" = $1',
+        [ids.reservationId],
+      );
+      await pg.query('DELETE FROM "payments" WHERE "reservationId" = $1', [
+        ids.reservationId,
+      ]);
+      await pg.query('DELETE FROM "reservations" WHERE "id" = $1', [
+        ids.reservationId,
+      ]);
+      await pg.query('DELETE FROM "daily_offers" WHERE "id" = $1', [
+        ids.offerId,
+      ]);
+      await pg.query('DELETE FROM "bag_templates" WHERE "id" = $1', [
+        ids.bagTemplateId,
+      ]);
+      // The fresh consumer User this run signed up via OTP — same
+      // reasoning: a real, non-`kd-demo-`-prefixed row.
+      await pg.query('DELETE FROM "users" WHERE "phoneE164" = $1', [
+        ids.consumerPhone,
+      ]);
+    } finally {
+      await pg.end();
+    }
+  } finally {
+    await merchantContext?.close();
+    await adminContext?.close();
+    cleanupState = {
+      merchantContext: undefined,
+      adminContext: undefined,
+      offerId: "",
+      reservationId: "",
+      batchId: "",
+      bagTemplateId: "",
+      consumerPhone: "",
+    };
+  }
+});
+
 test("the money loop: discovery to payout", async ({ browser, request }) => {
-  test.skip(
-    !BACKEND_LOG_FILE,
-    "E2E_BACKEND_LOG_FILE is required to read the OTP code the mock SMS provider logs — see this file's doc comment.",
-  );
+  // A hard failure, not `test.skip()` — this suite has exactly one test,
+  // so a missing E2E_BACKEND_LOG_FILE has no legitimate "skip" outcome to
+  // report. A skip prints "1 skipped" and exits 0, which reads as "ran
+  // clean" to anyone glancing at the summary line or a CI badge instead of
+  // "never actually ran" — a real local footgun (`npx playwright test`
+  // straight from this directory, without following operations.md's setup,
+  // silently reported success). Failing loudly here means the ONLY way to
+  // see "1 passed" is for the money loop to have genuinely run.
+  if (!BACKEND_LOG_FILE) {
+    throw new Error(
+      "E2E_BACKEND_LOG_FILE is required to read the OTP code the mock SMS provider logs — see this file's doc comment and docs/operations.md's End-to-end test section.",
+    );
+  }
 
   // Separate browser contexts (no shared cookie jar) for the merchant-web
   // and admin-web portions — a real merchant and a real admin are
@@ -183,6 +295,8 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
   // a real merchant token cannot mint an admin session).
   const merchantContext = await browser.newContext();
   const adminContext = await browser.newContext();
+  cleanupState.merchantContext = merchantContext;
+  cleanupState.adminContext = adminContext;
   const page = await merchantContext.newPage();
   const adminPage = await adminContext.newPage();
 
@@ -195,8 +309,8 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
   let merchantOid = "";
   let totalCents = 0;
   let batchId = "";
-  let expectedNetPayoutCents = 0;
   let bagTemplateId = "";
+  let pickupStartAtMs = 0;
   // GET /discovery/offers is Redis-cached for 5 minutes, keyed in part on
   // the `q` search param (discovery-cache-key.util.ts) — a bare, param-
   // less query repeated across back-to-back local runs of this same test
@@ -245,6 +359,7 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
         bearer(merchantToken),
       );
       bagTemplateId = template.id;
+      cleanupState.bagTemplateId = bagTemplateId;
 
       const now = new Date();
       const offerDate = istanbulDateKey(now);
@@ -252,7 +367,8 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
       // (offer-window.rules.ts) — 15s is comfortably past by the time this
       // test reaches the redeem step several real network round trips
       // later; the redeem step also waits out any remainder explicitly.
-      const pickupStartAt = new Date(now.getTime() + 15_000).toISOString();
+      pickupStartAtMs = now.getTime() + 15_000;
+      const pickupStartAt = new Date(pickupStartAtMs).toISOString();
       const pickupEndAt = new Date(now.getTime() + 2 * 3_600_000).toISOString();
 
       const offer = await apiPost<{ id: string }>(
@@ -268,6 +384,7 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
         bearer(merchantToken),
       );
       offerId = offer.id;
+      cleanupState.offerId = offerId;
 
       await apiPost(
         request,
@@ -304,6 +421,7 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
   );
 
   const consumerPhone = freshConsumerPhone();
+  cleanupState.consumerPhone = consumerPhone;
 
   await step(
     "consumer: phone-OTP sign-in (real SMS-mock log, not a mocked HTTP call)",
@@ -335,6 +453,7 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
       bearer(consumerToken),
     );
     reservationId = reservation.reservationId;
+    cleanupState.reservationId = reservationId;
     reservationCode = reservation.code;
     totalCents = reservation.totalCents;
     merchantOid = reservation.payment.merchantOid;
@@ -382,11 +501,17 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
     "merchant-web: redeems the pickup (real click, real API call)",
     async () => {
       // pickupStartAt was `now + 15s` at creation; the steps above already
-      // spent several real network round trips, but wait out any remainder
-      // explicitly rather than assuming — a redeem attempted before the
-      // window opens is correctly rejected (RESERVATION_NOT_REDEEMABLE),
-      // and this test wants to prove the happy path, not that guard.
-      await page.waitForTimeout(16_000);
+      // spend several real network round trips, so by the time execution
+      // reaches here the window has often already opened. Poll the known
+      // pickupStartAtMs instead of a flat 16s sleep (this used to be most
+      // of the test's own runtime): wait only whatever's actually left,
+      // in short slices, so a redeem attempted before the window opens
+      // (correctly rejected as RESERVATION_NOT_REDEEMABLE — a real guard
+      // this test wants to avoid tripping, not prove) never happens, but
+      // nothing is wasted once the window is already open.
+      while (Date.now() < pickupStartAtMs) {
+        await page.waitForTimeout(Math.min(500, pickupStartAtMs - Date.now()));
+      }
 
       const row = page.getByText(reservationCode).locator("..").locator("..");
       await row.getByRole("button", { name: "Teslim et" }).click();
@@ -456,6 +581,7 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
       );
       if (line) {
         batchId = batch.id;
+        cleanupState.batchId = batchId;
         ourLine = line;
         break;
       }
@@ -474,11 +600,6 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
     expect(ourLine!.withholdingCents).toBe(
       Math.round(((totalCents - 2500 - 500) * 1) / 100),
     );
-    expectedNetPayoutCents =
-      ourLine!.grossCents -
-      ourLine!.bagFeeCents -
-      ourLine!.bagFeeVatCents -
-      ourLine!.withholdingCents;
   });
 
   await step(
@@ -539,6 +660,8 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
           status: string;
           pspTransferRef: string | null;
           netPayoutCents: number;
+          membershipOffsetCents: number;
+          refundClawbackCents: number;
           sentAt: string | null;
         }
       >(request, `/api/admin/settlements/${batchId}`, bearer(adminToken));
@@ -560,71 +683,35 @@ test("the money loop: discovery to payout", async ({ browser, request }) => {
       expect(finalLine?.bagFeeCents).toBe(ourLine!.bagFeeCents);
       expect(finalLine?.bagFeeVatCents).toBe(ourLine!.bagFeeVatCents);
       expect(finalLine?.withholdingCents).toBe(ourLine!.withholdingCents);
-      expect(finalBatch.netPayoutCents).toBeGreaterThanOrEqual(
-        expectedNetPayoutCents,
+      // netPayoutCents pinned exactly, not just bounded below: sum every
+      // line's own (gross - bagFee - vat - withholding) — settlement-
+      // math.ts's `computeSettlement`, re-derived here independently — then
+      // subtract this batch's own membership offset / refund clawback,
+      // exactly like the server does. Summing every line rather than just
+      // `ourLine` is deliberate: the demo-seeded Moda Fırın merchant has no
+      // other REDEEMED reservation for today, so this batch should hold
+      // exactly one line in the common case, but deriving from whatever
+      // lines are actually present is correct even against an
+      // already-exercised DB (a prior local run) where it might not be.
+      const linesNetCents = finalBatch.settlementLines.reduce(
+        (sum, l) =>
+          sum +
+          l.grossCents -
+          l.bagFeeCents -
+          l.bagFeeVatCents -
+          l.withholdingCents,
+        0,
+      );
+      expect(finalBatch.netPayoutCents).toBe(
+        linesNetCents -
+          finalBatch.membershipOffsetCents -
+          finalBatch.refundClawbackCents,
       );
     },
   );
 
-  await step(
-    "cleanup: remove this run's own rows (this test creates real, non-`kd-demo-`-prefixed rows against the demo-seeded merchant — see backend/prisma/seed-demo.ts's teardown, which is prefix-scoped and would otherwise hit a foreign-key error trying to delete a store/merchant a leftover E2E row still references)",
-    async () => {
-      const pg = new PgClient({ connectionString: DATABASE_URL });
-      await pg.connect();
-      try {
-        await pg.query(
-          'DELETE FROM "settlement_lines" WHERE "reservationId" = $1',
-          [reservationId],
-        );
-        // The payout-dispatch step issues a commission invoice for the
-        // batch — a real, non-`kd-demo-`-prefixed row referencing this
-        // merchant directly (Restrict), independent of the batch/line
-        // cleanup above (CommissionInvoice.batchId is SetNull-on-delete,
-        // so it would NOT block deleting the batch, but it WOULD block
-        // seed-demo.ts's own teardown from later deleting the merchant).
-        await pg.query(
-          'DELETE FROM "commission_invoices" WHERE "batchId" = $1',
-          [batchId],
-        );
-        // Only drop the batch this run touched if nothing else claims it
-        // any more (a same-day re-run of this test adds a SECOND line to
-        // the SAME batch — settlement-batch-builder.service.ts groups by
-        // merchant+day — so an earlier run's cleanup must never delete a
-        // batch a later run is still using).
-        await pg.query(
-          `DELETE FROM "settlement_batches"
-           WHERE "id" = $1
-             AND NOT EXISTS (SELECT 1 FROM "settlement_lines" WHERE "batchId" = $1)`,
-          [batchId],
-        );
-        await pg.query('DELETE FROM "ratings" WHERE "reservationId" = $1', [
-          reservationId,
-        ]);
-        await pg.query(
-          'DELETE FROM "impact_ledgers" WHERE "reservationId" = $1',
-          [reservationId],
-        );
-        await pg.query('DELETE FROM "payments" WHERE "reservationId" = $1', [
-          reservationId,
-        ]);
-        await pg.query('DELETE FROM "reservations" WHERE "id" = $1', [
-          reservationId,
-        ]);
-        await pg.query('DELETE FROM "daily_offers" WHERE "id" = $1', [offerId]);
-        await pg.query('DELETE FROM "bag_templates" WHERE "id" = $1', [
-          bagTemplateId,
-        ]);
-        // The fresh consumer User this run signed up via OTP — same
-        // reasoning: a real, non-`kd-demo-`-prefixed row.
-        await pg.query('DELETE FROM "users" WHERE "phoneE164" = $1', [
-          consumerPhone,
-        ]);
-      } finally {
-        await pg.end();
-      }
-    },
-  );
-
-  await merchantContext.close();
-  await adminContext.close();
+  // Cleanup (removing this run's own rows, and closing both browser
+  // contexts) happens in `test.afterEach` above, not here — see that
+  // block's doc comment for why: it must run even if an assertion above
+  // throws, not only on this line being reached.
 });
