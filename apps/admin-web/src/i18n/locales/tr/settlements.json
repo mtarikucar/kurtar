@@ -29,7 +29,7 @@
     "bagFeeVat": "Paket komisyonu KDV",
     "withholding": "Stopaj",
     "membershipOffset": "Üyelik mahsubu",
-    "membershipOffsetVat": "Üyelik mahsubu KDV",
+    "membershipOffsetVatIncluded": "{{amount}} KDV dahil",
     "refundClawback": "İade geri alımı",
     "totalDeductions": "Toplam kesinti",
     "net": "Net ödeme",

@@ -181,11 +181,23 @@ export function SettlementDetailPage() {
             </div>
             <div className={styles.breakdownRow}>
               <dt>{t("detail.membershipOffset")}</dt>
-              <dd>-{formatCents(batch.membershipOffsetCents)}</dd>
-            </div>
-            <div className={styles.breakdownRow}>
-              <dt>{t("detail.membershipOffsetVat")}</dt>
-              <dd>-{formatCents(batch.membershipOffsetVatCents)}</dd>
+              <dd>
+                -{formatCents(batch.membershipOffsetCents)}
+                {/* [I9 fix] membershipOffsetVatCents is the VAT PORTION
+                    INSIDE membershipOffsetCents, not a separate deduction
+                    (see lib/settlementBreakdown.ts's doc comment) — shown
+                    as a parenthetical split, never its own row, so the
+                    visible rows sum to the same total the backend
+                    actually deducted. */}
+                {batch.membershipOffsetVatCents > 0 ? (
+                  <span className={styles.vatNote}>
+                    {" "}
+                    ({t("detail.membershipOffsetVatIncluded", {
+                      amount: formatCents(batch.membershipOffsetVatCents),
+                    })})
+                  </span>
+                ) : null}
+              </dd>
             </div>
             <div className={styles.breakdownRow}>
               <dt>{t("detail.refundClawback")}</dt>

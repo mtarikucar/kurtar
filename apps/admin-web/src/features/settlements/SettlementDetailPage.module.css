@@ -100,6 +100,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.vatNote {
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-500);
+  font-weight: normal;
+}
+
 .subtotalRow {
   font-weight: var(--font-weight-bodyStrong);
   border-top: 2px solid var(--color-neutral-300);

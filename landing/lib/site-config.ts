@@ -21,16 +21,18 @@ export const LOCALE_LABELS: Record<string, string> = {
 };
 
 /**
- * Where the /isletme page's "list your business" CTAs send merchants —
- * apps/merchant-web (Task 10) is a sibling app task building in parallel
- * and its signup route isn't discoverable from here yet, so this points
- * at its dev origin (docs/frontend-contract.md's port table: merchant-web
- * dev is fixed at :5173) with a `/signup` path that matches the client
- * contract's `client.merchant.signup(...)` operation. Update this env
- * var once merchant-web's real signup route and production origin exist.
+ * [I10 fix] Where the /isletme page's "list your business" CTAs send
+ * merchants — this is landing's entire commercial purpose. Was
+ * `/signup`, a path apps/merchant-web has never had: every route in that
+ * app is Turkish (apps/merchant-web/src/routes.ts), and its real signup
+ * route is `/kayit`. `/signup` matched merchant-web's catch-all
+ * (App.tsx's RootRedirect), which sends an unauthenticated visitor to
+ * `/giris` (the LOGIN form) — so every founding-member/CTA click sent a
+ * brand-new bakery owner who has never had an account to a login screen
+ * asking for credentials they don't have.
  */
 export const MERCHANT_SIGNUP_URL =
-  process.env.NEXT_PUBLIC_MERCHANT_APP_URL ?? "http://localhost:5173/signup";
+  process.env.NEXT_PUBLIC_MERCHANT_APP_URL ?? "http://localhost:5173/kayit";
 
 /**
  * Placeholder store/app identifiers — task-13 brief: "App store badges
