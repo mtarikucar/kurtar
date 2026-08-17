@@ -104,10 +104,35 @@ else
 fi
 
 # ---------------------------------------------------------------------
-# 4. Prisma client + migrations — MUST run before the backend boots, and
-# is never optional: this is exactly the step whose absence turned the
-# merged tree's test suite red (see docs/operations.md's migration-doctor
-# section for the same rule in prod/staging).
+# 4. Shared packages — ALWAYS built, never conditional.
+#
+# @kurtar/ui-tokens and @kurtar/api-client both declare `"main":
+# "dist/index.js"` / `"types": "dist/index.d.ts"`, and `dist/` is
+# gitignored (.gitignore's "Build output" block). Neither package has a
+# `prepare`/`postinstall` hook, so `npm ci` symlinks them into
+# node_modules WITHOUT ever compiling them: on a clean clone every
+# `import ... from "@kurtar/api-client"` in merchant-web/admin-web/
+# landing/consumer resolves to a file that does not exist yet, and the
+# dev server dies at its first import. (This is exactly why every CI job
+# that touches a frontend builds both packages explicitly before doing
+# anything else — see quality-gates.yml's `frontend-quality` and
+# `e2e-money-loop` jobs.)
+#
+# Unconditional, not `[ -d dist ] ||`: a stale dist/ from before a pull
+# is just as broken as a missing one, and both builds are a couple of
+# seconds of tsc.
+# ---------------------------------------------------------------------
+log "Building shared packages (@kurtar/ui-tokens, @kurtar/api-client)..."
+npm run build -w @kurtar/ui-tokens
+npm run build -w @kurtar/api-client
+ok "Shared packages built."
+
+# ---------------------------------------------------------------------
+# 5. Prisma client + migrations — MUST run before the backend boots, and
+# is never optional: an unapplied migration on a merged tree is the
+# failure mode this step exists to make impossible (see
+# docs/operations.md's migration-doctor section for the same rule in
+# prod/staging).
 # ---------------------------------------------------------------------
 log "Generating Prisma client..."
 (cd backend && npx prisma generate)
@@ -117,7 +142,7 @@ log "Applying migrations (prisma migrate deploy)..."
 ok "Migrations applied."
 
 # ---------------------------------------------------------------------
-# 5. Demo data — reversible + idempotent (backend/prisma/seed-demo.ts
+# 6. Demo data — reversible + idempotent (backend/prisma/seed-demo.ts
 # tears down its own previous rows before recreating them).
 # ---------------------------------------------------------------------
 if [ "$SEED" -eq 1 ]; then
@@ -129,7 +154,7 @@ else
 fi
 
 # ---------------------------------------------------------------------
-# 6. Backend + the three web surfaces, concurrently, prefixed logs.
+# 7. Backend + the three web surfaces, concurrently, prefixed logs.
 #
 # `set -m` (job control) is what makes cleanup() actually work: `npm run
 # dev` doesn't exec into vite/next/nest, it FORKS them as children (and
@@ -143,7 +168,15 @@ fi
 # ---------------------------------------------------------------------
 set -m
 
-LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kurtar-dev-up.XXXXXX")"
+# Where each server's raw stdout/stderr is teed to. Printed in the banner
+# below and deliberately NOT deleted on exit: `e2e/tests/money-loop.spec.ts`
+# needs E2E_BACKEND_LOG_FILE pointed at the backend's real stdout (the mock
+# SMS provider logs the consumer's OTP code there and nowhere else), and a
+# path nobody can name is a path nobody can use. Override with
+# KURTAR_DEV_LOG_DIR to pin a stable location across runs.
+LOG_DIR="${KURTAR_DEV_LOG_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/kurtar-dev-up.XXXXXX")}"
+mkdir -p "$LOG_DIR"
+BACKEND_LOG_FILE="$LOG_DIR/backend.log"
 declare -a PIDS=()
 declare -a TAIL_PIDS=()
 
@@ -172,8 +205,7 @@ cleanup() {
     kill -9 -- "-$pid" >/dev/null 2>&1 || true
   done
   wait >/dev/null 2>&1 || true
-  rm -rf "$LOG_DIR"
-  ok "Stopped. Infra containers are still running — './scripts/dev-up.sh --down' to stop those too."
+  ok "Stopped. Logs kept at $LOG_DIR. Infra containers are still running — './scripts/dev-up.sh --down' to stop those too."
 }
 trap cleanup EXIT INT TERM
 
@@ -182,14 +214,19 @@ start "merchant-web" "apps/merchant-web" npm run dev
 start "admin-web"    "apps/admin-web"    npm run dev
 start "landing"      "landing"           npm run dev
 
-cat <<'EOF'
+cat <<EOF
 
 kurtar dev stack starting — Ctrl+C stops every server below.
   backend        http://localhost:4750/api  (health: /api/health)
   merchant-web   http://localhost:5173
   admin-web      http://localhost:5174
   landing        http://localhost:3000
-  (consumer app: run `npm run web -w consumer` yourself — see README.md)
+  (consumer app: run \`npm run web -w consumer\` yourself — see README.md)
+
+Server logs:     $LOG_DIR
+Backend stdout:  $BACKEND_LOG_FILE
+  (that path is what the cross-surface E2E needs as E2E_BACKEND_LOG_FILE —
+   see docs/operations.md's "End-to-end test" section)
 
 Demo credentials are documented in README.md.
 

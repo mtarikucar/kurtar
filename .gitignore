@@ -26,3 +26,9 @@ e2e/blob-report/
 
 # OS
 .DS_Store
+
+# AI assistant scratch files must never be committed (project hard rule)
+CLAUDE.md
+AGENTS.md
+**/CLAUDE.md
+**/AGENTS.md

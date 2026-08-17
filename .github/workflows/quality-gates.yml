@@ -772,4 +772,15 @@ jobs:
             printf '%s\n' "$messages" | grep -EiC1 "$pattern"
             exit 1
           fi
-          echo "Commit hygiene OK — no AI/Claude traces found."
+          echo "Commit messages OK — no AI/Claude traces found."
+
+          # The message grep above cannot see a committed file NAMED after an
+          # AI assistant, which is how landing/CLAUDE.md once slipped this very
+          # gate. Tracked filenames are part of the same hard rule.
+          offenders=$(git ls-files | grep -Ei '(^|/)(CLAUDE|AGENTS|COPILOT|CURSOR)\.md$' || true)
+          if [ -n "$offenders" ]; then
+            echo "::error::AI-assistant files are tracked (project hard rule — zero AI/Claude traces in the repo):"
+            printf '%s\n' "$offenders"
+            exit 1
+          fi
+          echo "Tracked filenames OK — no AI-assistant files."
