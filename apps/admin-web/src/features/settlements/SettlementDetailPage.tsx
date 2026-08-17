@@ -192,9 +192,11 @@ export function SettlementDetailPage() {
                 {batch.membershipOffsetVatCents > 0 ? (
                   <span className={styles.vatNote}>
                     {" "}
-                    ({t("detail.membershipOffsetVatIncluded", {
+                    (
+                    {t("detail.membershipOffsetVatIncluded", {
                       amount: formatCents(batch.membershipOffsetVatCents),
-                    })})
+                    })}
+                    )
                   </span>
                 ) : null}
               </dd>

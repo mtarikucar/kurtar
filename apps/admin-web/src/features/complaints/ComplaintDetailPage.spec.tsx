@@ -34,8 +34,7 @@ vi.mock("../../api/client", () => ({
         get: (...args: Parameters<typeof getMock>) => getMock(...args),
         resolve: vi.fn(),
         escalate: vi.fn(),
-        refund: (...args: Parameters<typeof refundMock>) =>
-          refundMock(...args),
+        refund: (...args: Parameters<typeof refundMock>) => refundMock(...args),
       },
     },
     complaints: {
@@ -112,7 +111,9 @@ describe("ComplaintDetailPage — refund action", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("İade başarısız oldu, para hareket etmedi: provider down"),
+        screen.getByText(
+          "İade başarısız oldu, para hareket etmedi: provider down",
+        ),
       ).toBeInTheDocument();
     });
   });

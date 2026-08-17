@@ -150,9 +150,7 @@ describe("MerchantActionDialog — approve/reject show the audited KYC detail", 
         screen.getByText("TR330006100519786457841326"),
       ).toBeInTheDocument();
     });
-    expect(
-      screen.getByText(/taxCertificateUrl/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/taxCertificateUrl/)).toBeInTheDocument();
     expect(screen.getByText(/Taslak.*Başvuru yapıldı/)).toBeInTheDocument();
     expect(getMerchantDetail).toHaveBeenCalledWith("merchant-1");
   });

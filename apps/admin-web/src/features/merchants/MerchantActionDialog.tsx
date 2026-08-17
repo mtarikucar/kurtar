@@ -51,7 +51,9 @@ export function MerchantActionDialog({
   // isn't a KYC judgment, and every read of this endpoint is audited
   // server-side, so it's not worth an audit-log entry nobody asked for.
   const needsKycDetail = variant === "approve" || variant === "reject";
-  const detail = useMerchantDetail(needsKycDetail ? (merchantId ?? null) : null);
+  const detail = useMerchantDetail(
+    needsKycDetail ? (merchantId ?? null) : null,
+  );
 
   function handleConfirm() {
     if (noteRequired && note.trim().length === 0) {
