@@ -820,9 +820,12 @@ export class ReservationsService {
    * only ever have one of them reach the provider; the loser gets
    * notRefundableError() instead of a second real-money refund.
    */
-  async refundRedeemed(
-    reservationId: string,
-  ): Promise<{ reservationId: string; ok: boolean; refundRef?: string; error?: string }> {
+  async refundRedeemed(reservationId: string): Promise<{
+    reservationId: string;
+    ok: boolean;
+    refundRef?: string;
+    error?: string;
+  }> {
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
       include: { payment: true },

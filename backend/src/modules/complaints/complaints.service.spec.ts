@@ -62,7 +62,10 @@ describe("ComplaintsService.create", () => {
         }),
       },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
     await service.create("u1", {
       category: "FOOD_QUALITY",
       description: "Soğuktu",
@@ -87,7 +90,10 @@ describe("ComplaintsService.create", () => {
         }),
       },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
     await expect(
       service.create("u1", {
         category: "OTHER",
@@ -101,7 +107,10 @@ describe("ComplaintsService.create", () => {
     const { prisma } = buildDeps({
       merchant: { findUnique: jest.fn().mockResolvedValue(null) },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
     await expect(
       service.create("u1", {
         category: "OTHER",
@@ -113,7 +122,10 @@ describe("ComplaintsService.create", () => {
 
   it("neither reservationId nor merchantId is a valid platform-level complaint", async () => {
     const { prisma } = buildDeps();
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
     await service.create("u1", { category: "OTHER", description: "x" });
     expect(prisma.complaintTicket.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ merchantId: null, reservationId: null }),
@@ -131,7 +143,10 @@ describe("ComplaintsService.addMessage — authorization matrix (who may post to
       },
     });
     tx.complaintMessage.create.mockResolvedValue({ id: "m1" });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
     await expect(
       service.addMessage(
         user({ id: "owner-1", actor: "CONSUMER" }),
@@ -149,7 +164,10 @@ describe("ComplaintsService.addMessage — authorization matrix (who may post to
         findUnique: jest.fn().mockResolvedValue(complaint),
       },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
     await expect(
       service.addMessage(
         user({ id: "someone-else", actor: "CONSUMER" }),
@@ -166,7 +184,10 @@ describe("ComplaintsService.addMessage — authorization matrix (who may post to
       },
     });
     tx.complaintMessage.create.mockResolvedValue({ id: "m1" });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
     await service.addMessage(
       user({ id: "mu1", actor: "MERCHANT", merchantId: "merchant-1" }),
       "c1",
@@ -184,7 +205,10 @@ describe("ComplaintsService.addMessage — authorization matrix (who may post to
         findUnique: jest.fn().mockResolvedValue(complaint),
       },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
     await expect(
       service.addMessage(
         user({ id: "mu2", actor: "MERCHANT", merchantId: "other-merchant" }),
@@ -202,7 +226,10 @@ describe("ComplaintsService.addMessage — authorization matrix (who may post to
           .mockResolvedValue({ id: "c2", userId: "owner-1", merchantId: null }),
       },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
     await expect(
       service.addMessage(
         user({ id: "mu1", actor: "MERCHANT", merchantId: "merchant-1" }),
@@ -219,7 +246,10 @@ describe("ComplaintsService.addMessage — authorization matrix (who may post to
       },
     });
     tx.complaintMessage.create.mockResolvedValue({ id: "m1" });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
     await expect(
       service.addMessage(
         user({ id: "admin-1", actor: "ADMIN" }),
@@ -233,7 +263,10 @@ describe("ComplaintsService.addMessage — authorization matrix (who may post to
     const { prisma } = buildDeps({
       complaintTicketRoot: { findUnique: jest.fn().mockResolvedValue(null) },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
     await expect(
       service.addMessage(
         user({ id: "admin-1", actor: "ADMIN" }),
@@ -255,7 +288,10 @@ describe("ComplaintsService admin transitions", () => {
       id: "c1",
       status: "RESOLVED",
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
 
     await service.adminResolve("admin1", "c1", "handled");
 
@@ -291,7 +327,10 @@ describe("ComplaintsService admin transitions", () => {
       status: "RESOLVED",
     });
     tx.complaintTicket.updateMany.mockResolvedValue({ count: 0 });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
 
     const err = await service
       .adminEscalate("admin1", "c1", undefined)
@@ -304,7 +343,10 @@ describe("ComplaintsService admin transitions", () => {
 describe("ComplaintsService.adminList — filters", () => {
   it("[Important 3] the category filter is genuinely applied to the query, not silently dropped", async () => {
     const { prisma } = buildDeps();
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
 
     await service.adminList("OPEN", "merchant-1", "SAFETY_HYGIENE", 1, 20);
 
@@ -328,7 +370,10 @@ describe("ComplaintsService.adminList — filters", () => {
 
   it("omits the category key entirely when not provided (never filters on an undefined value)", async () => {
     const { prisma } = buildDeps();
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
 
     await service.adminList(undefined, undefined, undefined, 1, 20);
 
@@ -353,7 +398,10 @@ describe("ComplaintsService.getAssigned", () => {
         }),
       },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
 
     await expect(service.getAssigned("merchant-1", "c1")).resolves.toEqual(
       expect.objectContaining({ id: "c1", merchantId: "merchant-1" }),
@@ -370,7 +418,10 @@ describe("ComplaintsService.getAssigned", () => {
         }),
       },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
 
     await expect(
       service.getAssigned("merchant-1", "c1"),
@@ -385,7 +436,10 @@ describe("ComplaintsService.getAssigned", () => {
           .mockResolvedValue({ id: "c1", merchantId: null, messages: [] }),
       },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
 
     await expect(
       service.getAssigned("merchant-1", "c1"),
@@ -396,7 +450,10 @@ describe("ComplaintsService.getAssigned", () => {
     const { prisma } = buildDeps({
       complaintTicketRoot: { findUnique: jest.fn().mockResolvedValue(null) },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
 
     await expect(
       service.getAssigned("merchant-1", "missing"),
@@ -408,14 +465,18 @@ describe("ComplaintsService.getAssigned", () => {
 // REDEEMED reservation.
 describe("ComplaintsService.adminRefund", () => {
   it("claims the ticket, calls ReservationsService.refundRedeemed, and writes an AuditLog row on success", async () => {
-    const refundRedeemed = jest
-      .fn()
-      .mockResolvedValue({ reservationId: "resv1", ok: true, refundRef: "mock-refund-1" });
+    const refundRedeemed = jest.fn().mockResolvedValue({
+      reservationId: "resv1",
+      ok: true,
+      refundRef: "mock-refund-1",
+    });
     const { prisma } = buildDeps({
       complaintTicketRoot: {
-        findUnique: jest
-          .fn()
-          .mockResolvedValue({ id: "c1", reservationId: "resv1", refundedAt: null }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: "c1",
+          reservationId: "resv1",
+          refundedAt: null,
+        }),
       },
     });
     const service = new ComplaintsService(
@@ -452,7 +513,10 @@ describe("ComplaintsService.adminRefund", () => {
     const { prisma } = buildDeps({
       complaintTicketRoot: { findUnique: jest.fn().mockResolvedValue(null) },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
 
     await expect(
       service.adminRefund("admin1", "missing"),
@@ -462,12 +526,17 @@ describe("ComplaintsService.adminRefund", () => {
   it("409s when the complaint has no linked reservation, without ever claiming the ticket", async () => {
     const { prisma } = buildDeps({
       complaintTicketRoot: {
-        findUnique: jest
-          .fn()
-          .mockResolvedValue({ id: "c1", reservationId: null, refundedAt: null }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: "c1",
+          reservationId: null,
+          refundedAt: null,
+        }),
       },
     });
-    const service = new ComplaintsService(prisma as any, buildReservationsMock() as any);
+    const service = new ComplaintsService(
+      prisma as any,
+      buildReservationsMock() as any,
+    );
 
     const err = await service.adminRefund("admin1", "c1").catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
@@ -486,7 +555,9 @@ describe("ComplaintsService.adminRefund", () => {
       },
     });
     // The guarded updateMany's WHERE (refundedAt: null) no longer matches.
-    prisma.complaintTicket.updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    prisma.complaintTicket.updateMany = jest
+      .fn()
+      .mockResolvedValue({ count: 0 });
     const refundRedeemed = jest.fn();
     const service = new ComplaintsService(
       prisma as any,
@@ -507,9 +578,11 @@ describe("ComplaintsService.adminRefund", () => {
     });
     const { prisma } = buildDeps({
       complaintTicketRoot: {
-        findUnique: jest
-          .fn()
-          .mockResolvedValue({ id: "c1", reservationId: "resv1", refundedAt: null }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: "c1",
+          reservationId: "resv1",
+          refundedAt: null,
+        }),
       },
     });
     const service = new ComplaintsService(

@@ -573,9 +573,9 @@ describe("ReservationsService.refundRedeemed", () => {
       facade as any,
       outbox as any,
     );
-    await expect(
-      service.refundRedeemed("resv1"),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.refundRedeemed("resv1")).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it("throws RESERVATION_NOT_REFUNDABLE (409) when the reservation is not REDEEMED, without ever touching Payment", async () => {
