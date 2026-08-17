@@ -95,7 +95,16 @@ export default function ProfileScreen() {
           <MenuRow
             icon="document-text-outline"
             label={t("profile.legal")}
-            onPress={() => router.push({ pathname: "/legal/[doc]", params: { doc: "terms" } })}
+            onPress={() =>
+              router.push({
+                pathname: "/legal/[doc]",
+                // [I11 fix] Was "terms" — a slug that never matched any of
+                // the five real documents (content/legal/index.ts).
+                // mesafeli-satis-sozlesmesi is the closest consumer-facing
+                // equivalent to what "Terms" meant before.
+                params: { doc: "mesafeli-satis-sozlesmesi" },
+              })
+            }
           />
         </View>
 

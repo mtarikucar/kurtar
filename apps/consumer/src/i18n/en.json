@@ -167,7 +167,11 @@
     "unavailableBody": "It was a popular one — someone beat you to it. You can browse other bags nearby.",
     "backToDiscoverCta": "Find another bag",
     "creating": "Creating your reservation…",
-    "genericError": "Your purchase couldn't be completed. Please try again."
+    "genericError": "Your purchase couldn't be completed. Please try again.",
+    "preContractTitle": "Before you confirm",
+    "preContractObf": "Read the Pre-Contract Information Form",
+    "preContractMss": "Read the Distance Selling Agreement",
+    "consentLabel": "I have read the Pre-Contract Information Form and the Distance Selling Agreement; I understand the contents are a surprise, the allergen warning, the pickup window rules, and that the right of withdrawal does not apply to this kind of food product."
   },
   "payment": {
     "title": "Payment",
@@ -294,11 +298,7 @@
     "submitted": "Your report was received — our team will review it within 48 hours."
   },
   "legal": {
-    "title": "Legal",
-    "terms": "Terms of Use",
-    "privacy": "Privacy Policy",
-    "distanceSales": "Distance Sales Agreement",
-    "placeholderBody": "The full legal text will be added before launch."
+    "title": "Legal"
   },
   "errors": {
     "network": "Check your internet connection and try again.",

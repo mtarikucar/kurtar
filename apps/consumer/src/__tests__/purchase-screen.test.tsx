@@ -6,8 +6,9 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react-nativ
 jest.mock("../lib/api-client");
 
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn(), back: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush, back: jest.fn() }),
   useLocalSearchParams: () => ({ offerId: "offer-1", storeId: "store-1" }),
 }));
 
@@ -79,6 +80,7 @@ describe("Purchase screen — losing the race at drop time (OFFER_UNAVAILABLE)",
     await renderPurchaseScreen();
     await waitFor(() => expect(screen.getByTestId("purchase-confirm")).toBeTruthy());
 
+    await fireEvent.press(screen.getByTestId("purchase-consent-checkbox"));
     await fireEvent.press(screen.getByTestId("purchase-confirm"));
 
     await waitFor(() =>
@@ -106,6 +108,7 @@ describe("Purchase screen — losing the race at drop time (OFFER_UNAVAILABLE)",
     await fireEvent.press(screen.getByLabelText("Artır"));
     expect(screen.getByTestId("purchase-qty").props.children).toBe(2);
 
+    await fireEvent.press(screen.getByTestId("purchase-consent-checkbox"));
     await fireEvent.press(screen.getByTestId("purchase-confirm"));
 
     await waitFor(() =>
@@ -122,5 +125,55 @@ describe("Purchase screen — losing the race at drop time (OFFER_UNAVAILABLE)",
         }),
       ),
     );
+  });
+});
+
+// [I13 fix] Regression coverage: this screen used to go straight from a
+// quantity stepper to "Ödemeye geç" with no ÖBF/MSS link and no consent
+// control at all — the ONLY place a Turkish consumer forms a distance
+// contract (landing has no checkout).
+describe("Purchase screen — pre-contract disclosure gate", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockStore.mockResolvedValue(STORE_PROFILE);
+  });
+
+  it("disables the confirm button until the consent checkbox is ticked, and never calls create for an unconfirmed consent", async () => {
+    await renderPurchaseScreen();
+    await waitFor(() => expect(screen.getByTestId("purchase-confirm")).toBeTruthy());
+
+    const confirmButton = screen.getByTestId("purchase-confirm");
+    expect(confirmButton.props.accessibilityState?.disabled).toBe(true);
+
+    await fireEvent.press(confirmButton);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("enables the confirm button once the consent checkbox is ticked", async () => {
+    await renderPurchaseScreen();
+    await waitFor(() => expect(screen.getByTestId("purchase-confirm")).toBeTruthy());
+
+    await fireEvent.press(screen.getByTestId("purchase-consent-checkbox"));
+
+    expect(
+      screen.getByTestId("purchase-confirm").props.accessibilityState?.disabled,
+    ).toBe(false);
+  });
+
+  it("links to the real Ön Bilgilendirme Formu and Mesafeli Satış Sözleşmesi documents, not a placeholder", async () => {
+    await renderPurchaseScreen();
+    await waitFor(() => expect(screen.getByText("Ön Bilgilendirme Formu'nu oku")).toBeTruthy());
+
+    await fireEvent.press(screen.getByText("Ön Bilgilendirme Formu'nu oku"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/legal/[doc]",
+      params: { doc: "on-bilgilendirme-formu" },
+    });
+
+    await fireEvent.press(screen.getByText("Mesafeli Satış Sözleşmesi'ni oku"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/legal/[doc]",
+      params: { doc: "mesafeli-satis-sozlesmesi" },
+    });
   });
 });

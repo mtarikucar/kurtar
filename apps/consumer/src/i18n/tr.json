@@ -167,7 +167,11 @@
     "unavailableBody": "Çok popüler bir paketti — başka biri senden önce davrandı. Yakınındaki diğer paketlere göz atabilirsin.",
     "backToDiscoverCta": "Başka paket bul",
     "creating": "Rezervasyon oluşturuluyor…",
-    "genericError": "Satın alma tamamlanamadı. Lütfen tekrar dene."
+    "genericError": "Satın alma tamamlanamadı. Lütfen tekrar dene.",
+    "preContractTitle": "Rezervasyonu onaylamadan önce",
+    "preContractObf": "Ön Bilgilendirme Formu'nu oku",
+    "preContractMss": "Mesafeli Satış Sözleşmesi'ni oku",
+    "consentLabel": "Ön Bilgilendirme Formu'nu ve Mesafeli Satış Sözleşmesi'ni okudum; içeriğin sürpriz olduğunu, alerjen uyarısını, teslim penceresi kurallarını ve bu tür bir gıda ürününde cayma hakkının uygulanmadığını anlıyorum."
   },
   "payment": {
     "title": "Ödeme",
@@ -294,11 +298,7 @@
     "submitted": "Bildirimin alındı, ekibimiz 48 saat içinde inceleyecek."
   },
   "legal": {
-    "title": "Yasal metinler",
-    "terms": "Kullanım Koşulları",
-    "privacy": "Gizlilik Politikası",
-    "distanceSales": "Mesafeli Satış Sözleşmesi",
-    "placeholderBody": "Bu metnin tam hukuki içeriği yayın öncesinde eklenecektir."
+    "title": "Yasal metinler"
   },
   "errors": {
     "network": "İnternet bağlantını kontrol et ve tekrar dene.",
