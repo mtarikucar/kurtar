@@ -14,8 +14,12 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
  * since no server transaction happened yet. That local swipe is queued
  * here and reconciled by polling `GET /reservations/mine` (the one
  * consumer-reachable read) in the background until the reservation's
- * status flips to REDEEMED — by staff acting on their side, or by a later
- * retry of the direct call succeeding once the connection returns. See
+ * status flips to REDEEMED — by staff acting on their side (a manual
+ * redeem from the merchant-web pickup list). Nothing in this app retries
+ * the direct call once it's queued; the poll only ever reads, it never
+ * re-POSTs. A queued swipe that never gets a signal bar again is a real
+ * dead end until staff or an operator acts (tracked in
+ * docs/launch-checklist.md's deferred-minor items). See
  * hooks/use-redeem-reconciliation.ts for the full confirm/poll logic and
  * src/app/redeem/[id].tsx's doc comment for the screen's state-machine
  * writeup; this file only owns the durable queue.

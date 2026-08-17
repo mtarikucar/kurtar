@@ -13,9 +13,9 @@ describe("format.ts — impact/money/distance number formatting", () => {
     expect(formatPriceCents(100000)).toBe("₺1.000,00");
   });
 
-  it("formats a value band as a range, collapsing equal min/max", () => {
-    expect(formatValueBand(15000, 20000)).toBe("150–200 ₺");
-    expect(formatValueBand(10000, 10000)).toBe("~100 ₺");
+  it("formats a value band as a range, collapsing equal min/max, prefixed like formatPriceCents", () => {
+    expect(formatValueBand(15000, 20000)).toBe("₺150–200");
+    expect(formatValueBand(10000, 10000)).toBe("~₺100");
   });
 
   it("formats distance in meters under 1km, kilometers at/above", () => {

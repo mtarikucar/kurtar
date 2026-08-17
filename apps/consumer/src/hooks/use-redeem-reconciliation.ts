@@ -34,8 +34,16 @@ const POLL_INTERVAL_MS = 4000;
  *        `GET /reservations/mine` (the one consumer-reachable read, same
  *        one useGlobalRedeemSync uses in the background) until the
  *        reservation's status flips to REDEEMED — by staff acting on
- *        their side, or by this same screen's own retry succeeding once
- *        the connection returns.
+ *        their side (a manual redeem from the merchant-web pickup list).
+ *        There is deliberately no automatic retry of the direct call from
+ *        here: once queued, this screen never re-renders `SwipeToConfirm`
+ *        (see redeem/[id].tsx) and neither this hook nor
+ *        useGlobalRedeemSync ever calls `client.reservations.redeem()`
+ *        again — both only ever poll the read. A queued-and-still-offline
+ *        reservation is a dead end for the consumer's own device; only
+ *        staff redeeming it manually, or an engineer/admin intervening,
+ *        moves it forward. See `docs/launch-checklist.md`'s deferred-minor
+ *        items for this gap.
  *
  * While queued and unreconciled, `isOffline` distinguishes "still waiting"
  * (poll succeeds, status just isn't REDEEMED yet) from "we can't even

@@ -8,12 +8,16 @@ import { formatMoneyCents } from "@kurtar/ui-tokens";
  * convention (Task 14's consistency sweep found the mismatch). */
 export const formatPriceCents = formatMoneyCents;
 
-/** A rounded value-band, e.g. "150–200 ₺" — original value min/max are always whole-lira-ish cents. */
+/** A rounded value-band, e.g. "₺150–200" — original value min/max are
+ * always whole-lira-ish cents. Prefixed, matching `formatPriceCents`'s own
+ * "₺49,90" convention (this used to suffix the symbol instead — an
+ * intra-screen mismatch, since the two render right next to each other on
+ * the offer row — see app/store/[id].tsx). */
 export function formatValueBand(minCents: number, maxCents: number): string {
   const min = Math.round(minCents / 100);
   const max = Math.round(maxCents / 100);
-  if (min === max) return `~${min} ₺`;
-  return `${min}–${max} ₺`;
+  if (min === max) return `~₺${min}`;
+  return `₺${min}–${max}`;
 }
 
 /** Meters -> "350 m" under 1km, "2,4 km" at/above. */
