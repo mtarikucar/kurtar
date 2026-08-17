@@ -483,6 +483,27 @@ jobs:
       - name: Unit tests (@kurtar/api-client — incl. the single-flight refresh test)
         run: npm test -w @kurtar/api-client
 
+      # [I8 fix] The four frontend apps' own real test suites (real
+      # bugs this whole task's findings shipped WITH: apps/consumer/src/
+      # __tests__/otp-screen.test.tsx would have caught the C1/C2 token-
+      # persistence defect; apps/admin-web/src/lib/settlementBreakdown.
+      # spec.ts and apps/merchant-web's suites likewise) never actually
+      # ran here before — this job lint+typechecked+built every app but
+      # only ever executed the shared package's own tests. Each script is
+      # already non-watch (merchant-web's `test` was the one exception,
+      # a bare `vitest` that would have hung this job until its 20-minute
+      # timeout — fixed to run once via its own package.json, matching
+      # admin-web/landing's `vitest run` and consumer's default-run-once
+      # jest).
+      - name: Unit tests — merchant-web
+        run: npm test -w merchant-web
+      - name: Unit tests — admin-web
+        run: npm test -w admin-web
+      - name: Unit tests — consumer
+        run: npm test -w consumer
+      - name: Unit tests — landing
+        run: npm test -w landing
+
       # Regression gate for a bug class that evaded both the two checks
       # above: openapi-typescript emits response-status keys as NUMERIC
       # literals, which a naive `K extends \`2${string}\`` conditional
