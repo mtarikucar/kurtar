@@ -2,8 +2,7 @@ import type { RequestEngine } from "../engine";
 import type { RequestBody } from "../core-types";
 import type { ClientActor, ClientTransport } from "../transport";
 
-/** Every actor's refresh/logout route shares one body shape; pick any one as the alias. */
-type RefreshBody = RequestBody<"/api/auth/admin/refresh", "post">;
+/** Every actor's logout route shares one body shape; pick any one as the alias. */
 type LogoutBody = RequestBody<"/api/auth/admin/logout", "post">;
 
 export function createAuthDomain(
@@ -48,29 +47,24 @@ export function createAuthDomain(
      * for the rare manual case (proactively refreshing on app foreground,
      * or restoring a session on page load).
      *
-     * Routed to THIS client's own actor. There is no shared
-     * `/api/auth/refresh` any more — see `ClientActor` in transport.ts for
-     * the cross-actor session bleed that removed it.
+     * [I5 fix] Routed through `engine.refreshOnce()` — the SAME memoized
+     * in-flight promise `request()`'s own 401 branch uses — rather than a
+     * second, unmemoized `engine.request()` call. Before this fix, a
+     * manual refresh racing an engine-triggered one (e.g. a cold-start
+     * bootstrap refresh racing a screen's first authenticated request)
+     * could present the same refresh token to the backend twice, which
+     * reads as reuse and revokes the whole token family, silently
+     * signing the user out. `refreshOnce()`/`performRefresh()` already
+     * derive both the refresh token (via `getRefreshToken()`) and the
+     * actor-scoped path (`refreshPath(actor)`) internally, so there is no
+     * body/actor to pass here any more — this also fixes a real bug on
+     * body-transport (consumer) clients: the OLD `engine.request()` path
+     * forwarded whatever `body` the caller passed (every real call site
+     * passed none, i.e. `{}`), so the actual refresh token never reached
+     * the backend on a manual refresh at all — only the engine's own
+     * 401-triggered `performRefresh()` ever built the body correctly.
      */
-    refresh: (body: RefreshBody = {}) => {
-      switch (actor) {
-        case "ADMIN":
-          return engine.request("post", "/api/auth/admin/refresh", {
-            body,
-            cookieTransportHeader,
-          });
-        case "MERCHANT":
-          return engine.request("post", "/api/auth/merchant/refresh", {
-            body,
-            cookieTransportHeader,
-          });
-        default:
-          return engine.request("post", "/api/auth/consumer/refresh", {
-            body,
-            cookieTransportHeader,
-          });
-      }
-    },
+    refresh: () => engine.refreshOnce(),
 
     /**
      * POST /auth/<actor>/logout — revokes the presented refresh token's

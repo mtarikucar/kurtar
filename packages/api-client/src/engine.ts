@@ -32,6 +32,19 @@ export interface RequestEngine {
     path: P,
     options?: RequestOptions<P, M>,
   ): Promise<SuccessBody<P, M>>;
+  /**
+   * [I5 fix] The SAME single-flight memo `request()`'s own 401 branch
+   * uses — exposed so the `auth` domain's manual `refresh()` (cold-start
+   * bootstrap / page-reload session restore, the two documented
+   * exceptions to "never call refresh yourself") shares it instead of
+   * going through `request()` a second, unmemoized way. Without this, a
+   * manual refresh racing an engine-triggered one presents the SAME
+   * refresh token to the backend twice, which the backend can't tell
+   * apart from a stolen/replayed token — it revokes the whole family and
+   * silently signs the user out. See createRequestEngine's class doc for
+   * the full mechanism.
+   */
+  refreshOnce(): Promise<AuthTokens>;
 }
 
 /**
@@ -165,9 +178,19 @@ export function createRequestEngine(
         accessToken: null, // never send a (just-expired) access token on the refresh call itself
       });
     } catch (cause) {
-      const err = errorFromNetworkFailure(cause);
-      options.onUnauthorized?.();
-      throw err;
+      // [I6 fix] A network-level failure (offline, DNS, timeout, a cell↔
+      // wifi handoff) is NOT "the refresh token is bad" — it's "we
+      // couldn't ask the server at all". `onUnauthorized` is documented
+      // (transport.ts) as firing "exactly when a refresh attempt itself
+      // fails (refresh token invalid, reused, or expired) — the
+      // definitive 'log the user out' signal", and every app takes that
+      // literally: apps/consumer deletes the persisted refresh token from
+      // SecureStore on it. Firing it here would permanently destroy a
+      // still-valid 30-day credential over a transient connectivity blip.
+      // Rethrow as a NETWORK_ERROR KurtarApiError (statusCode 0,
+      // `.isNetworkError` true) and leave session state untouched —
+      // callers can retry once connectivity returns.
+      throw errorFromNetworkFailure(cause);
     }
     if (!response.ok) {
       const err = await errorFromResponse(response);
@@ -236,5 +259,5 @@ export function createRequestEngine(
     return (await parseBody(response)) as SuccessBody<P, M>;
   }
 
-  return { request };
+  return { request, refreshOnce };
 }

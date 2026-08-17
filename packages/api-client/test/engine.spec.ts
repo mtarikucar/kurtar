@@ -339,6 +339,90 @@ describe("createRequestEngine — single-flight refresh", () => {
     await engine.request("get", "/api/merchants/me");
     expect(refreshCallCount).toBe(2);
   });
+
+  it("[I5 fix] a manual refreshOnce() call and a concurrent 401-triggered refresh share the SAME in-flight promise — exactly one POST to /refresh", async () => {
+    let refreshCallCount = 0;
+    let resolveRefresh: (() => void) | undefined;
+    const refreshGate = new Promise<void>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    const fetchMock = jest.fn(async (url: string, init: RequestInit = {}) => {
+      if (url.endsWith("/api/auth/consumer/refresh")) {
+        refreshCallCount += 1;
+        await refreshGate; // held open until both callers have started
+        return jsonResponse(200, {
+          accessToken: "fresh-token",
+          refreshToken: "r",
+        });
+      }
+      const headers = new Headers(init.headers);
+      if (headers.get("authorization") === "Bearer fresh-token") {
+        return jsonResponse(200, { ok: true });
+      }
+      return jsonResponse(401, {
+        statusCode: 401,
+        message: "expired",
+        error: "Unauthorized",
+      });
+    });
+    const engine = createRequestEngine({
+      baseUrl: "http://api.test",
+      transport: "body",
+      actor: "CONSUMER",
+      getAccessToken: () => "expired-token",
+      getRefreshToken: () => "stale-refresh-token",
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    // Mirrors the real failure scenario: a cold-start bootstrap's manual
+    // `client.auth.refresh()` (-> engine.refreshOnce()) is still in
+    // flight when an ordinary request 401s and triggers the engine's OWN
+    // refresh. Before the I5 fix, these were two unrelated promises —
+    // TWO POSTs to /refresh with the SAME stale refresh token, which the
+    // backend's reuse-detection reads as theft and revokes the whole
+    // token family.
+    const manual = engine.refreshOnce();
+    const triggered = engine.request("get", "/api/reservations/mine");
+    resolveRefresh?.();
+
+    await expect(manual).resolves.toEqual(
+      expect.objectContaining({ accessToken: "fresh-token" }),
+    );
+    await expect(triggered).resolves.toEqual({ ok: true });
+    expect(refreshCallCount).toBe(1);
+  });
+
+  it("[I6 fix] does NOT call onUnauthorized when the refresh fetch itself rejects (a network failure, not a real 401) — a still-valid refresh token must survive a connectivity blip", async () => {
+    const onUnauthorized = jest.fn();
+    const fetchMock = jest.fn(async (url: string) => {
+      if (url.endsWith("/api/auth/consumer/refresh")) {
+        throw new TypeError("Network request failed");
+      }
+      return jsonResponse(401, {
+        statusCode: 401,
+        message: "jwt expired",
+        error: "Unauthorized",
+      });
+    });
+    const engine = createRequestEngine({
+      baseUrl: "http://api.test",
+      transport: "body",
+      actor: "CONSUMER",
+      getAccessToken: () => "expired-token",
+      getRefreshToken: () => "still-valid-refresh-token",
+      onUnauthorized,
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+
+    const err = await engine
+      .request("get", "/api/reservations/mine")
+      .catch((e) => e as KurtarApiError);
+
+    expect(err).toBeInstanceOf(KurtarApiError);
+    expect(err.errorCode).toBe("NETWORK_ERROR");
+    expect(err.isNetworkError).toBe(true);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
 });
 
 describe("createRequestEngine — transport header behavior", () => {
