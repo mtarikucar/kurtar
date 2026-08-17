@@ -52,7 +52,7 @@ This single command, from a clean clone, does everything:
 1. creates `.env`/`landing/.env.local` from their `.env.example` files if missing (dev-safe defaults, mock providers — never use these values in production);
 2. starts PostGIS + Redis (`docker compose -f ops/docker-compose.yml up -d --wait`);
 3. installs dependencies (`npm ci`) if `node_modules` is missing;
-4. generates the Prisma client and **applies every pending migration** (`prisma migrate deploy`) — this step is never optional and never skippable; a merged tree with an unapplied migration is exactly what broke the backend suite once already (see `.superpowers/sdd/.../task-14-report.md`);
+4. generates the Prisma client and **applies every pending migration** (`prisma migrate deploy`) — this step is never optional and never skippable, because an unapplied migration on a merged tree is a real, reachable way to turn the backend suite red (a schema-changing migration landed on this branch the same day it was merged — see `20260815210000_reservation_consumer_redeem` — so a dev DB that predates that merge would be exactly one `prisma migrate deploy` away from matching the code again);
 5. seeds the reversible demo dataset (`npm run seed:demo -w backend` — see below; pass `--no-seed` to skip);
 6. starts the backend and the three web surfaces concurrently, with prefixed, interleaved logs.
 
@@ -95,10 +95,11 @@ All demo accounts share the password **`KurtarDemo123!`**.
 | Role | Login | Notes |
 |---|---|---|
 | Admin | `demo.admin@kurtar.app` | admin-web |
-| Merchant (APPROVED) | `hakan@modafirin.demo.kurtar.app` | Moda Fırın, Kadıköy — has a live, redeemable offer right after seeding |
+| Merchant (APPROVED) | `hakan@modafirin.demo.kurtar.app` | Moda Fırın, Kadıköy |
 | Merchant (APPROVED) | `sibel@yeldegirmenipastanesi.demo.kurtar.app` | Yeldeğirmeni Pastanesi, Kadıköy — has a **SETTLED** settlement batch |
 | Merchant (APPROVED) | `onur@caferagakahve.demo.kurtar.app` | Caferağa Kahve Evi, Kadıköy — has a **CALCULATED** (pending admin approval) batch |
-| Merchant (DRAFT) | `pelin@nisantasikahve.demo.kurtar.app` | Nişantaşı Kahve Durağı, Şişli — never submitted for review |
+| Merchant (APPROVED) | `murat@leventfirin.demo.kurtar.app` | Levent Fırın, Beşiktaş — has a live, redeemable offer right after seeding |
+| Merchant (DRAFT) | `pelin@nisantasikahve.demo.kurtar.app` | Nişantaşı Kahve Durağı — never submitted for review, so it has no store/offer yet |
 | Merchant (SUSPENDED) | `tolga@mecidiyekoyocakbasi.demo.kurtar.app` | Mecidiyeköy Ocakbaşı, Şişli — kill-switch demo case |
 | Consumer | phone `+905551110002` (Elif Demir) | has a **CONFIRMED** reservation in a live pickup window right after seeding — open the redeem screen to see it |
 
@@ -130,9 +131,12 @@ npm run openapi:check-response-types  # fails loud if any operation lost its typ
 
 cd ..
 npm run generate:api-client       # regenerates packages/api-client/src/generated/openapi-types.ts from docs/openapi.json
+npm run build -w @kurtar/api-client  # rebuilds dist/ — every app resolves the package through its "main": "dist/index.js", not the TS source
 ```
 
-Both regeneration steps are enforced as CI drift gates (`.github/workflows/quality-gates.yml`'s `openapi-contract-drift` and `frontend-quality` jobs) — a controller change that forgets to regenerate fails the build, not silently ships a stale contract to four frontends.
+That last build step is easy to skip and still "look" done — the generate step alone updates the TS source, but merchant-web/admin-web/landing/consumer all import the package via its published `dist/` output (`packages/api-client/package.json`'s `"main"`), so a stale, unrebuilt `dist/` silently keeps serving the OLD contract to every frontend even after `generate:api-client` succeeded. (`@kurtar/ui-tokens` has the exact same `dist/`-is-what-gets-imported shape, though it's rarely hand-edited the way the contract is regenerated.)
+
+Both regeneration steps (`openapi:generate` + `generate:api-client`) are enforced as CI drift gates (`.github/workflows/quality-gates.yml`'s `openapi-contract-drift` and `frontend-quality` jobs) — a controller change that forgets to regenerate fails the build, not silently ships a stale contract to four frontends. `frontend-quality` also always rebuilds `dist/` itself before linting/typechecking any frontend, which is why CI can never be fooled by a stale local `dist/` the way a local dev loop can.
 
 ## Repository layout
 

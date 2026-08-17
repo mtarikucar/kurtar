@@ -57,7 +57,7 @@ Restore into a **new, empty database** first and diff row counts against product
 
 ## Cron inventory
 
-All ten crons run inside the single `api` container (NestJS's `@nestjs/schedule`, in-process — see [`docs/architecture/decisions/0002-outbox-pattern.md`](architecture/decisions/0002-outbox-pattern.md) for why this is fine at kurtar's current scale, and what to revisit if the api service is ever scaled past one replica). Every one below also has an admin-triggerable on-demand equivalent where a human might reasonably need to force a run without waiting for the schedule — noted per row.
+All ten crons run inside the single `api` container (NestJS's `@nestjs/schedule`, in-process — see [`docs/architecture/decisions/0002-outbox-pattern.md`](architecture/decisions/0002-outbox-pattern.md) for why this is fine at kurtar's current scale, and what to revisit if the api service is ever scaled past one replica). Only **two of the ten** — both settlement-related — have an admin-triggerable on-demand equivalent today (noted per row below); the other eight have no way to force a run without waiting for the schedule, which is worth knowing before assuming you can nudge one along during an incident.
 
 | Cron | Schedule | What it does | If it doesn't run |
 |---|---|---|---|
@@ -110,25 +110,44 @@ The content-report takedown alert (12h-remaining mark on a 48h window) works the
 
 ## The merchant kill-switch (suspend) — blast radius
 
-`POST /api/admin/merchants/:id/suspend` (admin-web: İşletme onayları → suspend action) is immediate and has real, irreversible-in-part consequences:
+`POST /api/admin/merchants/:id/suspend` (admin-web: İşletme onayları → suspend action) is immediate and, as shipped today, **permanent — there is no way back**. Read this whole section before ever clicking it.
 
 1. The merchant's `verificationStatus` flips to `SUSPENDED` in one small transaction.
-2. **Every active offer across every one of the merchant's stores is cancelled** (the same code path as a merchant self-cancelling an offer) — every reservation against those offers gets refunded through the normal refund fan-out.
-3. The merchant instantly disappears from every discovery surface (`discovery.service.ts` filters `verificationStatus = 'APPROVED'` in all three query paths) and can no longer authenticate any write path (`MerchantApprovalGuard` default-denies a non-APPROVED merchant everywhere except the exempted read-only/redeem/onboarding routes).
+2. **Every active offer across every one of the merchant's stores is cancelled** (the same code path as a merchant self-cancelling an offer). Only reservations that were actually `CONFIRMED` go through the normal refund fan-out. A reservation still in `PENDING_PAYMENT` is moved straight to `EXPIRED` and its payment marked `FAILED` — there is nothing to refund there, since no capture ever completed (`reservations.service.ts`'s `cancelAllForOffer`).
+3. The merchant instantly disappears from every discovery surface (`discovery.service.ts` filters `verificationStatus = 'APPROVED'` in all three query paths). It does **not** stop the merchant from logging in — `MerchantApprovalGuard` runs after authentication and denies at the authorization layer (403 `MERCHANT_NOT_APPROVED`) on every write route except the exempted read-only/redeem/onboarding ones; a suspended merchant still gets a valid JWT from `POST /auth/merchant/login`, they just cannot act on anything once they have it.
 4. The response includes `offersCancelled` — the only real, non-fabricated count of blast radius; there is no "preview before you click" endpoint, so **know this will happen before you click it**, not after.
-5. What suspend does **not** do: it doesn't touch historical settlement batches (a SETTLED/SENT batch is unaffected), and it doesn't delete the merchant's data — re-approving (`POST /api/admin/merchants/:id/approve` from SUSPENDED) restores write access, but does not un-cancel the offers/reservations that were already cancelled.
+5. **SUSPENDED is a terminal state with no reinstate path.** `merchant-verification-transitions.ts` declares `SUSPENDED: []` — no status transitions out of it at all, and its own comment calls this out as deliberate-for-now, not an oversight. `POST /api/admin/merchants/:id/approve` only accepts a merchant currently in `SUBMITTED`/`UNDER_REVIEW`; called against a `SUSPENDED` merchant it 409s (`MERCHANT_NOT_APPROVED` conflict, not a status change) rather than reinstating them. There is no other endpoint that moves a merchant out of `SUSPENDED` either. **In practice: suspending a merchant today costs them their business on this platform, permanently, with no admin-facing undo** — not "restores write access on re-approval," which this document incorrectly claimed before this section was corrected. The only way back today is a manual, unaudited direct database write by an engineer. This is flagged as a launch-blocking product gap in `docs/launch-checklist.md` — do not suspend a merchant over something that should be temporary (e.g. a documentation dispute, a first-time minor complaint) until a real reinstate path exists.
+6. What suspend does **not** do: it doesn't touch historical settlement batches (a SETTLED/SENT batch is unaffected), and it doesn't delete the merchant's data — the row, its stores, and its history all still exist, just permanently unreachable through the merchant's own account.
 
-Use suspend for "this merchant needs to stop transacting right now" (a safety complaint, a fraud signal, a legal request) — not as a routine pause. There is currently no separate "temporarily hide, no cancellation" toggle.
+Use suspend only for "this merchant must never transact on this platform again" (a safety complaint, a fraud signal, a legal request) until a reinstate path ships — not as a routine or temporary pause. There is currently no separate "temporarily hide, no cancellation, reversible" toggle either.
 
 ## End-to-end test
 
-`e2e/tests/money-loop.spec.ts` (Playwright) proves the full money loop — consumer discovery → reserve → mock PSP webhook → CONFIRMED → merchant-web pickup list → redeem → rating → nightly settlement batch → admin-web approve → retry/payout dispatch → SENT — against a real backend, a real ephemeral Postgres/PostGIS + Redis, and the **built** merchant-web/admin-web (not dev servers). The consumer side is driven through the real API directly (no mocks) rather than a browser, since the Expo app has no browser E2E surface — see that file's own doc comment, and `apps/consumer`'s own jest + React Native Testing Library suite for consumer-side UI coverage instead.
+`e2e/tests/money-loop.spec.ts` (Playwright) proves the full money loop — consumer discovery → reserve → mock PSP webhook → CONFIRMED → merchant-web pickup list → redeem → rating → nightly settlement batch → admin-web approve → retry/payout dispatch → SENT — against a real backend and a real ephemeral Postgres/PostGIS + Redis. The consumer side is driven through the real API directly (no mocks) rather than a browser, since the Expo app has no browser E2E surface — see that file's own doc comment, and `apps/consumer`'s own jest + React Native Testing Library suite for consumer-side UI coverage instead.
 
-Wired into CI as its own job (`e2e-money-loop` in `.github/workflows/quality-gates.yml`), running on every PR and push to `main`. It is not part of any local `npm test` default — run it explicitly:
+The test itself is agnostic to how merchant-web/admin-web got onto the port it's pointed at (`playwright.config.ts` deliberately has no `webServer` entry — starting those surfaces is the CI job's/your own job, not this config's) — but **which** you point it at differs by context:
+
+- **In CI**, `e2e-money-loop` builds merchant-web/admin-web for real and serves them with `vite preview` — the production bundle, matching what actually ships, not a dev server with HMR overhead.
+- **Locally via `./scripts/dev-up.sh`**, merchant-web/admin-web are running as **dev servers** (`npm run dev`, i.e. Vite's own dev middleware) — that is what `dev-up.sh` starts, and it is sufficient for this test: the same routes and the same UI, just served differently. If you want to reproduce the CI job exactly (built bundles via `vite preview`), build and preview both apps yourself instead of using `dev-up.sh`'s dev servers — see the commands below.
+
+Wired into CI as its own job (`e2e-money-loop` in `.github/workflows/quality-gates.yml`), running on every PR and push to `main`. It is not part of any local `npm test` default — run it explicitly, e.g. against `dev-up.sh`'s dev servers:
 
 ```bash
+./scripts/dev-up.sh                            # backend + merchant-web + admin-web (dev servers) + demo seed
 cd e2e
-npx playwright install --with-deps chromium   # once
+npx playwright install --with-deps chromium    # once
+E2E_BACKEND_LOG_FILE=<path dev-up.sh printed>  npx playwright test
+```
+
+...or against built/previewed surfaces, matching the CI job exactly:
+
+```bash
+npm run build -w @kurtar/ui-tokens && npm run build -w @kurtar/api-client
+npm run build -w backend && npm run build -w merchant-web && npm run build -w admin-web
+(cd backend && npm run start:prod &)           # or npm run seed:demo -w backend first
+(npm run preview -w merchant-web &)
+(npm run preview -w admin-web &)
+cd e2e
 E2E_BACKEND_LOG_FILE=/path/to/backend/stdout.log npx playwright test
 ```
 
