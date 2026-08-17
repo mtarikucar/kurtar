@@ -31,17 +31,31 @@ export default function StoreProfileScreen() {
           accessibilityLabel={t("common.back")}
           onPress={() => router.back()}
         />
-        <IconButton
-          name={isFavorite ? "heart" : "heart-outline"}
-          color={isFavorite ? colors.primary[500] : colors.neutral[800]}
-          accessibilityLabel={
-            isFavorite ? t("storeProfile.unfavoriteCta") : t("storeProfile.favoriteCta")
-          }
-          testID="favorite-toggle"
-          onPress={() =>
-            id && toggleFavorite.mutate({ storeId: id, isFavorite })
-          }
-        />
+        <View style={styles.headerActions}>
+          <IconButton
+            name="flag-outline"
+            accessibilityLabel={t("report.title.STORE")}
+            testID="store-report-cta"
+            onPress={() =>
+              id &&
+              router.push({
+                pathname: "/report/new",
+                params: { targetType: "STORE", targetId: id },
+              })
+            }
+          />
+          <IconButton
+            name={isFavorite ? "heart" : "heart-outline"}
+            color={isFavorite ? colors.primary[500] : colors.neutral[800]}
+            accessibilityLabel={
+              isFavorite ? t("storeProfile.unfavoriteCta") : t("storeProfile.favoriteCta")
+            }
+            testID="favorite-toggle"
+            onPress={() =>
+              id && toggleFavorite.mutate({ storeId: id, isFavorite })
+            }
+          />
+        </View>
       </View>
 
       {storeQuery.isLoading ? (
@@ -126,6 +140,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   listContent: {
     paddingHorizontal: 20,

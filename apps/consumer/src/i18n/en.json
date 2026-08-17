@@ -282,6 +282,17 @@
       "OTHER": "Other"
     }
   },
+  "report": {
+    "title": {
+      "OFFER": "Report this offer",
+      "STORE": "Report this store",
+      "RATING": "Report this rating"
+    },
+    "reason": "Why are you reporting this?",
+    "reasonPlaceholder": "Describe the illegal, abusive, or inappropriate content…",
+    "submit": "Report",
+    "submitted": "Your report was received — our team will review it within 48 hours."
+  },
   "legal": {
     "title": "Legal",
     "terms": "Terms of Use",

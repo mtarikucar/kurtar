@@ -282,6 +282,17 @@
       "OTHER": "Diğer"
     }
   },
+  "report": {
+    "title": {
+      "OFFER": "İlanı bildir",
+      "STORE": "Mağazayı bildir",
+      "RATING": "Değerlendirmeyi bildir"
+    },
+    "reason": "Neden bildiriyorsun?",
+    "reasonPlaceholder": "Yasa dışı, kötüye kullanım ya da uygunsuz içeriği anlat…",
+    "submit": "Bildir",
+    "submitted": "Bildirimin alındı, ekibimiz 48 saat içinde inceleyecek."
+  },
   "legal": {
     "title": "Yasal metinler",
     "terms": "Kullanım Koşulları",

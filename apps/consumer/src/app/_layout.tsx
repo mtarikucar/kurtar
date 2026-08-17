@@ -80,6 +80,7 @@ function RootNavigator() {
       <Stack.Screen name="rate/[id]" options={{ presentation: "modal" }} />
       <Stack.Screen name="order/[id]" />
       <Stack.Screen name="complaint/new" options={{ presentation: "modal" }} />
+      <Stack.Screen name="report/new" options={{ presentation: "modal" }} />
       <Stack.Screen name="legal/[doc]" />
     </Stack>
   );

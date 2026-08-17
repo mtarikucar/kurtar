@@ -40,7 +40,17 @@ export default function OfferDetailScreen() {
           onPress={() => router.back()}
         />
         <Text style={styles.headerTitle}>{t("offerDetail.title")}</Text>
-        <View style={{ width: 44 }} />
+        <IconButton
+          name="flag-outline"
+          accessibilityLabel={t("report.title.OFFER")}
+          testID="offer-report-cta"
+          onPress={() =>
+            router.push({
+              pathname: "/report/new",
+              params: { targetType: "OFFER", targetId: id },
+            })
+          }
+        />
       </View>
 
       {storeProfileQuery.isLoading ? (
