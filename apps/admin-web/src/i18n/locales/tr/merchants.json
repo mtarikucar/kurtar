@@ -52,6 +52,15 @@
     "notSuspendable": "Bu işletme askıya alınabilir durumda değil (zaten askıda ya da henüz onaylanmamış).",
     "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin."
   },
+  "kyc": {
+    "iban": "IBAN",
+    "taxId": "VKN/TCKN",
+    "docs": "Başvuru belgeleri",
+    "noDocs": "Belge sunulmamış.",
+    "history": "Doğrulama geçmişi",
+    "noHistory": "Henüz doğrulama geçmişi yok.",
+    "historyEntry": "{{date}}: {{from}} → {{to}}"
+  },
   "reverify": {
     "title": "Yıllık yeniden doğrulama gereken işletmeler",
     "subtitle": "Onay tarihinden 1 yıl sonra yeniden doğrulama önerilir (verifiedAt + 1 yıl olarak hesaplanır — API bu tarihi liste görünümünde ayrıca sağlamaz).",

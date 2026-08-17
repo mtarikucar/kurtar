@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { client } from "../../api/client";
 import type {
+  AdminMerchantDetail,
   AdminMerchantListResponse,
   MerchantVerificationStatus,
 } from "../../api/admin-types";
@@ -80,6 +81,23 @@ export function useApprovedMerchantsForReverify() {
         pageSize: 100,
       });
     },
+  });
+}
+
+/**
+ * [I7 fix] The audited KYC-detail read — GET /admin/merchants/{id}. Every
+ * server-side read is audited (an AuditLog row), so this is deliberately
+ * only ever fetched when an admin is actually about to make an
+ * approve/reject decision (MerchantActionDialog), not eagerly for every
+ * row in the list — that would generate an audit entry for merchants
+ * nobody is reviewing.
+ */
+export function useMerchantDetail(id: string | null) {
+  return useQuery({
+    queryKey: ["admin", "merchants", "detail", id],
+    queryFn: async (): Promise<AdminMerchantDetail> =>
+      client.admin.merchants.get(id as string),
+    enabled: id !== null,
   });
 }
 

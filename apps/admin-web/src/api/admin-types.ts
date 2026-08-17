@@ -40,6 +40,11 @@ export type MerchantTransitionResponse = Awaited<
 export type MerchantSuspendResponse = Awaited<
   ReturnType<typeof client.admin.merchants.suspend>
 >;
+/** [I7 fix] The audited KYC-detail read (docsJson, IBAN, verification
+ * history) — what an approver needs to actually judge a submission. */
+export type AdminMerchantDetail = Awaited<
+  ReturnType<typeof client.admin.merchants.get>
+>;
 
 // ---------------------------------------------------------------------
 // Settlements

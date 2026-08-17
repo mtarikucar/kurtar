@@ -317,6 +317,7 @@ export function MerchantsPage() {
         <MerchantActionDialog
           variant={actionTarget.variant}
           tradeName={actionTarget.merchant.tradeName}
+          merchantId={actionTarget.merchant.id}
           pending={pendingMutation}
           onConfirm={handleConfirmAction}
           onCancel={() => setActionTarget(null)}
