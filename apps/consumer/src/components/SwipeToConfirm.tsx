@@ -9,6 +9,7 @@ import {
   type LayoutChangeEvent,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useTranslation } from "react-i18next";
 import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
 
 interface SwipeToConfirmProps {
@@ -33,6 +34,7 @@ const CONFIRM_THRESHOLD_RATIO = 0.72;
  * `onConfirm`.
  */
 export function SwipeToConfirm({ label, onConfirm, disabled }: SwipeToConfirmProps) {
+  const { t } = useTranslation();
   const [trackWidth, setTrackWidth] = useState(0);
   const translateX = useRef(new Animated.Value(0)).current;
   const confirmedRef = useRef(false);
@@ -87,7 +89,7 @@ export function SwipeToConfirm({ label, onConfirm, disabled }: SwipeToConfirmPro
       onLayout={handleLayout}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint="Teslim almayı onaylamak için etkinleştir"
+      accessibilityHint={t("redeem.swipeAccessibilityHint")}
       accessibilityState={{ disabled }}
       accessibilityActions={[{ name: "activate" }]}
       onAccessibilityAction={handleActivate}

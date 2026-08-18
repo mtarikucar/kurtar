@@ -128,6 +128,7 @@
     "emptyPastTitle": "No past orders",
     "emptyPastBody": "Your first rescued bag will show up here.",
     "browseCta": "Browse bags",
+    "unknownStoreName": "Store",
     "status": {
       "PENDING_PAYMENT": "Payment pending",
       "CONFIRMED": "Confirmed",
@@ -161,6 +162,8 @@
   "purchase": {
     "title": "Buy",
     "quantityTitle": "How many bags?",
+    "decreaseQty": "Decrease",
+    "increaseQty": "Increase",
     "total": "Total",
     "confirmCta": "Go to payment",
     "unavailableTitle": "This bag isn't available anymore",
@@ -191,8 +194,10 @@
     "codeLabel": "Code",
     "qtyLabel": "Qty",
     "swipeCta": "Swipe to confirm pickup",
+    "swipeAccessibilityHint": "Activate to confirm pickup",
     "swipeHint": "Show this screen to store staff and swipe in front of them.",
     "liveClockHint": "This clock ticks live — proof it isn't a screenshot.",
+    "liveClockAccessibilityLabel": "Live clock: {{time}}",
     "offlineTitle": "Confirmed offline",
     "offlineBody": "We confirmed this locally without a connection. We'll sync automatically once you're back online — keep showing this screen to staff.",
     "successTitle": "Enjoy your meal!",

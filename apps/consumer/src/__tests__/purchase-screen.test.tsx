@@ -16,6 +16,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { createTestQueryClient } from "../test-utils/render";
 import { client } from "../lib/api-client";
 import PurchaseScreen from "../app/purchase/[offerId]";
+import i18n from "../i18n";
 import "../i18n";
 import { KurtarApiError } from "@kurtar/api-client";
 
@@ -174,6 +175,30 @@ describe("Purchase screen — pre-contract disclosure gate", () => {
     expect(mockPush).toHaveBeenCalledWith({
       pathname: "/legal/[doc]",
       params: { doc: "mesafeli-satis-sozlesmesi" },
+    });
+  });
+
+  // [M22 fix] The quantity stepper's +/- accessibility labels used to be
+  // hardcoded Turkish literals ("Azalt"/"Artır") instead of i18n keys —
+  // proven the only way a same-string-by-default fix can be: switch the
+  // active language and assert the accessible label actually follows it.
+  describe("quantity stepper accessibility labels are i18n-sourced (M22)", () => {
+    afterEach(async () => {
+      await i18n.changeLanguage("tr");
+    });
+
+    it("renders Azalt/Artır in Turkish and Decrease/Increase in English", async () => {
+      await i18n.changeLanguage("tr");
+      const first = await renderPurchaseScreen();
+      await waitFor(() => expect(first.getByLabelText("Azalt")).toBeTruthy());
+      expect(first.getByLabelText("Artır")).toBeTruthy();
+      await first.unmount();
+
+      await i18n.changeLanguage("en");
+      const second = await renderPurchaseScreen();
+      await waitFor(() => expect(second.getByLabelText("Decrease")).toBeTruthy());
+      expect(second.getByLabelText("Increase")).toBeTruthy();
+      await second.unmount();
     });
   });
 });

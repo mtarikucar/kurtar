@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { StyleSheet, Text } from "react-native";
+import { useTranslation } from "react-i18next";
 import { typeScale } from "@kurtar/ui-tokens";
 import { formatClockWithSeconds } from "../lib/format";
 
@@ -16,6 +17,7 @@ interface LiveClockProps {
  * exactly the trust signal store staff are shown to check for.
  */
 export function LiveClock({ color, size = 56 }: LiveClockProps) {
+  const { t } = useTranslation();
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -26,7 +28,9 @@ export function LiveClock({ color, size = 56 }: LiveClockProps) {
   return (
     <Text
       style={[styles.clock, { color, fontSize: size }]}
-      accessibilityLabel={`Canlı saat: ${formatClockWithSeconds(now)}`}
+      accessibilityLabel={t("redeem.liveClockAccessibilityLabel", {
+        time: formatClockWithSeconds(now),
+      })}
     >
       {formatClockWithSeconds(now)}
     </Text>

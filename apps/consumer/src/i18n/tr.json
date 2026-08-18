@@ -128,6 +128,7 @@
     "emptyPastTitle": "Geçmiş siparişin yok",
     "emptyPastBody": "İlk paketini kurtardığında burada görünecek.",
     "browseCta": "Paketlere göz at",
+    "unknownStoreName": "Mağaza",
     "status": {
       "PENDING_PAYMENT": "Ödeme bekleniyor",
       "CONFIRMED": "Onaylandı",
@@ -161,6 +162,8 @@
   "purchase": {
     "title": "Satın al",
     "quantityTitle": "Kaç paket istersin?",
+    "decreaseQty": "Azalt",
+    "increaseQty": "Artır",
     "total": "Toplam",
     "confirmCta": "Ödemeye geç",
     "unavailableTitle": "Bu paket artık alınamıyor",
@@ -191,8 +194,10 @@
     "codeLabel": "Kod",
     "qtyLabel": "Adet",
     "swipeCta": "Teslim almak için kaydır",
+    "swipeAccessibilityHint": "Teslim almayı onaylamak için etkinleştir",
     "swipeHint": "Bu ekranı mağaza personeline göster ve önünde kaydır.",
     "liveClockHint": "Bu saat canlı akıyor — ekran görüntüsü olmadığının kanıtı.",
+    "liveClockAccessibilityLabel": "Canlı saat: {{time}}",
     "offlineTitle": "Çevrimdışı onaylandı",
     "offlineBody": "İnternet bağlantısı olmadan yerel olarak onayladık. Bağlantı gelince otomatik olarak senkronize edeceğiz — bu ekranı kapatmadan personele göster.",
     "successTitle": "Afiyet olsun!",
