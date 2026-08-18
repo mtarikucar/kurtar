@@ -86,7 +86,7 @@ Müşteri ekranında canlı saat + kod; **personel önünde swipe** → server-s
 Next.js + next-intl (MVP tr+en, 5-locale iskelet hazır); işletme kayıt hunisi `/isletme`; programatik şehir/kategori sayfaları (`/istanbul/firin`); smart banner + `/o/:id` universal-link köprüsü; canlı impact sayacı.
 
 ### 4.9 CI/CD + ortamlar
-Paylaşımlı VPS (DEPLOY_HOST), kendi compose/ağ/volume; **port bloğu prod 4750-59, staging 4760-69**; kendi PostGIS + Redis; gecelik backup + offsite. CI: quality-gates deseni (gerçek PostGIS'te `db push` e2e, i18n parity). CD: `v*` tag → preflight (migration doctor + `ss -ltn` port çakışması) → GHCR → compose; blue/green script'i. Monitoring: mevcut kds Prometheus/Grafana/Loki stack'ine scrape target ekle. Migration'lar: elle yazılmış **up/down** SQL (kds konvansiyonu + global kural).
+Paylaşımlı VPS (adres deploy secret'ında), kendi compose/ağ/volume; **port bloğu prod 4750-59, staging 4760-69**; kendi PostGIS + Redis; gecelik backup + offsite. CI: quality-gates deseni (gerçek PostGIS'te `db push` e2e, i18n parity). CD: `v*` tag → preflight (migration doctor + `ss -ltn` port çakışması) → GHCR → compose; blue/green script'i. Monitoring: mevcut kds Prometheus/Grafana/Loki stack'ine scrape target ekle. Migration'lar: elle yazılmış **up/down** SQL (kds konvansiyonu + global kural).
 
 ### 4.10 İnşa sırası (1 senior + AI hızı)
 - **Wave 0 (evrak, 0. gün başlar, 4-8 hafta bekleme):** ETBİS+KEP, **iyzico Pazaryeri başvurusu (kritik yol #1)**, Apple D-U-N-S (**kritik yol #2**), e-Fatura mükellefiyeti, sözleşme metinleri (hukukçu).
