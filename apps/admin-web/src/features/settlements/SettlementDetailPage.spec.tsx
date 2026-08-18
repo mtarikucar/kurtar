@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "../../i18n";
@@ -42,6 +43,7 @@ const baseBatch: AdminSettlementDetail = {
 };
 
 const getMock = vi.fn(async () => baseBatch);
+const settleMock = vi.fn(async () => baseBatch);
 
 vi.mock("../../api/client", () => ({
   client: {
@@ -51,6 +53,8 @@ vi.mock("../../api/client", () => ({
         approve: vi.fn(),
         hold: vi.fn(),
         retry: vi.fn(),
+        settle: (...args: unknown[]) =>
+          (settleMock as unknown as (...a: unknown[]) => unknown)(...args),
       },
     },
   },
@@ -116,5 +120,92 @@ describe("SettlementDetailPage — renders commission invoices (M16)", () => {
     ).toBeInTheDocument();
     expect(within(invoicesSection).getByText("Taslak")).toBeInTheDocument();
     expect(within(invoicesSection).getByText("₺60,00")).toBeInTheDocument();
+  });
+});
+
+/**
+ * [M3 fix] A payout used to stop at SENT — "handed to the PSP" — forever.
+ * Nothing in this product could record that the money actually landed, so
+ * the reconciliation alarm fired on a state no screen could clear. This is
+ * the action that clears it, and it belongs exactly here: on the batch an
+ * operator is already looking at, next to the IBAN they reconciled
+ * against.
+ */
+describe("SettlementDetailPage — confirming a payout landed (M3)", () => {
+  beforeEach(() => {
+    settleMock.mockClear();
+    getMock.mockResolvedValue(baseBatch);
+  });
+
+  it("offers the settle action for a SENT batch and shows that it has not been reconciled yet", async () => {
+    renderPage();
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Hesaba geçti olarak işaretle",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("settlement-settled-at")).getByText(
+        "Henüz mutabık kılınmadı",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("does NOT offer it for a batch that has not been sent yet", async () => {
+    getMock.mockResolvedValue({ ...baseBatch, status: "CALCULATED" });
+    renderPage();
+
+    await screen.findByRole("button", { name: "Onayla" });
+    expect(
+      screen.queryByRole("button", { name: "Hesaba geçti olarak işaretle" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("sends the bank/PSP statement reference the admin typed, after a confirmation that states the consequence", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Hesaba geçti olarak işaretle",
+      }),
+    );
+    // The dialog must state what this does, not ask "emin misiniz?".
+    expect(screen.getByText(/bu işlem geri alınamaz/i)).toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText(/Banka\/PSP referansı/),
+      "DEKONT-2026-8891",
+    );
+    // The dialog's confirm button carries the ACTION's own label (there
+    // are now two buttons with it — the page's and the dialog's).
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Hesaba geçti olarak işaretle",
+      }),
+    );
+
+    expect(settleMock).toHaveBeenCalledWith("b1", {
+      reference: "DEKONT-2026-8891",
+    });
+  });
+
+  it("shows the confirmed date and reference once the batch is SETTLED", async () => {
+    getMock.mockResolvedValue({
+      ...baseBatch,
+      status: "SETTLED",
+      settledAt: "2026-08-06T00:00:00.000Z",
+      settlementReference: "DEKONT-2026-8891",
+    });
+    renderPage();
+
+    const settledAt = await screen.findByTestId("settlement-settled-at");
+    expect(within(settledAt).queryByText("Henüz mutabık kılınmadı")).toBeNull();
+    expect(screen.getByText("DEKONT-2026-8891")).toBeInTheDocument();
+    // ...and the action is gone: SETTLED is terminal.
+    expect(
+      screen.queryByRole("button", { name: "Hesaba geçti olarak işaretle" }),
+    ).not.toBeInTheDocument();
   });
 });

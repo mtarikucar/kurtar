@@ -11,6 +11,7 @@ import settlements from "./locales/tr/settlements.json";
 import pricing from "./locales/tr/pricing.json";
 import ratings from "./locales/tr/ratings.json";
 import exportsNs from "./locales/tr/exports.json";
+import invoices from "./locales/tr/invoices.json";
 
 /**
  * One namespace per feature area, structured so an `en` locale can be
@@ -33,6 +34,7 @@ export const resources = {
     settlements,
     pricing,
     ratings,
+    invoices,
     exports: exportsNs,
   },
 } as const;

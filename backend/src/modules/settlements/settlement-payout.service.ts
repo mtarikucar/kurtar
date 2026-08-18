@@ -288,8 +288,13 @@ export class SettlementPayoutService {
    * conditions:
    *
    *  (a) a SENT batch not yet SETTLED 3+ days later. There is still no
-   *      automated SENT->SETTLED path (that needs a real bank/PSP
-   *      reconciliation feed), so this stays purely an ops alarm.
+   *      AUTOMATED SENT->SETTLED path (that needs a real bank/PSP
+   *      reconciliation feed), so this stays purely an ops alarm — but it
+   *      is no longer unclearable: [Cross-lane fix, M3] an admin who
+   *      reconciles the batch against the bank statement now closes it
+   *      via POST /admin/settlements/{id}/settle
+   *      (SettlementsService.adminMarkSettled), which is precisely the
+   *      action this alert exists to prompt.
    *  (b) [Fix round #6, I4, NEW] a batch approaching its `dueAt` — one
    *      business day out, on the same calendar that produced dueAt. The
    *      5-business-day payout promise is the one REGULATED clock in this
@@ -307,9 +312,10 @@ export class SettlementPayoutService {
    *     alerts ONCE. Branch (a) in particular could never be cleared —
    *     nothing in this codebase writes SETTLED — so it re-emitted the
    *     same CRITICAL lines for the same batches every single day,
-   *     forever, and buried branch (c) underneath itself. (The missing
-   *     SENT->SETTLED writer is a separate, still-open gap; alerting
-   *     once is what stops it drowning everything else in the meantime.)
+   *     forever, and buried branch (c) underneath itself. (That missing
+   *     SENT->SETTLED writer has since landed as the admin settle
+   *     action, so the set now genuinely drains; alerting once is still
+   *     what keeps a slow reconciliation from drowning branch (c).)
    *  2. BOUNDED AND ORDERED. `LIMIT BATCH_LIMIT` + oldest-first, exactly
    *     like complaint-sla-cron and moderation-takedown-cron, instead of
    *     an unbounded findMany.

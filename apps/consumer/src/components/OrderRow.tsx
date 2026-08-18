@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
 import type { ReservationItem } from "../lib/api-types";
 import { getPurchaseSnapshot } from "../lib/purchase-cache";
-import { derivePickupStartAt } from "../lib/constants";
 import { formatPriceCents } from "../lib/format";
 import { Badge } from "./Badge";
 import { PickupCountdown } from "./PickupCountdown";
@@ -44,7 +43,11 @@ export function OrderRow({ reservation, onPress }: OrderRowProps) {
     };
   }, [reservation.id]);
 
-  const pickupStartAt = derivePickupStartAt(reservation.cancelDeadlineAt).toISOString();
+  // [I9 fix] Straight off the reservation. This used to be reconstructed
+  // as `cancelDeadlineAt + 2h` through a hand-mirrored backend constant,
+  // because `GET /reservations/mine` did not return the offer's window;
+  // it does now.
+  const pickupStartAt = reservation.pickupStartAt;
 
   return (
     <Pressable

@@ -86,19 +86,20 @@ export default function RedeemScreen() {
   const isRedeemable = data.reservation.status === "CONFIRMED";
 
   const pickupStartAtMs = new Date(data.pickupStartAt).getTime();
-  const pickupEndAtMs = data.pickupEndAt ? new Date(data.pickupEndAt).getTime() : null;
+  const pickupEndAtMs = new Date(data.pickupEndAt).getTime();
 
-  // [I9 fix] Pre-empts two of the reasons the backend collapses into one
-  // vague RESERVATION_NOT_REDEEMABLE message (reservations.service.ts's
-  // notRedeemableError — status !== CONFIRMED || now < pickupStartAt ||
-  // now > pickupEndAt, all one code) by checking the SAME window
-  // client-side first, so the swipe is never even attempted for a reason
-  // this screen can already see coming. `queued === null` guards against
+  // [I9 fix] Pre-empts the two window reasons client-side, against the
+  // SAME window the server now states on the reservation itself, so the
+  // swipe is never even attempted for a reason this screen can already
+  // see coming. The server no longer collapses those reasons either — a
+  // swipe that DOES reach it comes back with its own code, rendered
+  // verbatim below via getErrorMessage — but pre-empting is still kinder
+  // at a counter than a failed swipe. `queued === null` guards against
   // yanking away an in-flight/offline-queued confirmation that was
   // legitimately started before the window closed.
   const windowNotStartedYet = isRedeemable && now < pickupStartAtMs;
   const windowAlreadyPassed =
-    isRedeemable && pickupEndAtMs !== null && now > pickupEndAtMs && queued === null;
+    isRedeemable && now > pickupEndAtMs && queued === null;
 
   if (!isSuccess && (!isRedeemable || windowAlreadyPassed)) {
     return (
@@ -158,9 +159,7 @@ export default function RedeemScreen() {
 
         <Text style={styles.pickupWindow}>
           {t("redeem.pickupWindowLabel")}:{" "}
-          {pickupEndAtMs !== null
-            ? formatPickupWindow(data.pickupStartAt, data.pickupEndAt as string)
-            : formatClockTime(data.pickupStartAt)}
+          {formatPickupWindow(data.pickupStartAt, data.pickupEndAt)}
         </Text>
 
         <View style={styles.codeBlock}>

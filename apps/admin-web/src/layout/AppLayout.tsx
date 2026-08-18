@@ -9,6 +9,9 @@ const NAV_ITEMS = [
   { to: "/complaints", key: "complaints" },
   { to: "/moderation", key: "moderation" },
   { to: "/settlements", key: "settlements" },
+  // [M16 fix] The commission e-invoice DRAFT queue — a failed e-document
+  // issuance had no surface at all before this.
+  { to: "/invoices", key: "invoices" },
   { to: "/pricing", key: "pricing" },
   { to: "/ratings", key: "ratings" },
   { to: "/exports", key: "exports" },

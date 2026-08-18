@@ -64,8 +64,23 @@ interface CommittedReservation {
   idempotencyKey: string;
 }
 
+/**
+ * [Cross-lane fix, I9] The reservation row PLUS the pickup window it is
+ * judged against. The window lives on DailyOffer, not on Reservation, so
+ * before this every consumer surface had to recover it from a local
+ * purchase-time snapshot or a live same-day store lookup — and on a
+ * reinstalled phone, or for an order from a past day, it had neither and
+ * fell back to deriving pickupStart from `cancelDeadlineAt` with NO end
+ * time at all. The redeem screen then could not tell a customer at the
+ * counter what window their swipe was being measured against.
+ */
+export interface ReservationWithPickupWindow extends Reservation {
+  pickupStartAt: Date;
+  pickupEndAt: Date;
+}
+
 export interface ListReservationsResult {
-  items: Reservation[];
+  items: ReservationWithPickupWindow[];
   total: number;
   page: number;
   pageSize: number;
@@ -191,11 +206,93 @@ function notCancellableError() {
   });
 }
 
-function notRedeemableError() {
-  return new ConflictException({
-    statusCode: 409,
+/**
+ * [Cross-lane fix, I9] Why a redeem was refused, one stable errorCode per
+ * reason, keyed by the reservation's CURRENT status.
+ *
+ * The consumer redeem screen is this product's defining interaction — the
+ * customer swipes in front of shop staff — and until now every refusal
+ * collapsed into one `RESERVATION_NOT_REDEEMABLE` ("Bu sipariş şu anda
+ * teslim alınamıyor"), which tells a customer standing at a counter
+ * nothing they can act on. The server always KNEW which of these it was;
+ * it just never said.
+ *
+ * `Record<ReservationStatus, …>` deliberately, not a partial map with a
+ * fallback: adding a status to the Prisma enum fails this file's
+ * typecheck until somebody decides what a customer should be told about
+ * it. REDEEMED is present for exhaustiveness only — redeem() returns an
+ * idempotent SUCCESS for it long before this table is consulted (see the
+ * `status === "REDEEMED"` branch in redeem()), and the entry is reachable
+ * only from the concurrency-loser branch, where a second redeem is
+ * likewise resolved as success rather than an error.
+ */
+const REDEEM_REJECTION_BY_STATUS: Record<
+  ReservationStatus,
+  { errorCode: string; message: string }
+> = {
+  PENDING_PAYMENT: {
+    errorCode: "RESERVATION_PAYMENT_INCOMPLETE",
+    message: "This reservation's payment has not completed yet.",
+  },
+  CONFIRMED: {
+    // Unreachable through redeem() — a CONFIRMED reservation is either
+    // inside its window (redeemed) or refused by one of the two window
+    // errors below, both of which are raised before this table is read.
     errorCode: "RESERVATION_NOT_REDEEMABLE",
     message: "This reservation cannot be redeemed right now.",
+  },
+  REDEEMED: {
+    errorCode: "RESERVATION_ALREADY_REDEEMED",
+    message: "This reservation has already been redeemed.",
+  },
+  CANCELLED_BY_USER: {
+    errorCode: "RESERVATION_CANCELLED_BY_USER",
+    message: "This reservation was cancelled by the customer.",
+  },
+  CANCELLED_BY_MERCHANT: {
+    errorCode: "RESERVATION_CANCELLED_BY_MERCHANT",
+    message:
+      "The merchant cancelled this offer, so the reservation was cancelled and refunded.",
+  },
+  NO_SHOW: {
+    errorCode: "RESERVATION_NO_SHOW",
+    message: "This reservation was marked as not collected.",
+  },
+  EXPIRED: {
+    errorCode: "RESERVATION_EXPIRED",
+    message: "This reservation expired before it was collected.",
+  },
+};
+
+/** Status-derived refusal — everything EXCEPT the two pickup-window
+ * cases, which are their own codes below because the status is CONFIRMED
+ * and perfectly fine; only the clock is wrong. */
+function notRedeemableError(status: ReservationStatus) {
+  const { errorCode, message } = REDEEM_REJECTION_BY_STATUS[status];
+  return new ConflictException({ statusCode: 409, errorCode, message });
+}
+
+/** [Cross-lane fix, I9] Too early. Carries the window itself so a caller
+ * that never loaded the offer (merchant-web's manual redeem) can still
+ * say WHEN, not just "no". */
+function pickupNotStartedError(pickupStartAt: Date, pickupEndAt: Date) {
+  return new ConflictException({
+    statusCode: 409,
+    errorCode: "RESERVATION_PICKUP_NOT_STARTED",
+    message: "The pickup window for this reservation has not started yet.",
+    pickupStartAt: pickupStartAt.toISOString(),
+    pickupEndAt: pickupEndAt.toISOString(),
+  });
+}
+
+/** [Cross-lane fix, I9] Too late. */
+function pickupWindowPassedError(pickupStartAt: Date, pickupEndAt: Date) {
+  return new ConflictException({
+    statusCode: 409,
+    errorCode: "RESERVATION_PICKUP_WINDOW_PASSED",
+    message: "The pickup window for this reservation has already closed.",
+    pickupStartAt: pickupStartAt.toISOString(),
+    pickupEndAt: pickupEndAt.toISOString(),
   });
 }
 
@@ -911,18 +1008,22 @@ export class ReservationsService {
     });
     if (!reservation) throw reservationNotFoundError();
 
+    // [Cross-lane fix, I9] Its own code, no longer the generic FORBIDDEN
+    // the client could only render as "Bu işlem için yetkin yok" — the
+    // caller is authenticated and authorized in general, this ONE
+    // reservation is somebody else's.
     if (redeemedBy.actorType === "CONSUMER") {
       if (reservation.userId !== redeemedBy.userId) {
         throw new ForbiddenException({
           statusCode: 403,
-          errorCode: "FORBIDDEN",
+          errorCode: "RESERVATION_NOT_YOURS",
           message: "This reservation does not belong to you.",
         });
       }
     } else if (reservation.store.merchantId !== redeemedBy.merchantId) {
       throw new ForbiddenException({
         statusCode: 403,
-        errorCode: "FORBIDDEN",
+        errorCode: "RESERVATION_NOT_YOURS",
         message: "This reservation does not belong to your store.",
       });
     }
@@ -936,13 +1037,27 @@ export class ReservationsService {
       };
     }
 
+    // [Cross-lane fix, I9] Three separate refusals where there used to be
+    // one. The ORDER of the checks, and the guarded update below them, are
+    // unchanged — this splits what the server SAYS, not what it does.
+    // REDEEMABLE_FROM is the transitions table's own answer to "which
+    // statuses may become REDEEMED", the same list the guarded updateMany
+    // enforces, so the pre-check and the write can never disagree.
     const now = new Date();
-    if (
-      reservation.status !== "CONFIRMED" ||
-      now < reservation.offer.pickupStartAt ||
-      now > reservation.offer.pickupEndAt
-    ) {
-      throw notRedeemableError();
+    if (!REDEEMABLE_FROM.includes(reservation.status)) {
+      throw notRedeemableError(reservation.status);
+    }
+    if (now < reservation.offer.pickupStartAt) {
+      throw pickupNotStartedError(
+        reservation.offer.pickupStartAt,
+        reservation.offer.pickupEndAt,
+      );
+    }
+    if (now > reservation.offer.pickupEndAt) {
+      throw pickupWindowPassedError(
+        reservation.offer.pickupStartAt,
+        reservation.offer.pickupEndAt,
+      );
     }
 
     const attemptedAt = new Date();
@@ -971,7 +1086,7 @@ export class ReservationsService {
           where: { id: reservationId },
         });
         if (current.status !== "REDEEMED") {
-          throw notRedeemableError();
+          throw notRedeemableError(current.status);
         }
         return current.redeemedAt!;
       }
@@ -1041,14 +1156,22 @@ export class ReservationsService {
       // `pageSize` for its OWN param name (this endpoint used to be the
       // one exception, calling it `limit` — [Consistency fix] renamed to
       // match every other paginated list's envelope field).
-      this.prisma.$queryRaw<Reservation[]>`
-        SELECT * FROM "reservations"
-        WHERE "userId" = ${userId}
-        ORDER BY CASE "status"
+      // [Cross-lane fix, I9] `r.*` plus the offer's pickup window — an
+      // INNER join, safe because `reservations.offerId` is a NOT NULL FK
+      // to daily_offers, so a reservation without an offer cannot exist
+      // and this can never silently drop a row. Neither column name
+      // collides with one on `reservations` (its only pickup-shaped
+      // column is `pickupReminderSentAt`), so `r.*` needs no aliasing.
+      this.prisma.$queryRaw<ReservationWithPickupWindow[]>`
+        SELECT r.*, o."pickupStartAt", o."pickupEndAt"
+        FROM "reservations" r
+        JOIN "daily_offers" o ON o."id" = r."offerId"
+        WHERE r."userId" = ${userId}
+        ORDER BY CASE r."status"
           WHEN 'PENDING_PAYMENT' THEN 0
           WHEN 'CONFIRMED' THEN 1
           ELSE 2
-        END ASC, "createdAt" DESC
+        END ASC, r."createdAt" DESC
         LIMIT ${pageSize} OFFSET ${offset}
       `,
       this.prisma.reservation.count({ where: { userId } }),

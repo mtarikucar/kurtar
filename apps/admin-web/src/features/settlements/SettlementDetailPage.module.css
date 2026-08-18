@@ -7,7 +7,8 @@
 
 .approveButton,
 .holdButton,
-.retryButton {
+.retryButton,
+.settleButton {
   padding: var(--space-sm) var(--space-lg);
   border-radius: var(--radius-md);
   border: 1px solid var(--color-neutral-300);
@@ -42,6 +43,18 @@
 
 .retryButton:hover {
   background-color: var(--color-info-50);
+}
+
+/* [M3 fix] The "money actually arrived" confirmation. Reads as a
+   completion (success ramp) rather than another intervention — it is the
+   last step of the payout lifecycle, not a recovery action. */
+.settleButton {
+  border-color: var(--color-success-700);
+  color: var(--color-success-700);
+}
+
+.settleButton:hover {
+  background-color: var(--color-success-50);
 }
 
 .grid {
@@ -156,6 +169,15 @@
 
 .holdReason {
   margin-top: var(--space-md);
+  font-size: var(--font-size-caption);
+  color: var(--color-neutral-700);
+}
+
+/* [M3 fix] "Gönderildi" vs "Hesaba geçti" — two different facts, both
+   shown, so an operator can see at a glance which payouts are still
+   waiting on a bank statement. */
+.payoutFact {
+  margin-top: var(--space-sm);
   font-size: var(--font-size-caption);
   color: var(--color-neutral-700);
 }

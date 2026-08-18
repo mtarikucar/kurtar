@@ -3362,6 +3362,197 @@
         ]
       }
     },
+    "/api/admin/invoices": {
+      "get": {
+        "operationId": "AdminInvoicesController_list",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "enum": [
+                "DRAFT",
+                "SENT",
+                "ACCEPTED",
+                "REJECTED"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "merchantId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "X-Client-Transport",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cookie"
+              ]
+            },
+            "description": "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommissionInvoiceListResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List commission invoices, filterable by status/merchant — the DRAFT queue an operator works when e-document issuance fails.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/invoices/{id}/reissue": {
+      "post": {
+        "operationId": "AdminInvoicesController_reissue",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Client-Transport",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cookie"
+              ]
+            },
+            "description": "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body)."
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommissionInvoiceReissueResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Re-issue one DRAFT commission invoice at the e-document provider. Uses the SAME invoice id, which the provider contract dedupes, so this can never mint a second e-fatura.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/me/notification-preferences": {
       "get": {
         "operationId": "NotificationPreferencesController_get",
@@ -3848,7 +4039,7 @@
             "bearer": []
           }
         ],
-        "summary": "Get one settlement batch (full detail).",
+        "summary": "Get one settlement batch (full detail). Returns the merchant's bank details, so every read is audited.",
         "tags": [
           "admin"
         ]
@@ -4093,6 +4284,94 @@
           }
         ],
         "summary": "Recompute a HELD batch and retry payout if it's now APPROVED.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/settlements/{id}/settle": {
+      "post": {
+        "operationId": "AdminSettlementsController_settle",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Client-Transport",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cookie"
+              ]
+            },
+            "description": "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body)."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSettlementSettleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSettlementDetailResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid access token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm a SENT batch's transfer actually landed (SENT -> SETTLED), after reconciling it against the bank/PSP statement.",
         "tags": [
           "admin"
         ]
@@ -6954,7 +7233,7 @@
             "bearer": []
           }
         ],
-        "summary": "Stream a CSV of merchants (optionally filtered by createdAt range).",
+        "summary": "Stream a CSV of merchants (optionally filtered by createdAt range). Contains taxId/IBAN, so every export is audited.",
         "tags": [
           "admin"
         ]
@@ -7397,6 +7676,15 @@
             "format": "date-time",
             "type": "string"
           },
+          "pickupStartAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "[Cross-lane fix, I9] The pickup window this reservation's redeem is\njudged against — joined from the reservation's own DailyOffer, which\nis where the window actually lives. Not derivable client-side: the\nconsumer app used to reconstruct pickupStartAt from cancelDeadlineAt\nand had NO end time at all whenever it had neither a local\npurchase-time snapshot nor a live same-day offer (a reinstalled\ndevice, or any order from a previous day), which is exactly when the\nredeem screen most needed to explain itself."
+          },
+          "pickupEndAt": {
+            "format": "date-time",
+            "type": "string"
+          },
           "redeemedAt": {
             "format": "date-time",
             "type": "string",
@@ -7444,6 +7732,8 @@
           "totalCents",
           "status",
           "cancelDeadlineAt",
+          "pickupStartAt",
+          "pickupEndAt",
           "createdAt",
           "updatedAt"
         ]
@@ -9240,6 +9530,137 @@
           "nextAnniversary"
         ]
       },
+      "AdminCommissionInvoiceItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "merchantTradeName": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "BAG_FEE",
+              "MEMBERSHIP"
+            ]
+          },
+          "docType": {
+            "type": "string",
+            "enum": [
+              "EFATURA",
+              "EARSIVFATURA"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SENT",
+              "ACCEPTED",
+              "REJECTED"
+            ]
+          },
+          "nilveraDocId": {
+            "type": "string",
+            "nullable": true
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "netAmountCents": {
+            "type": "number"
+          },
+          "vatCents": {
+            "type": "number"
+          },
+          "totalAmountCents": {
+            "type": "number"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "merchantId",
+          "merchantTradeName",
+          "type",
+          "docType",
+          "status",
+          "netAmountCents",
+          "vatCents",
+          "totalAmountCents",
+          "createdAt"
+        ]
+      },
+      "AdminCommissionInvoiceListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminCommissionInvoiceItemDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "AdminCommissionInvoiceReissueResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SENT",
+              "ACCEPTED",
+              "REJECTED"
+            ]
+          },
+          "nilveraDocId": {
+            "type": "string",
+            "nullable": true
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ]
+      },
       "NotificationPreferenceDto": {
         "type": "object",
         "properties": {
@@ -9446,6 +9867,16 @@
           },
           "sentAt": {
             "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "settledAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "[Cross-lane fix, M3] When an admin confirmed, against a bank/PSP\nstatement, that the transfer actually landed — and the statement\nreference they reconciled against. `sentAt` only ever meant \"handed\nto the PSP\"; these two are the only record that the money arrived.\nBoth NULL until POST /admin/settlements/{id}/settle."
+          },
+          "settlementReference": {
             "type": "string",
             "nullable": true
           },
@@ -9815,6 +10246,16 @@
             "type": "string",
             "nullable": true
           },
+          "settledAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "[Cross-lane fix, M3] When an admin confirmed, against a bank/PSP\nstatement, that the transfer actually landed — and the statement\nreference they reconciled against. `sentAt` only ever meant \"handed\nto the PSP\"; these two are the only record that the money arrived.\nBoth NULL until POST /admin/settlements/{id}/settle."
+          },
+          "settlementReference": {
+            "type": "string",
+            "nullable": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string"
@@ -9873,6 +10314,15 @@
           "note": {
             "type": "string",
             "maxLength": 2000
+          }
+        }
+      },
+      "AdminSettlementSettleDto": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "maxLength": 200
           }
         }
       },
@@ -10009,6 +10459,16 @@
           },
           "sentAt": {
             "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "settledAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "[Cross-lane fix, M3] When an admin confirmed, against a bank/PSP\nstatement, that the transfer actually landed — and the statement\nreference they reconciled against. `sentAt` only ever meant \"handed\nto the PSP\"; these two are the only record that the money arrived.\nBoth NULL until POST /admin/settlements/{id}/settle."
+          },
+          "settlementReference": {
             "type": "string",
             "nullable": true
           },
@@ -10159,6 +10619,16 @@
           },
           "sentAt": {
             "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "settledAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true,
+            "description": "[Cross-lane fix, M3] When an admin confirmed, against a bank/PSP\nstatement, that the transfer actually landed — and the statement\nreference they reconciled against. `sentAt` only ever meant \"handed\nto the PSP\"; these two are the only record that the money arrived.\nBoth NULL until POST /admin/settlements/{id}/settle."
+          },
+          "settlementReference": {
             "type": "string",
             "nullable": true
           },

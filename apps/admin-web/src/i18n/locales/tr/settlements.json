@@ -36,6 +36,10 @@
     "inconsistencyWarning": "Uyarı: brüt tutar eksi kesintiler, net ödeme tutarına eşit değil. Lütfen bu kaydı inceleyin.",
     "dueDateTitle": "Ödeme yükümlülüğü (5 iş günü)",
     "holdReasonLabel": "Bekletme gerekçesi",
+    "sentAtLabel": "Ödeme gönderildi",
+    "settledAtLabel": "Hesaba geçti",
+    "notSettledYet": "Henüz mutabık kılınmadı",
+    "settlementReferenceLabel": "Banka/PSP referansı",
     "merchantInfoTitle": "İşletme bilgileri",
     "iban": "IBAN",
     "invoicesTitle": "Fatura kayıtları",
@@ -53,7 +57,8 @@
     "actions": {
       "approve": "Onayla",
       "hold": "Beklet",
-      "retry": "Tekrar dene"
+      "retry": "Tekrar dene",
+      "settle": "Hesaba geçti olarak işaretle"
     },
     "holdDialog": {
       "title": "Ödemeyi beklet",
@@ -67,6 +72,11 @@
     "retryDialog": {
       "title": "Ödemeyi tekrar dene",
       "consequence": "Bu ödeme kaydı yeniden hesaplanacak ve uygunsa ödeme gönderimi tekrar denenecektir."
+    },
+    "settleDialog": {
+      "title": "Ödemenin hesaba geçtiğini onayla",
+      "consequence": "Bu ödeme kaydı \"Ödendi\" durumuna geçecek ve mutabakat bekleyen ödemeler listesinden çıkacaktır. Yalnızca banka/PSP ekstresinde tutarın işletmenin hesabına geçtiğini gördüyseniz onaylayın — bu işlem geri alınamaz.",
+      "referenceLabel": "Banka/PSP referansı (dekont no, EFT referansı — isteğe bağlı)"
     }
   },
   "errors": {
@@ -74,6 +84,7 @@
     "notHoldable": "Bu ödeme kaydı artık beklemeye alınabilir durumda değil.",
     "notRetryable": "Bu ödeme kaydı artık tekrar denenebilir durumda değil.",
     "notFound": "Ödeme kaydı bulunamadı.",
-    "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin."
+    "generic": "İşlem gerçekleştirilemedi. Lütfen tekrar deneyin.",
+    "notSettleable": "Bu ödeme kaydı mutabık kılınabilir durumda değil — yalnızca gönderilmiş ödemeler için geçerli."
   }
 }

@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { useReservations } from "./use-reservations";
 import { useStoreProfile } from "./use-discovery";
 import { getPurchaseSnapshot, type PurchaseSnapshot } from "../lib/purchase-cache";
-import { derivePickupStartAt } from "../lib/constants";
 import type { ReservationItem } from "../lib/api-types";
 
 export interface OrderDetails {
@@ -12,10 +11,15 @@ export interface OrderDetails {
   storeDistrict: string | null;
   bagTitle: string | null;
   coverImageUrl: string | null;
+  /** [I9 fix] Always the SERVER's own window now — `GET
+   * /reservations/mine` returns the reservation's offer window
+   * (ReservationDto.pickupStartAt/pickupEndAt), so this no longer depends
+   * on a local purchase snapshot or a live same-day store lookup being
+   * available. That matters most exactly where it used to fail: a
+   * reinstalled device at the counter, and any order from a previous day.
+   * `pickupEndAt` is no longer nullable. */
   pickupStartAt: string;
-  /** null when neither the local purchase snapshot nor a live same-day
-   * store lookup could recover it — see purchase-cache.ts's doc comment. */
-  pickupEndAt: string | null;
+  pickupEndAt: string;
 }
 
 /**
@@ -60,6 +64,13 @@ export function useOrderDetails(reservationId: string): {
     return { data: null, isLoading: reservationsQuery.isLoading };
   }
 
+  // [I9 fix] The window comes from the reservation itself in every
+  // branch below — the snapshot/live-offer lookups are now purely about
+  // the human ENRICHMENT (store name, bag title, cover image) they were
+  // always meant for, never about recovering times the server can state.
+  const pickupStartAt = reservation.pickupStartAt;
+  const pickupEndAt = reservation.pickupEndAt;
+
   if (snapshot) {
     return {
       data: {
@@ -68,8 +79,8 @@ export function useOrderDetails(reservationId: string): {
         storeDistrict: snapshot.storeDistrict,
         bagTitle: snapshot.bagTitle,
         coverImageUrl: snapshot.coverImageUrl,
-        pickupStartAt: snapshot.pickupStartAt,
-        pickupEndAt: snapshot.pickupEndAt,
+        pickupStartAt,
+        pickupEndAt,
       },
       isLoading: false,
     };
@@ -86,22 +97,16 @@ export function useOrderDetails(reservationId: string): {
         storeDistrict: storeProfileQuery.data.store.district,
         bagTitle: liveOffer.template.title,
         coverImageUrl: storeProfileQuery.data.store.coverImageUrl,
-        pickupStartAt:
-          typeof liveOffer.pickupStartAt === "string"
-            ? liveOffer.pickupStartAt
-            : new Date(liveOffer.pickupStartAt).toISOString(),
-        pickupEndAt:
-          typeof liveOffer.pickupEndAt === "string"
-            ? liveOffer.pickupEndAt
-            : new Date(liveOffer.pickupEndAt).toISOString(),
+        pickupStartAt,
+        pickupEndAt,
       },
       isLoading: false,
     };
   }
 
-  // Last resort: only the bare backend fields, plus the mathematically
-  // exact pickup-start derivation (see constants.ts) — never a
-  // fabricated store name/title.
+  // Last resort: only the bare backend fields — never a fabricated store
+  // name/title. The pickup window is NOT degraded here any more: it comes
+  // off the reservation like everywhere else.
   return {
     data: {
       reservation,
@@ -109,8 +114,8 @@ export function useOrderDetails(reservationId: string): {
       storeDistrict: storeProfileQuery.data?.store.district ?? null,
       bagTitle: null,
       coverImageUrl: storeProfileQuery.data?.store.coverImageUrl ?? null,
-      pickupStartAt: derivePickupStartAt(reservation.cancelDeadlineAt).toISOString(),
-      pickupEndAt: null,
+      pickupStartAt,
+      pickupEndAt,
     },
     isLoading:
       reservationsQuery.isLoading ||

@@ -37,6 +37,14 @@ export class SettlementBatchDto {
   @ApiPropertyOptional({ nullable: true, type: String })
   pspTransferRef!: string | null;
   @ApiPropertyOptional({ nullable: true, type: Date }) sentAt!: Date | null;
+  /** [Cross-lane fix, M3] When an admin confirmed, against a bank/PSP
+   * statement, that the transfer actually landed — and the statement
+   * reference they reconciled against. `sentAt` only ever meant "handed
+   * to the PSP"; these two are the only record that the money arrived.
+   * Both NULL until POST /admin/settlements/{id}/settle. */
+  @ApiPropertyOptional({ nullable: true, type: Date }) settledAt!: Date | null;
+  @ApiPropertyOptional({ nullable: true, type: String })
+  settlementReference!: string | null;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
   @ApiPropertyOptional({ nullable: true, type: String })
@@ -118,10 +126,12 @@ export class SettlementMerchantSummaryDto {
   @ApiProperty() iban!: string;
 }
 
-/** GET /admin/settlements/:id, and POST approve|hold|retry (all three
- * return this.adminGet(id) — the SAME shape). adminGet's `include` adds
- * `merchant: {tradeName, legalName, iban}` on top of
- * SettlementDetailResponseDto's lines+invoices. */
+/** GET /admin/settlements/:id, and POST approve|hold|retry|settle (all
+ * four return this.adminGet(id, adminId) — the SAME shape). adminGet's
+ * `include` adds `merchant: {tradeName, legalName, iban}` on top of
+ * SettlementDetailResponseDto's lines+invoices. Because that IBAN is in
+ * this body, every endpoint returning it writes an AuditLog row
+ * (Cross-lane fix, I14). */
 export class AdminSettlementDetailResponseDto extends SettlementDetailResponseDto {
   @ApiProperty({ type: SettlementMerchantSummaryDto })
   merchant!: SettlementMerchantSummaryDto;

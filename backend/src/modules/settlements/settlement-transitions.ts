@@ -17,11 +17,19 @@ import { SettlementStatus } from "@prisma/client";
  * and a future "batch created but not yet computed" step should not have
  * to touch this file.
  *
- * SENT -> SETTLED / FAILED are likewise declared with no current writer —
- * there is no automated bank/PSP reconciliation feed in this task (see
- * settlement-payout.service.ts's reconcileStuckBatches doc comment); a
- * future task's manual "mark settled" action reuses this edge rather than
- * inventing its own.
+ * SENT -> SETTLED now HAS a writer: SettlementsService.adminMarkSettled
+ * (POST /api/admin/settlements/{id}/settle), an admin confirming from a
+ * bank/PSP statement that the transfer actually landed. It derives its
+ * guard from `allowedFromStatusesFor("SETTLED")` rather than hand-typing
+ * `["SENT"]`, so this map really is the enforcement — which is exactly
+ * what the edge was declared-and-unused FOR: the manual action reused it
+ * instead of inventing its own status list.
+ *
+ * SENT -> FAILED is still declared with no writer — there is no automated
+ * bank/PSP reconciliation feed (see settlement-payout.service.ts's
+ * reconcileStuckBatches doc comment), and a returned/bounced transfer
+ * needs a money-movement decision (re-issue? clawback? new batch?) this
+ * codebase has not made yet. Declared, deliberately unwritten.
  */
 export const SETTLEMENT_TRANSITIONS: Record<
   SettlementStatus,

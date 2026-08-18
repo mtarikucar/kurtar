@@ -61,6 +61,18 @@ export type AdminSettlementDetail = Awaited<
 >;
 
 // ---------------------------------------------------------------------
+// Commission invoices — [M16 fix] the DRAFT queue a failed e-document
+// issuance leaves behind. Nothing surfaced these before.
+// ---------------------------------------------------------------------
+
+export type AdminInvoiceListResponse = Awaited<
+  ReturnType<typeof client.admin.invoices.list>
+>;
+export type AdminInvoiceListItem = AdminInvoiceListResponse["items"][number];
+export type InvoiceStatus = AdminInvoiceListItem["status"];
+export type InvoiceType = AdminInvoiceListItem["type"];
+
+// ---------------------------------------------------------------------
 // Pricing
 // ---------------------------------------------------------------------
 

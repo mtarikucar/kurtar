@@ -11,6 +11,7 @@ import { ComplaintDetailPage } from "./features/complaints/ComplaintDetailPage";
 import { ReportsPage } from "./features/moderation/ReportsPage";
 import { SettlementsListPage } from "./features/settlements/SettlementsListPage";
 import { SettlementDetailPage } from "./features/settlements/SettlementDetailPage";
+import { InvoicesPage } from "./features/invoices/InvoicesPage";
 import { PricingPage } from "./features/pricing/PricingPage";
 import { RatingsPage } from "./features/ratings/RatingsPage";
 import { ExportsPage } from "./features/exports/ExportsPage";
@@ -57,6 +58,7 @@ export default function App() {
                 path="settlements/:id"
                 element={<SettlementDetailPage />}
               />
+              <Route path="invoices" element={<InvoicesPage />} />
               <Route path="pricing" element={<PricingPage />} />
               <Route path="ratings" element={<RatingsPage />} />
               <Route path="exports" element={<ExportsPage />} />

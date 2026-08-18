@@ -104,6 +104,13 @@ const COVERAGE: Record<string, (client: KurtarClient) => Promise<unknown>> = {
       page: 1,
       pageSize: 20,
     }),
+  AdminInvoicesController_list: (c) =>
+    c.admin.invoices.list({
+      status: "DRAFT",
+      merchantId: "m_1",
+      page: 1,
+      pageSize: 20,
+    }),
   SettlementsController_listMine: (c) =>
     c.settlements.listMine({ page: 1, pageSize: 20 }),
   MyFavoritesController_listMine: (c) =>

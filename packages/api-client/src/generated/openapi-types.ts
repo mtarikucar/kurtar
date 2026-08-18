@@ -723,6 +723,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/invoices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List commission invoices, filterable by status/merchant — the DRAFT queue an operator works when e-document issuance fails. */
+        get: operations["AdminInvoicesController_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/invoices/{id}/reissue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-issue one DRAFT commission invoice at the e-document provider. Uses the SAME invoice id, which the provider contract dedupes, so this can never mint a second e-fatura. */
+        post: operations["AdminInvoicesController_reissue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/notification-preferences": {
         parameters: {
             query?: never;
@@ -799,7 +833,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get one settlement batch (full detail). */
+        /** Get one settlement batch (full detail). Returns the merchant's bank details, so every read is audited. */
         get: operations["AdminSettlementsController_get"];
         put?: never;
         post?: never;
@@ -854,6 +888,23 @@ export interface paths {
         put?: never;
         /** Recompute a HELD batch and retry payout if it's now APPROVED. */
         post: operations["AdminSettlementsController_retry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/settlements/{id}/settle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm a SENT batch's transfer actually landed (SENT -> SETTLED), after reconciling it against the bank/PSP statement. */
+        post: operations["AdminSettlementsController_settle"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1396,7 +1447,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Stream a CSV of merchants (optionally filtered by createdAt range). */
+        /** Stream a CSV of merchants (optionally filtered by createdAt range). Contains taxId/IBAN, so every export is audited. */
         get: operations["AdminExportsController_merchantsCsv"];
         put?: never;
         post?: never;
@@ -1550,6 +1601,20 @@ export interface components {
             status: "PENDING_PAYMENT" | "CONFIRMED" | "REDEEMED" | "CANCELLED_BY_USER" | "CANCELLED_BY_MERCHANT" | "NO_SHOW" | "EXPIRED";
             /** Format: date-time */
             cancelDeadlineAt: string;
+            /**
+             * Format: date-time
+             * @description [Cross-lane fix, I9] The pickup window this reservation's redeem is
+             *     judged against — joined from the reservation's own DailyOffer, which
+             *     is where the window actually lives. Not derivable client-side: the
+             *     consumer app used to reconstruct pickupStartAt from cancelDeadlineAt
+             *     and had NO end time at all whenever it had neither a local
+             *     purchase-time snapshot nor a live same-day offer (a reinstalled
+             *     device, or any order from a previous day), which is exactly when the
+             *     redeem screen most needed to explain itself.
+             */
+            pickupStartAt: string;
+            /** Format: date-time */
+            pickupEndAt: string;
             /** Format: date-time */
             redeemedAt?: string | null;
             /** @enum {string|null} */
@@ -2036,6 +2101,40 @@ export interface components {
             /** Format: date-time */
             nextAnniversary: string;
         };
+        AdminCommissionInvoiceItemDto: {
+            id: string;
+            merchantId: string;
+            merchantTradeName: string;
+            batchId?: string | null;
+            /** @enum {string} */
+            type: "BAG_FEE" | "MEMBERSHIP";
+            /** @enum {string} */
+            docType: "EFATURA" | "EARSIVFATURA";
+            /** @enum {string} */
+            status: "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED";
+            nilveraDocId?: string | null;
+            /** Format: date-time */
+            issuedAt?: string | null;
+            netAmountCents: number;
+            vatCents: number;
+            totalAmountCents: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AdminCommissionInvoiceListResponseDto: {
+            items: components["schemas"]["AdminCommissionInvoiceItemDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
+        AdminCommissionInvoiceReissueResponseDto: {
+            id: string;
+            /** @enum {string} */
+            status: "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED";
+            nilveraDocId?: string | null;
+            /** Format: date-time */
+            issuedAt?: string | null;
+        };
         NotificationPreferenceDto: {
             id: string;
             userId: string;
@@ -2100,6 +2199,16 @@ export interface components {
             pspTransferRef?: string | null;
             /** Format: date-time */
             sentAt?: string | null;
+            /**
+             * Format: date-time
+             * @description [Cross-lane fix, M3] When an admin confirmed, against a bank/PSP
+             *     statement, that the transfer actually landed — and the statement
+             *     reference they reconciled against. `sentAt` only ever meant "handed
+             *     to the PSP"; these two are the only record that the money arrived.
+             *     Both NULL until POST /admin/settlements/{id}/settle.
+             */
+            settledAt?: string | null;
+            settlementReference?: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2202,6 +2311,16 @@ export interface components {
             pspTransferRef?: string | null;
             /** Format: date-time */
             sentAt?: string | null;
+            /**
+             * Format: date-time
+             * @description [Cross-lane fix, M3] When an admin confirmed, against a bank/PSP
+             *     statement, that the transfer actually landed — and the statement
+             *     reference they reconciled against. `sentAt` only ever meant "handed
+             *     to the PSP"; these two are the only record that the money arrived.
+             *     Both NULL until POST /admin/settlements/{id}/settle.
+             */
+            settledAt?: string | null;
+            settlementReference?: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2213,6 +2332,9 @@ export interface components {
         };
         AdminSettlementActionDto: {
             note?: string;
+        };
+        AdminSettlementSettleDto: {
+            reference?: string;
         };
         PlatformPricingDto: {
             id: string;
@@ -2257,6 +2379,16 @@ export interface components {
             pspTransferRef?: string | null;
             /** Format: date-time */
             sentAt?: string | null;
+            /**
+             * Format: date-time
+             * @description [Cross-lane fix, M3] When an admin confirmed, against a bank/PSP
+             *     statement, that the transfer actually landed — and the statement
+             *     reference they reconciled against. `sentAt` only ever meant "handed
+             *     to the PSP"; these two are the only record that the money arrived.
+             *     Both NULL until POST /admin/settlements/{id}/settle.
+             */
+            settledAt?: string | null;
+            settlementReference?: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -2299,6 +2431,16 @@ export interface components {
             pspTransferRef?: string | null;
             /** Format: date-time */
             sentAt?: string | null;
+            /**
+             * Format: date-time
+             * @description [Cross-lane fix, M3] When an admin confirmed, against a bank/PSP
+             *     statement, that the transfer actually landed — and the statement
+             *     reference they reconciled against. `sentAt` only ever meant "handed
+             *     to the PSP"; these two are the only record that the money arrived.
+             *     Both NULL until POST /admin/settlements/{id}/settle.
+             */
+            settledAt?: string | null;
+            settlementReference?: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -4625,6 +4767,111 @@ export interface operations {
             };
         };
     };
+    AdminInvoicesController_list: {
+        parameters: {
+            query?: {
+                status?: "DRAFT" | "SENT" | "ACCEPTED" | "REJECTED";
+                merchantId?: string;
+                page?: number;
+                pageSize?: number;
+            };
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCommissionInvoiceListResponseDto"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Missing or invalid access token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+        };
+    };
+    AdminInvoicesController_reissue: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCommissionInvoiceReissueResponseDto"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Missing or invalid access token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+        };
+    };
     NotificationPreferencesController_get: {
         parameters: {
             query?: never;
@@ -5053,6 +5300,61 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSettlementDetailResponseDto"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Missing or invalid access token. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+            /** @description Authenticated, but not permitted (wrong actor type, unapproved merchant, or ownership check failed). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelopeDto"];
+                };
+            };
+        };
+    };
+    AdminSettlementsController_settle: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminSettlementSettleDto"];
+            };
+        };
         responses: {
             201: {
                 headers: {

@@ -1,0 +1,92 @@
+.filterRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.filterLabel {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-label);
+  color: var(--color-neutral-700);
+}
+
+.filterSelect {
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-neutral-300);
+  font-size: var(--font-size-caption);
+}
+
+.table {
+  width: 100%;
+  background-color: var(--color-neutral-0);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: var(--space-md) var(--space-lg);
+  font-size: var(--font-size-caption);
+  border-bottom: 1px solid var(--color-neutral-100);
+}
+
+.table th {
+  background-color: var(--color-neutral-50);
+  color: var(--color-neutral-700);
+  font-weight: var(--font-weight-label);
+}
+
+.rowLink {
+  font-weight: var(--font-weight-bodyStrong);
+  color: var(--color-primary-700);
+}
+
+/* Same status vocabulary as the settlement detail's invoices card, so a
+   DRAFT reads identically on both screens. */
+.statusPill {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-label);
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-neutral-100);
+  color: var(--color-neutral-700);
+}
+
+.statusPill[data-status="DRAFT"] {
+  background-color: var(--color-warning-50);
+  color: var(--color-warning-700);
+}
+
+.statusPill[data-status="ACCEPTED"] {
+  background-color: var(--color-success-50);
+  color: var(--color-success-700);
+}
+
+.statusPill[data-status="REJECTED"] {
+  background-color: var(--color-danger-50);
+  color: var(--color-danger-700);
+}
+
+.reissueButton {
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-info-500);
+  background-color: var(--color-neutral-0);
+  color: var(--color-info-700);
+  cursor: pointer;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bodyStrong);
+}
+
+.reissueButton:hover {
+  background-color: var(--color-info-50);
+}
+
+.docId {
+  font-size: var(--font-size-label);
+  color: var(--color-neutral-500);
+}

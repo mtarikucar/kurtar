@@ -18,11 +18,12 @@ import {
   useApproveSettlement,
   useHoldSettlement,
   useRetrySettlement,
+  useSettleSettlement,
   useSettlementDetail,
 } from "./useSettlements";
 import styles from "./SettlementDetailPage.module.css";
 
-type PendingAction = "approve" | "hold" | "retry" | null;
+type PendingAction = "approve" | "hold" | "retry" | "settle" | null;
 
 export function SettlementDetailPage() {
   const { t } = useTranslation("settlements");
@@ -31,9 +32,12 @@ export function SettlementDetailPage() {
   const approveMutation = useApproveSettlement(id ?? "");
   const holdMutation = useHoldSettlement(id ?? "");
   const retryMutation = useRetrySettlement(id ?? "");
+  const settleMutation = useSettleSettlement(id ?? "");
 
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [holdNote, setHoldNote] = useState("");
+  // [M3 fix] The bank/PSP statement line the admin reconciled against.
+  const [settlementReference, setSettlementReference] = useState("");
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
 
   function describeError(err: unknown): string {
@@ -44,6 +48,8 @@ export function SettlementDetailPage() {
         return t("errors.notHoldable");
       if (err.errorCode === "SETTLEMENT_NOT_RETRYABLE")
         return t("errors.notRetryable");
+      if (err.errorCode === "SETTLEMENT_NOT_SETTLEABLE")
+        return t("errors.notSettleable");
       if (err.errorCode === "SETTLEMENT_BATCH_NOT_FOUND")
         return t("errors.notFound");
     }
@@ -79,6 +85,17 @@ export function SettlementDetailPage() {
           setErrorBanner(describeError(err));
         },
       });
+    } else if (pendingAction === "settle") {
+      settleMutation.mutate(settlementReference.trim() || undefined, {
+        onSuccess: () => {
+          setSettlementReference("");
+          onSettled();
+        },
+        onError: (err) => {
+          onSettled();
+          setErrorBanner(describeError(err));
+        },
+      });
     }
   }
 
@@ -103,6 +120,11 @@ export function SettlementDetailPage() {
   const canApprove = batch.status === "CALCULATED";
   const canHold = batch.status === "CALCULATED" || batch.status === "APPROVED";
   const canRetry = batch.status === "HELD" || batch.status === "APPROVED";
+  // [M3 fix] Only a SENT batch can be confirmed as landed — the same
+  // single allowed source status the backend's guard derives from
+  // SETTLEMENT_TRANSITIONS. Rendering it for any other status would just
+  // hand the operator a button that 409s.
+  const canSettle = batch.status === "SENT";
 
   return (
     <div>
@@ -142,6 +164,15 @@ export function SettlementDetailPage() {
                 onClick={() => setPendingAction("retry")}
               >
                 {t("detail.actions.retry")}
+              </button>
+            ) : null}
+            {canSettle ? (
+              <button
+                type="button"
+                className={styles.settleButton}
+                onClick={() => setPendingAction("settle")}
+              >
+                {t("detail.actions.settle")}
               </button>
             ) : null}
           </>
@@ -233,6 +264,26 @@ export function SettlementDetailPage() {
             </p>
           ) : null}
 
+          {/* [M3 fix] "Sent" and "arrived" are different facts and this is
+              the only place either is visible. sentAt alone used to be the
+              end of the story. */}
+          <p className={styles.payoutFact}>
+            <strong>{t("detail.sentAtLabel")}:</strong>{" "}
+            {batch.sentAt ? formatDate(batch.sentAt) : "—"}
+          </p>
+          <p className={styles.payoutFact} data-testid="settlement-settled-at">
+            <strong>{t("detail.settledAtLabel")}:</strong>{" "}
+            {batch.settledAt
+              ? formatDate(batch.settledAt)
+              : t("detail.notSettledYet")}
+          </p>
+          {batch.settlementReference ? (
+            <p className={styles.payoutFact}>
+              <strong>{t("detail.settlementReferenceLabel")}:</strong>{" "}
+              {batch.settlementReference}
+            </p>
+          ) : null}
+
           <h2 className={styles.cardTitle}>{t("detail.merchantInfoTitle")}</h2>
           <p>{batch.merchant.legalName}</p>
           <p>
@@ -282,7 +333,8 @@ export function SettlementDetailPage() {
         pending={
           approveMutation.isPending ||
           holdMutation.isPending ||
-          retryMutation.isPending
+          retryMutation.isPending ||
+          settleMutation.isPending
         }
         onConfirm={handleConfirm}
         onCancel={() => setPendingAction(null)}
@@ -305,6 +357,24 @@ export function SettlementDetailPage() {
                   maxLength={2000}
                   value={holdNote}
                   onChange={(e) => setHoldNote(e.target.value)}
+                />
+              </>
+            ) : null}
+            {pendingAction === "settle" ? (
+              <>
+                <label
+                  className={styles.noteLabel}
+                  htmlFor="settlement-reference"
+                >
+                  {t("detail.settleDialog.referenceLabel")}
+                </label>
+                <input
+                  id="settlement-reference"
+                  type="text"
+                  className={styles.noteInput}
+                  maxLength={200}
+                  value={settlementReference}
+                  onChange={(e) => setSettlementReference(e.target.value)}
                 />
               </>
             ) : null}

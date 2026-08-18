@@ -2,6 +2,7 @@ import { Controller, Get, Query, Res } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { Response } from "express";
 import { Actors } from "../auth/decorators/actors.decorator";
+import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { ApiCsvExportResponse } from "../../common/swagger/api-csv-export-response.decorator";
 import { AdminExportRangeQueryDto } from "./dto/admin-export-range-query.dto";
@@ -45,16 +46,20 @@ export class AdminExportsController {
     await this.exports.streamSettlementsCsv(res, query);
   }
 
+  // [Cross-lane fix, I14] Binds the acting admin: this export streams
+  // every merchant's taxId and full IBAN, and an AuditLog row is written
+  // before the first byte leaves. See AdminExportsService.streamMerchantsCsv.
   @ApiOperation({
     summary:
-      "Stream a CSV of merchants (optionally filtered by createdAt range).",
+      "Stream a CSV of merchants (optionally filtered by createdAt range). Contains taxId/IBAN, so every export is audited.",
   })
   @ApiCsvExportResponse("A streamed merchants.csv file.")
   @Get("merchants.csv")
   async merchantsCsv(
+    @CurrentUser("id") adminId: string,
     @Query() query: AdminExportRangeQueryDto,
     @Res({ passthrough: false }) res: Response,
   ) {
-    await this.exports.streamMerchantsCsv(res, query);
+    await this.exports.streamMerchantsCsv(res, query, adminId);
   }
 }

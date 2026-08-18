@@ -1,0 +1,47 @@
+{
+  "title": "Komisyon faturaları",
+  "subtitle": "Taslakta kalan faturalar, e-belge sağlayıcısına iletilememiş demektir — vergisel yükümlülük doğduğu hâlde belge kesilmemiştir.",
+  "emptyDraft": "Taslakta bekleyen fatura yok — tüm komisyon faturaları e-belge sağlayıcısına iletildi.",
+  "reissued": "Fatura yeniden kesildi. Sağlayıcı belge numarası: {{docId}}",
+  "filter": {
+    "label": "Durum",
+    "ALL": "Tümü",
+    "DRAFT": "Taslak (iletilemedi)",
+    "SENT": "Gönderildi",
+    "ACCEPTED": "Kabul edildi",
+    "REJECTED": "Reddedildi"
+  },
+  "status": {
+    "DRAFT": "Taslak",
+    "SENT": "Gönderildi",
+    "ACCEPTED": "Kabul edildi",
+    "REJECTED": "Reddedildi"
+  },
+  "type": {
+    "BAG_FEE": "Paket komisyonu",
+    "MEMBERSHIP": "Üyelik"
+  },
+  "table": {
+    "merchant": "İşletme",
+    "type": "Fatura türü",
+    "status": "Durum",
+    "total": "Toplam tutar",
+    "createdAt": "Oluşturulma",
+    "batch": "Hakediş",
+    "openBatch": "Hakedişi aç",
+    "action": "İşlem / belge no"
+  },
+  "actions": {
+    "reissue": "Yeniden kes"
+  },
+  "reissueDialog": {
+    "title": "Faturayı yeniden kes",
+    "consequence": "Bu fatura, aynı fatura numarasıyla e-belge sağlayıcısına yeniden gönderilecektir. Aynı numara kullanıldığı için sağlayıcı belge zaten kesildiyse mevcut belgeyi döndürür — ikinci bir e-fatura oluşmaz."
+  },
+  "errors": {
+    "notReissuable": "Bu fatura yalnızca taslak durumundayken yeniden kesilebilir — görünüşe göre bu arada iletilmiş.",
+    "invalidTaxId": "İşletmenin VKN/TCKN bilgisi geçersiz. Fatura kesilemeden önce işletme kaydının düzeltilmesi gerekiyor.",
+    "providerRefused": "E-belge sağlayıcısı faturayı kabul etmedi. Fatura taslak olarak kaldı; sağlayıcı erişilebilir olduğunda tekrar deneyin.",
+    "notFound": "Fatura bulunamadı."
+  }
+}

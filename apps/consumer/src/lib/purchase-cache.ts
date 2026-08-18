@@ -3,16 +3,21 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 /**
  * Backfills a real, confirmed backend gap: `GET /reservations/mine`
  * (backend/src/modules/reservations/dto/reservation-response.dto.ts's
- * `ReservationDto`) is the RAW Reservation row only — no store name, no
- * bag/offer title, no cover image, and no pickup WINDOW END time (only
- * `cancelDeadlineAt`, from which the window START is exactly derivable —
- * see format.ts usage sites — since it's always `pickupStartAt -
- * CANCEL_DEADLINE_BEFORE_PICKUP_MS`, a fixed 2h constant in
- * reservations.service.ts; the window's CLOSE has no such fixed
- * relationship and isn't present anywhere in the response). The Orders and
- * Redeem screens need all of that. There is no `GET /reservations/:id`
- * detail endpoint either, so nothing server-side can backfill it after the
- * fact for an existing reservation.
+ * `ReservationDto`) is the RAW Reservation row — no store name, no
+ * bag/offer title, no cover image. The Orders and Redeem screens need all
+ * of that. There is no `GET /reservations/:id` detail endpoint either, so
+ * nothing server-side can backfill it after the fact for an existing
+ * reservation.
+ *
+ * [Cross-lane fix, I9] THE PICKUP WINDOW IS NO LONGER PART OF THAT GAP.
+ * `ReservationDto` now carries `pickupStartAt`/`pickupEndAt`, joined from
+ * the reservation's own DailyOffer, so no screen reconstructs the window
+ * from `cancelDeadlineAt` any more and none of them lose the window's
+ * CLOSE time when this cache is empty — which used to be exactly the
+ * situation the redeem screen faced on a reinstalled device at the
+ * counter. The two window fields below are kept as what they always
+ * literally were, a record of the window AS SHOWN AT PURCHASE TIME, but
+ * nothing reads them for display: the server's own values win everywhere.
  *
  * The one place this app DOES have the full picture is the moment of
  * purchase — the offer detail screen already fetched the store + bag

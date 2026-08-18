@@ -69,6 +69,27 @@ export function createAdminDomain(engine: RequestEngine) {
         engine.request("post", "/api/admin/settlements/{id}/retry", {
           path: { id },
         }),
+      /** [M3 fix] POST /admin/settlements/{id}/settle — confirm a SENT batch's transfer actually landed (SENT -> SETTLED), after reconciling it against the bank/PSP statement. Body carries the optional statement reference. */
+      settle: (
+        id: string,
+        body: RequestBody<"/api/admin/settlements/{id}/settle", "post">,
+      ) =>
+        engine.request("post", "/api/admin/settlements/{id}/settle", {
+          path: { id },
+          body,
+        }),
+    },
+
+    /** [M16 fix] Commission e-invoices — the DRAFT queue a failed issuance leaves behind, and the re-issue action for one row. */
+    invoices: {
+      /** GET /admin/invoices — filterable by status/merchant; ask for `status: "DRAFT"` for the stuck queue. */
+      list: (query?: QueryParams<"/api/admin/invoices", "get">) =>
+        engine.request("get", "/api/admin/invoices", { query }),
+      /** POST /admin/invoices/{id}/reissue — re-issue ONE DRAFT invoice at the e-document provider. Uses the same invoice id, which the provider contract dedupes, so it can never mint a second e-fatura. */
+      reissue: (id: string) =>
+        engine.request("post", "/api/admin/invoices/{id}/reissue", {
+          path: { id },
+        }),
     },
 
     pricing: {

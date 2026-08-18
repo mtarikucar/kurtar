@@ -1,19 +1,20 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { CANCEL_DEADLINE_BEFORE_PICKUP_MS, derivePickupStartAt } from "../lib/constants";
+import { CANCEL_DEADLINE_BEFORE_PICKUP_MS } from "../lib/constants";
 
 /**
  * [M13 fix] `CANCEL_DEADLINE_BEFORE_PICKUP_MS` hand-mirrors a backend
  * constant with nothing tying the two together (see constants.ts's own
- * doc comment) — `GET /reservations/mine`'s `ReservationDto` still has no
- * `pickupStartAt`/`pickupEndAt` field (only `ReservationForMerchantItemDto`
- * does — backend/src/modules/reservations/dto/reservation-response.dto.ts),
- * so this app derives the pickup window's start from `cancelDeadlineAt`
- * alone. Adding the real fields to `ReservationDto` is a backend change
- * out of scope for this fix. This is the "cheaper stopgap" the finding
- * itself proposes: re-read the real backend constant from source and fail
- * loudly the moment it drifts from this app's mirrored copy, instead of
- * silently mis-deriving every pickup time in the app.
+ * doc comment): re-read the real backend constant from source and fail
+ * loudly the moment it drifts from this app's mirrored copy.
+ *
+ * [Cross-lane fix, I9] The stakes changed but the guard still earns its
+ * keep. This app no longer DERIVES any pickup time from the constant —
+ * `ReservationDto` now carries the real `pickupStartAt`/`pickupEndAt`, so
+ * a drift can no longer mis-place every pickup time in the app. What it
+ * can still do is make the free-cancellation sentence the customer reads
+ * ("2 saat öncesine kadar") disagree with the deadline the server
+ * actually enforces, which is the reason this test remains.
  */
 const REPO_ROOT = path.resolve(__dirname, "../../../..");
 const BACKEND_SOURCE = path.join(
@@ -38,13 +39,5 @@ describe("CANCEL_DEADLINE_BEFORE_PICKUP_MS mirrors the real backend constant (M1
     // read straight out of trusted first-party source, not user input.
     const backendValueMs = eval(match[1]) as number;
     expect(CANCEL_DEADLINE_BEFORE_PICKUP_MS).toBe(backendValueMs);
-  });
-
-  it("derivePickupStartAt adds exactly that duration back onto cancelDeadlineAt", () => {
-    const cancelDeadlineAt = "2026-08-15T16:30:00.000Z";
-    const derived = derivePickupStartAt(cancelDeadlineAt);
-    expect(derived.getTime() - new Date(cancelDeadlineAt).getTime()).toBe(
-      CANCEL_DEADLINE_BEFORE_PICKUP_MS,
-    );
   });
 });

@@ -1,5 +1,11 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { CommissionInvoice, Prisma } from "@prisma/client";
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
+import { CommissionInvoice, InvoiceStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { isValidTaxId } from "../../common/utils/tax-id.util";
 import { isUniqueConstraintViolation } from "../../common/utils/prisma-error.util";
@@ -251,6 +257,164 @@ export class CommissionInvoiceService {
       );
       throw err;
     }
+  }
+
+  /**
+   * [Cross-lane fix, M16] The admin queue's read — "which commission
+   * invoices are stuck?".
+   *
+   * A failed issuance leaves a DRAFT row carrying a real tax obligation.
+   * The outbox now retries it and a daily sweep emails ops about anything
+   * still DRAFT hours later (fix round #6, I1), but neither of those is a
+   * PLACE TO LOOK: no endpoint listed invoices and no admin screen showed
+   * them, so the only way to answer "is anything stuck right now" was to
+   * read the mail or the logs. This is that place.
+   *
+   * `linesJson`/`ublXmlRef` are deliberately not selected — see
+   * AdminCommissionInvoiceItemDto.
+   */
+  async adminList(
+    status: InvoiceStatus | undefined,
+    merchantId: string | undefined,
+    page: number,
+    pageSize: number,
+  ) {
+    const where = {
+      ...(status ? { status } : {}),
+      ...(merchantId ? { merchantId } : {}),
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.commissionInvoice.findMany({
+        where,
+        // Oldest first: a stuck invoice's age IS its urgency, and the
+        // queue is worked from the top.
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          merchantId: true,
+          batchId: true,
+          type: true,
+          docType: true,
+          status: true,
+          nilveraDocId: true,
+          issuedAt: true,
+          netAmountCents: true,
+          vatCents: true,
+          totalAmountCents: true,
+          createdAt: true,
+          merchant: { select: { tradeName: true } },
+        },
+      }),
+      this.prisma.commissionInvoice.count({ where }),
+    ]);
+    const items = rows.map(({ merchant, ...invoice }) => ({
+      ...invoice,
+      merchantTradeName: merchant.tradeName,
+    }));
+    return { items, total, page, pageSize };
+  }
+
+  /**
+   * [Cross-lane fix, M16] The admin queue's action — re-issue ONE stuck
+   * DRAFT invoice on demand, instead of waiting for a retry ladder that
+   * has already been exhausted.
+   *
+   * Safety comes from the same two properties the outbox retry relies on:
+   * the row is reused (never re-created), and `facade.issue` is called
+   * with the SAME `invoice.id` the first attempt used — which the
+   * EDocumentProvider contract requires every adapter to treat as
+   * "already issued". So a re-issue against a provider that actually
+   * succeeded last time returns that same document rather than minting a
+   * second real e-fatura. An already-issued row is refused outright before
+   * the provider is touched at all.
+   *
+   * Provider I/O runs OUTSIDE any transaction (same discipline as every
+   * other provider call here); the status update and the AuditLog row for
+   * the acting admin then commit together.
+   */
+  async adminReissue(invoiceId: string, adminId: string) {
+    const invoice = await this.prisma.commissionInvoice.findUnique({
+      where: { id: invoiceId },
+      include: { merchant: { select: { taxId: true, legalName: true } } },
+    });
+    if (!invoice) {
+      throw new NotFoundException({
+        statusCode: 404,
+        errorCode: "COMMISSION_INVOICE_NOT_FOUND",
+        message: "Commission invoice not found.",
+      });
+    }
+    if (invoice.status !== "DRAFT") {
+      throw new ConflictException({
+        statusCode: 409,
+        errorCode: "COMMISSION_INVOICE_NOT_REISSUABLE",
+        message: `Invoice is ${invoice.status} — only a DRAFT invoice can be re-issued.`,
+      });
+    }
+    if (!isValidTaxId(invoice.merchant.taxId)) {
+      throw new ConflictException({
+        statusCode: 409,
+        errorCode: "COMMISSION_INVOICE_INVALID_TAX_ID",
+        message:
+          "The merchant's taxId is invalid — correct the merchant record before re-issuing.",
+      });
+    }
+
+    let docId: string;
+    try {
+      const result = await this.facade.issue({
+        invoiceId: invoice.id,
+        docType: invoice.docType,
+        buyerTaxId: invoice.merchant.taxId,
+        buyerLegalName: invoice.merchant.legalName,
+        lines: (invoice.linesJson ?? []) as unknown as EDocumentInvoiceLine[],
+        totalAmountCents: invoice.totalAmountCents,
+      });
+      docId = result.docId;
+    } catch (err) {
+      this.logger.error(
+        `Admin ${adminId} re-issue of CommissionInvoice ${invoice.id} FAILED — still DRAFT: ${(err as Error).message}`,
+      );
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        errorCode: "COMMISSION_INVOICE_ISSUE_FAILED",
+        message: `The e-document provider refused the invoice: ${(err as Error).message}`,
+      });
+    }
+
+    const issuedAt = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.commissionInvoice.update({
+        where: { id: invoice.id },
+        data: { status: "SENT", issuedAt, nilveraDocId: docId },
+        select: {
+          id: true,
+          status: true,
+          nilveraDocId: true,
+          issuedAt: true,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId: adminId,
+          action: "invoice.reissued",
+          entity: "CommissionInvoice",
+          entityId: invoice.id,
+          diffJson: {
+            merchantId: invoice.merchantId,
+            batchId: invoice.batchId,
+            type: invoice.type,
+            docType: invoice.docType,
+            nilveraDocId: docId,
+            totalAmountCents: invoice.totalAmountCents,
+          },
+        },
+      });
+      return updated;
+    });
   }
 
   /**

@@ -27,6 +27,11 @@ function reservation(overrides: Partial<ReservationItem>): ReservationItem {
     totalCents: 4990,
     status: "CONFIRMED",
     cancelDeadlineAt: new Date(Date.now() + 3600_000).toISOString(),
+    // [I9 fix] The pickup window now comes off the reservation itself —
+    // GET /reservations/mine joins the offer's window, so no screen has
+    // to reconstruct it from cancelDeadlineAt any more.
+    pickupStartAt: new Date(Date.now() + 3600_000 + 7_200_000).toISOString(),
+    pickupEndAt: new Date(Date.now() + 3600_000 + 7_200_000 + 5_400_000).toISOString(),
     redeemedAt: null,
     redeemedByMerchantUserId: null,
     pickupReminderSentAt: null,

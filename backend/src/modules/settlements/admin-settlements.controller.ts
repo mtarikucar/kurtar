@@ -10,7 +10,10 @@ import { Actors } from "../auth/decorators/actors.decorator";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { AdminListSettlementsQueryDto } from "./dto/admin-list-settlements-query.dto";
-import { AdminSettlementActionDto } from "./dto/admin-settlement-action.dto";
+import {
+  AdminSettlementActionDto,
+  AdminSettlementSettleDto,
+} from "./dto/admin-settlement-action.dto";
 import { SettlementsService } from "./settlements.service";
 import {
   AdminSettlementDetailResponseDto,
@@ -59,11 +62,17 @@ export class AdminSettlementsController {
     return this.settlements.adminRunNightlyCycle(adminId);
   }
 
-  @ApiOperation({ summary: "Get one settlement batch (full detail)." })
+  // [Cross-lane fix, I14] Binds the admin because the RESPONSE carries the
+  // merchant's full IBAN — this is an audited read, not a plain one; see
+  // SettlementsService.adminGet.
+  @ApiOperation({
+    summary:
+      "Get one settlement batch (full detail). Returns the merchant's bank details, so every read is audited.",
+  })
   @ApiOkResponse({ type: AdminSettlementDetailResponseDto })
   @Get(":id")
-  get(@Param("id") id: string) {
-    return this.settlements.adminGet(id);
+  get(@CurrentUser("id") adminId: string, @Param("id") id: string) {
+    return this.settlements.adminGet(id, adminId);
   }
 
   @ApiOperation({ summary: "Approve a CALCULATED batch for payout." })
@@ -93,5 +102,24 @@ export class AdminSettlementsController {
   @Post(":id/retry")
   retry(@CurrentUser("id") adminId: string, @Param("id") id: string) {
     return this.settlements.adminRetry(id, adminId);
+  }
+
+  // [Cross-lane fix, M3] The missing half of the payout lifecycle. Until
+  // now a batch reached SENT — "handed to the PSP" — and stopped there
+  // forever; nothing in the system could record that the money actually
+  // landed, so SENT->SETTLED was a declared transition with no writer and
+  // the reconciliation sweep alerted on a state no one could clear.
+  @ApiOperation({
+    summary:
+      "Confirm a SENT batch's transfer actually landed (SENT -> SETTLED), after reconciling it against the bank/PSP statement.",
+  })
+  @ApiCreatedResponse({ type: AdminSettlementDetailResponseDto })
+  @Post(":id/settle")
+  settle(
+    @CurrentUser("id") adminId: string,
+    @Param("id") id: string,
+    @Body() dto: AdminSettlementSettleDto,
+  ) {
+    return this.settlements.adminMarkSettled(id, dto.reference, adminId);
   }
 }

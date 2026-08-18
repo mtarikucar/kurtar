@@ -7,6 +7,7 @@ import { NilveraAdapter } from "./adapters/nilvera.adapter";
 import { TaxpayerLookupService } from "./taxpayer-lookup.service";
 import { CommissionInvoiceService } from "./commission-invoice.service";
 import { CommissionInvoiceDraftAlertService } from "./commission-invoice-draft-alert.service";
+import { AdminInvoicesController } from "./admin-invoices.controller";
 
 /**
  * SettlementSentInvoiceHandler is deliberately NOT declared here — same
@@ -21,6 +22,9 @@ import { CommissionInvoiceDraftAlertService } from "./commission-invoice-draft-a
   // commission invoice now reaches OPS_ALERT_EMAIL instead of ending at a
   // log line.
   imports: [EmailModule],
+  // [Cross-lane fix, M16] The admin DRAFT queue + re-issue action — the
+  // first surface of any kind over CommissionInvoice.
+  controllers: [AdminInvoicesController],
   providers: [
     EDocumentProviderRegistry,
     EDocumentFacadeService,

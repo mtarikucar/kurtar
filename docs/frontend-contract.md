@@ -249,41 +249,50 @@ Revokes the whole refresh-token family server-side. Call this, then clear whatev
 
 ## 8. Error-code catalogue
 
-Real, backend-declared `errorCode` values (grep `errorCode:\s*"[A-Z_]+"` across `backend/src` for the source of truth — this list may grow as Tasks 10-13 surface new business rules):
+Real, backend-declared `errorCode` values (grep `errorCode:\s*"[A-Z_]+"` across `backend/src` for the source of truth — regenerate this list from that grep whenever a new business rule lands, rather than appending by hand):
 
 ```
-ACCOUNT_BANNED                         MERCHANT_SIGNUP_INVALID_TAX_ID
-BAG_PRICE_BELOW_FLOOR                  OFFER_DATE_ALREADY_EXISTS
-BAG_PRICE_NOT_BELOW_VALUE              OFFER_DATE_INVALID
-BAG_TEMPLATE_INACTIVE                  OFFER_NOT_CANCELLABLE
-BAG_TEMPLATE_NOT_FOUND                 OFFER_NOT_CLOSEABLE
-BAG_VALUE_BAND_INVALID                 OFFER_NOT_FOUND
-COMPLAINT_NOT_FOUND                    OFFER_NOT_PUBLISHABLE
-COMPLAINT_TRANSITION_INVALID           OFFER_NOT_SCHEDULABLE
-DISCOVERY_BBOX_INVALID                 OFFER_PICKUP_WINDOW_PASSED
-DISCOVERY_BBOX_TOO_LARGE               OFFER_SCHEDULE_NOT_FUTURE
-DISCOVERY_DIET_INVALID                 OFFER_UNAVAILABLE
-FORBIDDEN                              OFFER_WINDOW_NOT_FUTURE
-MEMBERSHIP_NOT_FOUND                   OFFER_WINDOW_NOT_SAME_DAY
-MERCHANT_ATTESTATION_REQUIRED          OFFER_WINDOW_START_NOT_BEFORE_END
-MERCHANT_EMAIL_TAKEN                   PAYMENT_PROVIDER_UNAVAILABLE
-MERCHANT_NOT_APPROVED                  PRICING_EFFECTIVE_FROM_NOT_FUTURE
-MERCHANT_NOT_FOUND                     RATING_ALREADY_EXISTS
-MERCHANT_NOT_SUBMITTABLE               RATING_NOT_ELIGIBLE
-MERCHANT_NOT_SUSPENDABLE               RATING_NOT_FOUND
-MERCHANT_SIGNUP_INVALID_IBAN           REPORT_ALREADY_HANDLED
-REPORT_NOT_FOUND                       SETTLEMENT_PAYOUT_ALREADY_ATTEMPTED
-RESERVATION_NOT_CANCELLABLE            STORE_COORDINATES_INCOMPLETE
-RESERVATION_NOT_FOUND                  STORE_COORDINATES_INVALID
-RESERVATION_NOT_REDEEMABLE             STORE_LOCATION_OUTSIDE_TURKEY
-SETTLEMENT_BATCH_NOT_FOUND             STORE_NOT_FOUND
-SETTLEMENT_CARRIED_DEMAND_ALREADY_COLLECTED
-SETTLEMENT_NOT_APPROVABLE
-SETTLEMENT_NOT_HOLDABLE
-SETTLEMENT_NOT_RETRYABLE
+ACCOUNT_BANNED                     OFFER_UNAVAILABLE
+BAG_PRICE_BELOW_FLOOR              OFFER_WINDOW_NOT_FUTURE
+BAG_PRICE_NOT_BELOW_VALUE          OFFER_WINDOW_NOT_SAME_DAY
+BAG_TEMPLATE_INACTIVE              OFFER_WINDOW_START_NOT_BEFORE_END
+BAG_TEMPLATE_NOT_FOUND             PAYMENT_PROVIDER_UNAVAILABLE
+BAG_VALUE_BAND_INVALID             PRICING_EFFECTIVE_FROM_NOT_FUTURE
+COMMISSION_INVOICE_INVALID_TAX_ID  RATING_ALREADY_EXISTS
+COMMISSION_INVOICE_ISSUE_FAILED    RATING_NOT_ELIGIBLE
+COMMISSION_INVOICE_NOT_FOUND       RATING_NOT_FOUND
+COMMISSION_INVOICE_NOT_REISSUABLE  REPORT_ALREADY_HANDLED
+COMPLAINT_ALREADY_REFUNDED         REPORT_NOT_FOUND
+COMPLAINT_NO_RESERVATION           RESERVATION_ALREADY_REDEEMED
+COMPLAINT_NOT_FOUND                RESERVATION_CANCELLED_BY_MERCHANT
+COMPLAINT_TRANSITION_INVALID       RESERVATION_CANCELLED_BY_USER
+DISCOVERY_BBOX_INVALID             RESERVATION_EXPIRED
+DISCOVERY_BBOX_TOO_LARGE           RESERVATION_NO_SHOW
+DISCOVERY_DIET_INVALID             RESERVATION_NOT_CANCELLABLE
+FORBIDDEN                          RESERVATION_NOT_FOUND
+MEMBERSHIP_NOT_FOUND               RESERVATION_NOT_REDEEMABLE
+MERCHANT_ATTESTATION_REQUIRED      RESERVATION_NOT_REFUNDABLE
+MERCHANT_EMAIL_TAKEN               RESERVATION_NOT_YOURS
+MERCHANT_NOT_APPROVED              RESERVATION_PAYMENT_INCOMPLETE
+MERCHANT_NOT_FOUND                 RESERVATION_PICKUP_NOT_STARTED
+MERCHANT_NOT_SUBMITTABLE           RESERVATION_PICKUP_WINDOW_PASSED
+MERCHANT_NOT_SUSPENDABLE           SETTLEMENT_BATCH_NOT_FOUND
+MERCHANT_SIGNUP_INVALID_IBAN       SETTLEMENT_CARRIED_DEMAND_ALREADY_COLLECTED
+MERCHANT_SIGNUP_INVALID_TAX_ID     SETTLEMENT_NOT_APPROVABLE
+OFFER_DATE_ALREADY_EXISTS          SETTLEMENT_NOT_HOLDABLE
+OFFER_DATE_INVALID                 SETTLEMENT_NOT_RETRYABLE
+OFFER_NOT_CANCELLABLE              SETTLEMENT_NOT_SETTLEABLE
+OFFER_NOT_CLOSEABLE                SETTLEMENT_PAYOUT_ALREADY_ATTEMPTED
+OFFER_NOT_FOUND                    STORE_COORDINATES_INCOMPLETE
+OFFER_NOT_PUBLISHABLE              STORE_COORDINATES_INVALID
+OFFER_NOT_SCHEDULABLE              STORE_LOCATION_OUTSIDE_TURKEY
+OFFER_PICKUP_WINDOW_PASSED         STORE_NOT_FOUND
+OFFER_SCHEDULE_NOT_FUTURE
 ```
 
 Plus the derived-fallback family for framework-level errors with no custom code (`err.isBackendErrorCode === false`): `UNAUTHORIZED`, `BAD_REQUEST`, `NOT_FOUND`, `FORBIDDEN` (Nest's default `error` string, upper-snake-cased), or `HTTP_<status>` if even that's absent, or `NETWORK_ERROR` (statusCode 0) for a request that never reached the server. class-validator's `ValidationPipe` rejections return `message` as a `string[]` — the client joins it into one string; the individual field messages aren't separately exposed.
+
+**Redeem rejections carry a reason, not just a refusal.** `POST /reservations/{id}/redeem` used to answer every refusal with one `RESERVATION_NOT_REDEEMABLE`. It now returns the reason it already knew: `RESERVATION_PICKUP_NOT_STARTED` / `RESERVATION_PICKUP_WINDOW_PASSED` (409, and both carry `pickupStartAt`/`pickupEndAt` ISO strings alongside the standard envelope fields, so a caller that never loaded the offer can still say *when*), `RESERVATION_CANCELLED_BY_MERCHANT` / `RESERVATION_CANCELLED_BY_USER` / `RESERVATION_EXPIRED` / `RESERVATION_NO_SHOW` / `RESERVATION_PAYMENT_INCOMPLETE` (409, derived from the reservation's own status), and `RESERVATION_NOT_YOURS` (403, instead of the bare `FORBIDDEN` a client can only render as a generic permission message). `RESERVATION_NOT_REDEEMABLE` remains as the catch-all. Two things did NOT change: an already-redeemed reservation is still an idempotent **success** (same `{status: "REDEEMED"}` body, never an error), and the guarded-update concurrency semantics are untouched. `ReservationDto` also now carries `pickupStartAt`/`pickupEndAt`, joined from the reservation's offer — a client no longer needs a local purchase-time snapshot to know the window it is being judged against.
 
 ## 9. Response typing — fully resolved, zero hand-copied shapes
 

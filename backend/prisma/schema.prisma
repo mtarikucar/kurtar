@@ -907,6 +907,23 @@ model SettlementBatch {
   pspTransferRef String?
   sentAt         DateTime?
 
+  // [Cross-lane fix, M3] "The money actually arrived." `sentAt` records
+  // only that the transfer was HANDED to the PSP; nothing in this system
+  // recorded that it landed in the merchant's account, so SETTLED — a
+  // declared edge in settlement-transitions.ts since the state machine was
+  // written — had no writer at all. An admin who has reconciled the batch
+  // against the bank/PSP statement now closes it via POST
+  // /api/admin/settlements/{id}/settle, which stamps both columns (and
+  // writes an AuditLog row in the same transaction).
+  /// When an admin confirmed the transfer landed. NULL until then; the
+  /// only column that distinguishes "sent" from "arrived".
+  settledAt           DateTime?
+  /// The bank/PSP statement reference the admin reconciled against — free
+  /// text on purpose (a dekont number, an EFT reference, a statement
+  /// line), since no provider feed produces it. NULL when the admin
+  /// confirmed without quoting one.
+  settlementReference String?
+
   // [Fix round #6, I3/I4/M3] Alert sentinels for the daily reconciliation
   // sweep (settlement-payout.service.ts's reconcileStuckBatches), the same
   // alert-once shape complaint_tickets.slaWarningSentAt uses. Without

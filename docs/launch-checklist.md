@@ -76,17 +76,25 @@ From the business plan — these are the numbers that decide "ready for public l
 
 ## Money-path residuals carried out of the review fix rounds
 
-These two are known, documented, and deliberately not closed in the round that
-found them. Neither loses a consumer money; both leave the platform's own books
-slightly behind reality, which matters once a real accountant reads them.
+Both were carried out of the round that found them. The first is now closed (the
+cross-lane round shipped the endpoint plus its client regeneration and admin-web
+wiring); the second is still open. Neither loses a consumer money; the open one
+leaves the platform's own books slightly behind reality, which matters once a
+real accountant reads them.
 
-- [ ] **Nothing ever writes `SETTLED`.** A payout reaches `SENT` when the transfer
-      is handed to the PSP, and no code path ever confirms it landed. The
-      reconciliation alarm has been changed to fire once per batch rather than
-      forever, and the runbook now frames it as a prompt for manual bank/PSP
-      reconciliation — but until an admin `SENT → SETTLED` action exists, "the
-      money actually arrived" is not recorded anywhere in the system.
-      *Owner: engineer (needs a new endpoint plus a client regeneration).*
+- [x] **`SETTLED` now has a writer.** *(closed)* A payout still reaches `SENT`
+      when the transfer is handed to the PSP, but "the money actually arrived"
+      is now recordable: `POST /api/admin/settlements/:id/settle`
+      (**Hesaba geçti olarak işaretle** on the batch detail page) moves
+      `SENT → SETTLED`, stamping `settledAt` and the bank/PSP
+      `settlementReference` the admin reconciled against, with a
+      `settlement.settled` audit row in the same transaction. The guard is
+      derived from `SETTLEMENT_TRANSITIONS` rather than a hand-typed status
+      list, and a settled batch drops out of the 09:00 reconciliation sweep —
+      the alert set finally drains. There is still **no automated bank/PSP
+      reconciliation feed**; this is the human step the runbook already asked
+      for, made recordable. See `docs/operations.md`'s "When a payout fails"
+      step 4.
 - [ ] **Membership period-boundary rounding favours the merchant.** When a
       settlement batch straddles a membership renewal, a clamped restore credits
       the released kuruş to the new period instead of the write-off ledger. The

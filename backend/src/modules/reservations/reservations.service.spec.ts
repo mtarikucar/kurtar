@@ -763,7 +763,10 @@ describe("ReservationsService.redeem", () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it("throws RESERVATION_NOT_REDEEMABLE outside the pickup window", async () => {
+  // [Cross-lane fix, I9] "outside the window" is now TWO codes, because a
+  // customer at the counter can act on the difference: come back later vs.
+  // it's over. The check order and the guarded update are unchanged.
+  it("throws RESERVATION_PICKUP_NOT_STARTED before the pickup window opens", async () => {
     const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({
@@ -783,12 +786,12 @@ describe("ReservationsService.redeem", () => {
       .redeem(MERCHANT_REDEEMER, "resv1")
       .catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
-    expect(err.response.errorCode).toBe("RESERVATION_NOT_REDEEMABLE");
+    expect(err.response.errorCode).toBe("RESERVATION_PICKUP_NOT_STARTED");
   });
 
   // [Consumer redeem] The SAME strict window check applies to the
   // consumer path — no relaxation for the owner-initiated swipe.
-  it("throws RESERVATION_NOT_REDEEMABLE outside the pickup window for a CONSUMER too", async () => {
+  it("throws RESERVATION_PICKUP_NOT_STARTED before the window opens for a CONSUMER too", async () => {
     const { prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation({
@@ -808,7 +811,72 @@ describe("ReservationsService.redeem", () => {
       .redeem(CONSUMER_REDEEMER, "resv1")
       .catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
-    expect(err.response.errorCode).toBe("RESERVATION_NOT_REDEEMABLE");
+    expect(err.response.errorCode).toBe("RESERVATION_PICKUP_NOT_STARTED");
+  });
+
+  // [Cross-lane fix, I9] The other half of the split — a window that has
+  // CLOSED is a different code from one that has not opened.
+  it("throws RESERVATION_PICKUP_WINDOW_PASSED after the pickup window closes", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    const pickupStartAt = new Date(Date.now() - 120_000);
+    const pickupEndAt = new Date(Date.now() - 60_000);
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation({ offer: { pickupStartAt, pickupEndAt } }),
+    );
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+    const err = await service
+      .redeem(CONSUMER_REDEEMER, "resv1")
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.response).toMatchObject({
+      errorCode: "RESERVATION_PICKUP_WINDOW_PASSED",
+      pickupStartAt: pickupStartAt.toISOString(),
+      pickupEndAt: pickupEndAt.toISOString(),
+    });
+  });
+
+  // [Cross-lane fix, I9] A merchant-pulled offer is the one refusal a
+  // customer can do nothing about, and the one they were previously told
+  // nothing about.
+  it("throws RESERVATION_CANCELLED_BY_MERCHANT when the merchant pulled the offer", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation({ status: "CANCELLED_BY_MERCHANT" }),
+    );
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+    const err = await service
+      .redeem(CONSUMER_REDEEMER, "resv1")
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.response.errorCode).toBe("RESERVATION_CANCELLED_BY_MERCHANT");
+  });
+
+  it("throws RESERVATION_NOT_YOURS (not the bare FORBIDDEN) for someone else's reservation", async () => {
+    const { prisma, offerStock, facade, outbox } = buildDeps();
+    (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
+      baseReservation({ userId: "the-real-owner" }),
+    );
+    const service = new ReservationsService(
+      prisma as any,
+      offerStock as any,
+      facade as any,
+      outbox as any,
+    );
+    const err = await service
+      .redeem(CONSUMER_REDEEMER, "resv1")
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(err.response.errorCode).toBe("RESERVATION_NOT_YOURS");
   });
 
   it("first redeem by a MERCHANT transitions to REDEEMED, records redeemedByActorType/MerchantUserId, and increments qtyRedeemed", async () => {
@@ -1004,7 +1072,7 @@ describe("ReservationsService.redeem", () => {
     expect(tx.dailyOffer.update).not.toHaveBeenCalled();
   });
 
-  it("losing the race to a genuine conflict (e.g. cancelled concurrently) throws the uniform 409", async () => {
+  it("losing the race to a genuine conflict reports THAT conflict's own reason, not a uniform 409", async () => {
     const { tx, prisma, offerStock, facade, outbox } = buildDeps();
     (prisma.reservation.findUnique as jest.Mock).mockResolvedValue(
       baseReservation(),
@@ -1025,7 +1093,7 @@ describe("ReservationsService.redeem", () => {
       .redeem(MERCHANT_REDEEMER, "resv1")
       .catch((e) => e);
     expect(err).toBeInstanceOf(ConflictException);
-    expect(err.response.errorCode).toBe("RESERVATION_NOT_REDEEMABLE");
+    expect(err.response.errorCode).toBe("RESERVATION_CANCELLED_BY_USER");
   });
 });
 

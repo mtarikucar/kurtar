@@ -128,8 +128,47 @@ export class AdminExportsService {
     );
   }
 
-  async streamMerchantsCsv(res: Response, range: ExportRange): Promise<void> {
+  /**
+   * [Cross-lane fix, I14] The bulk read of the same bank/tax identity
+   * MerchantsService.adminGetDetail audits one merchant at a time — every
+   * merchant's `taxId` and full `iban` in one file. It wrote no audit row
+   * at all, which made it the widest PII/bank-detail path in the product
+   * and the only one with no forensic trace; under KVKK that is the gap,
+   * not the export itself.
+   *
+   * Two changes:
+   *
+   *  1. The audit row is written FIRST and `await`ed, so a failure to
+   *     record the export means no bytes are streamed. It is deliberately
+   *     NOT inside a transaction with the read: an HTTP response stream
+   *     is not a transaction, and holding one open across a paged stream
+   *     to an admin's browser would pin a connection for the whole
+   *     download. Committing the record before the first row leaves the
+   *     honest failure mode (a recorded export that then failed midway),
+   *     never the dishonest one (an export with no record).
+   *  2. An explicit `select` of exactly the eight emitted columns. The
+   *     query used to fetch every Merchant column — mersisNo, kepAddress,
+   *     ownerName, contact email/phone, the attestation timestamps — and
+   *     throw all of it away after the row mapper read eight fields.
+   */
+  async streamMerchantsCsv(
+    res: Response,
+    range: ExportRange,
+    adminId: string,
+  ): Promise<void> {
     const createdAt = createdAtWhere(range);
+    await this.prisma.auditLog.create({
+      data: {
+        actorType: "ADMIN",
+        actorId: adminId,
+        action: "merchant.kyc.exported",
+        entity: "Merchant",
+        // Platform-wide, not one merchant — the requested range IS the
+        // identity of what was taken.
+        entityId: "*",
+        diffJson: { from: range.from ?? null, to: range.to ?? null },
+      },
+    });
     await streamCsv(
       res,
       "merchants.csv",
@@ -149,6 +188,16 @@ export class AdminExportsService {
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
           skip,
           take,
+          select: {
+            id: true,
+            legalName: true,
+            tradeName: true,
+            taxId: true,
+            iban: true,
+            verificationStatus: true,
+            verifiedAt: true,
+            createdAt: true,
+          },
         }),
       (row) => [
         row.id,

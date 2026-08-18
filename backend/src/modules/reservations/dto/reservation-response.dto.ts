@@ -2,9 +2,10 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { PrincipalType, ReservationStatus } from "@prisma/client";
 
 /** [Contract completion] The raw Reservation Prisma model, scalar columns
- * only — listMine's raw `SELECT * FROM reservations` returns exactly
- * these columns, no relations (never `payment`/`rating`/etc — those need
- * an explicit include/join this raw query doesn't do).
+ * only — listMine's raw `SELECT r.* ... FROM reservations r` returns
+ * exactly these columns, no relations (never `payment`/`rating`/etc —
+ * those need an explicit include/join this raw query doesn't do), PLUS
+ * the two pickup-window columns below.
  * [Consumer redeem] redeemedByActorType/redeemedByUserId are the new
  * "which actor redeemed this" columns — see reservations.service.ts's
  * redeem() doc comment. Exactly one of redeemedByUserId/
@@ -21,6 +22,16 @@ export class ReservationDto {
   @ApiProperty() totalCents!: number;
   @ApiProperty({ enum: ReservationStatus }) status!: ReservationStatus;
   @ApiProperty() cancelDeadlineAt!: Date;
+  /** [Cross-lane fix, I9] The pickup window this reservation's redeem is
+   * judged against — joined from the reservation's own DailyOffer, which
+   * is where the window actually lives. Not derivable client-side: the
+   * consumer app used to reconstruct pickupStartAt from cancelDeadlineAt
+   * and had NO end time at all whenever it had neither a local
+   * purchase-time snapshot nor a live same-day offer (a reinstalled
+   * device, or any order from a previous day), which is exactly when the
+   * redeem screen most needed to explain itself. */
+  @ApiProperty() pickupStartAt!: Date;
+  @ApiProperty() pickupEndAt!: Date;
   @ApiPropertyOptional({ nullable: true, type: Date }) redeemedAt!: Date | null;
   @ApiPropertyOptional({ nullable: true, enum: PrincipalType })
   redeemedByActorType!: PrincipalType | null;

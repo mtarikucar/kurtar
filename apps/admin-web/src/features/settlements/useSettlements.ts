@@ -97,3 +97,19 @@ export function useRetrySettlement(id: string) {
     onSuccess: invalidate,
   });
 }
+
+/** [M3 fix] SENT -> SETTLED: an admin confirming, from the bank/PSP
+ * statement, that the transfer actually landed. Nothing in this product
+ * could record that before — a payout stopped at "handed to the PSP"
+ * forever, and the daily reconciliation alarm fired on a state no screen
+ * could clear. `reference` is the statement line the admin reconciled
+ * against; optional, because a confirmation without one is still worth
+ * recording. */
+export function useSettleSettlement(id: string) {
+  const invalidate = useInvalidateSettlements(id);
+  return useMutation({
+    mutationFn: (reference: string | undefined) =>
+      client.admin.settlements.settle(id, { reference }),
+    onSuccess: invalidate,
+  });
+}
