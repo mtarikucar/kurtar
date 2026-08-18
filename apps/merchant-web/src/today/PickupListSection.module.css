@@ -24,7 +24,7 @@
   justify-content: space-between;
   gap: var(--space-md);
   padding: var(--space-sm) 0;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-neutral-200);
   flex-wrap: wrap;
 }
 
@@ -41,12 +41,12 @@
 }
 
 .customer {
-  color: var(--color-text-secondary);
+  color: var(--color-neutral-600);
 }
 
 .qty,
 .pickupTime {
-  color: var(--color-text-secondary);
+  color: var(--color-neutral-600);
   font-size: var(--font-size-caption);
 }
 

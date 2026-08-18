@@ -222,6 +222,7 @@ export function SettlementDetailPage() {
             <DeadlineBadge
               countdownMs={dueMs}
               thresholds={SETTLEMENT_DUE_THRESHOLDS}
+              live
             />
           ) : (
             "—"

@@ -6,6 +6,7 @@ import type {
   ReportStatus,
   ReportTargetType,
 } from "../../api/admin-types";
+import { DEADLINE_REFRESH_INTERVAL_MS } from "../../lib/queryConfig";
 
 export type ReportStatusFilter = ReportStatus | "ALL";
 
@@ -25,6 +26,11 @@ export function useReportsList(
         pageSize,
       });
     },
+    // [I10 fix] takedownCountdownMs is computed server-side at fetch time
+    // (see lib/countdown.ts's doc comment) — this is the tighter of the
+    // two regulated clocks (3h critical window on a 48h deadline), so a
+    // stale badge here is the one most likely to actually bite.
+    refetchInterval: DEADLINE_REFRESH_INTERVAL_MS,
   });
 }
 

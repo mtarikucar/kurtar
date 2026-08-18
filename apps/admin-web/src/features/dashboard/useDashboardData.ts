@@ -6,8 +6,7 @@ import type {
   AdminReportListItem,
   AdminSettlementListItem,
 } from "../../api/admin-types";
-
-const REFRESH_INTERVAL_MS = 60_000;
+import { DEADLINE_REFRESH_INTERVAL_MS as REFRESH_INTERVAL_MS } from "../../lib/queryConfig";
 
 /** GET /admin/dashboard. */
 export function useDashboardSummary() {

@@ -192,6 +192,7 @@ export function ComplaintDetailPage() {
         <DeadlineBadge
           countdownMs={new Date(complaint.slaDeadlineAt).getTime() - Date.now()}
           thresholds={COMPLAINT_SLA_THRESHOLDS}
+          live
         />
         <span>{t(`filter.${complaint.status}`)}</span>
         <span>

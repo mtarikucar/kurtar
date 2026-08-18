@@ -11,6 +11,7 @@ import {
   COMPLAINT_SLA_THRESHOLDS,
   classifyDeadline,
 } from "../../lib/countdown";
+import { DEADLINE_REFRESH_INTERVAL_MS } from "../../lib/queryConfig";
 
 /**
  * `"OPEN_ACTIVE"` and `"AT_RISK"` are synthetic — GET /admin/complaints
@@ -93,6 +94,11 @@ export function useComplaintsList(
         pageSize,
       });
     },
+    // [I10 fix] slaCountdownMs is computed server-side at fetch time and
+    // never recomputed client-side (see lib/countdown.ts's doc comment) —
+    // without this, the badge and the AT_RISK filter both silently drift
+    // stale on an always-open ops tab, always in the unsafe direction.
+    refetchInterval: DEADLINE_REFRESH_INTERVAL_MS,
   });
 }
 

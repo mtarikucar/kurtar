@@ -77,6 +77,12 @@ export const semantic = {
     50: "#FDECEC",
     500: "#D93A3A",
     700: "#9A2323",
+    /** [M8 fix] A visible edge for a badge/surface whose FILL is already
+     * danger-700 (e.g. a breached-SLA badge) — danger-700 itself gives no
+     * contrast against its own fill, which silently drops the border as a
+     * signal. Only semantic ramp with a 4th step; added on demand rather
+     * than padding every semantic color to a step nothing references. */
+    900: "#5C1414",
   },
   /** Informational, neutral-toned notices (e.g. "your OTP was resent"). */
   info: {
