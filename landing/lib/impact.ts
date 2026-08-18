@@ -57,34 +57,16 @@ export async function getPublicImpact(): Promise<ImpactSnapshot> {
       fetch: (input: RequestInfo | URL, init?: RequestInit) =>
         fetch(input, { ...init, next: { revalidate: REVALIDATE_SECONDS } }),
     });
-    // @kurtar/api-client GAP (flagged, not silently worked around — see
-    // this task's report): frontend-contract.md §9 documents
-    // `impact.getPublic` as one of the 16 FULLY TYPED operations, and the
-    // backend controller does carry a real `@ApiOkResponse({ type:
-    // PublicImpactTotalsDto })` (backend/src/modules/impact/impact.
-    // controller.ts) that generates a correct response schema in
-    // generated/openapi-types.ts (`PublicImpactController_getPublic`'s
-    // 200 response really does reference `PublicImpactTotalsDto`).
-    // Despite that, EVERY domain method's compiled dist/*.d.ts resolves
-    // to `Promise<never>` — not just this one operation — because
-    // `SuccessBody<P, M>` (packages/api-client/src/core-types.ts), a
-    // mapped/conditional type computed from generic params, doesn't
-    // resolve to a concrete type at declaration-emit time inside
-    // engine.ts's own generic `request<M, P>` method; `tsc -p
-    // tsconfig.json`'s `.d.ts` output falls back to `never` for the
-    // return type of every domain function in dist/domains/*.d.ts (see
-    // e.g. dist/domains/discovery.d.ts, dist/domains/favorites.d.ts —
-    // this is universal, not impact-specific). Runtime behavior is
-    // unaffected (the real JSON body comes back fine); only the TS type
-    // is wrong. Cast here, at the app layer, per frontend-contract.md
-    // §9's own prescribed pattern for an untyped operation — the shape
-    // below is read from the real backend/src/modules/impact/dto/
-    // impact-response.dto.ts, not guessed.
-    const totals = (await client.impact.getPublic()) as unknown as {
-      mealsSaved: number;
-      co2eGrams: number;
-      moneySavedCents: number;
-    };
+    // [M10 fix] The double-cast this comment used to justify is gone —
+    // `SuccessBody<P, M>` (packages/api-client/src/core-types.ts) now
+    // resolves to a concrete type at declaration-emit time (the
+    // numeric-key template-literal coercion), so `dist/domains/impact.d.ts`
+    // correctly types `getPublic` as `Promise<{ mealsSaved, co2eGrams,
+    // moneySavedCents, count, generatedAt }>`, not `Promise<never>`. Both
+    // other web surfaces already completed this same migration (see
+    // apps/merchant-web/src/api/response-types.ts and
+    // apps/admin-web/src/api/admin-types.ts, both citing commit e5621a3).
+    const totals = await client.impact.getPublic();
     return {
       status: "ok",
       mealsSaved: totals.mealsSaved,

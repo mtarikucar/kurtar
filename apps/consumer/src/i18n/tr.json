@@ -330,6 +330,11 @@
   "legal": {
     "title": "Yasal metinler"
   },
+  "notFoundScreen": {
+    "title": "Bu sayfa bulunamadı",
+    "body": "Aradığın sayfa taşınmış ya da hiç var olmamış olabilir.",
+    "cta": "Ana sayfaya dön"
+  },
   "errors": {
     "network": "İnternet bağlantını kontrol et ve tekrar dene.",
     "generic": "Bir şeyler ters gitti. Lütfen tekrar dene.",

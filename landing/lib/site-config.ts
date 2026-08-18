@@ -38,17 +38,22 @@ export const MERCHANT_SIGNUP_URL =
  * Placeholder store/app identifiers — task-13 brief: "App store badges
  * (placeholders until the apps ship — make them clearly swappable)" and
  * "Smart app banners: apple-itunes-app meta + Android intent handling
- * (placeholder IDs, clearly marked)". Every value below is a deliberate,
- * obviously-fake placeholder (never a real Apple/Google identifier) — grep
- * for PLACEHOLDER when the consumer app (apps/consumer) actually ships and
- * replace every one of these in one pass.
+ * (placeholder IDs, clearly marked)". `iosAppStoreId`/`iosAppStoreUrl` and
+ * `androidPlayStoreUrl` stay deliberate, obviously-fake placeholders until
+ * the apps actually have store listings — grep for PLACEHOLDER once they
+ * do and replace those in one pass. `androidPackageName` is NOT a
+ * placeholder [M4 fix]: apps/consumer/app.json already declares the real
+ * package (`expo.android.package`), and OfferAppOpener.tsx builds the
+ * Android `intent://` deep link directly from this constant — a
+ * placeholder package name there can never match an installed app, so
+ * the intent silently falls through to the Play Store fallback URL for
+ * every Android visitor, even with the app installed.
  */
 export const APP_LINKS = {
   /** Real value looks like "id1234567890" once App Store Connect issues one. */
   iosAppStoreId: "id0000000000",
   iosAppStoreUrl: "https://apps.apple.com/tr/app/kurtar/id0000000000",
-  /** Real value is the published package name, e.g. "app.kurtar.consumer". */
-  androidPackageName: "app.kurtar.consumer.PLACEHOLDER",
+  androidPackageName: "app.kurtar.consumer",
   androidPlayStoreUrl:
     "https://play.google.com/store/apps/details?id=app.kurtar.consumer.PLACEHOLDER",
   /** Custom URL scheme apps/consumer registers for universal-link fallback deep links. */

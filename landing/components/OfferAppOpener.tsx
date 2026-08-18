@@ -25,7 +25,7 @@ interface OfferAppOpenerProps {
  * follows the fallback URL itself, no JS timeout race needed on that
  * platform.
  */
-function buildDeepLinkHref(offerId: string): string {
+export function buildDeepLinkHref(offerId: string): string {
   const isAndroid = /Android/i.test(window.navigator.userAgent);
   if (isAndroid) {
     const fallback = encodeURIComponent(APP_LINKS.androidPlayStoreUrl);

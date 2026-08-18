@@ -330,6 +330,11 @@
   "legal": {
     "title": "Legal"
   },
+  "notFoundScreen": {
+    "title": "Page not found",
+    "body": "The page you're looking for may have moved or never existed.",
+    "cta": "Back to home"
+  },
   "errors": {
     "network": "Check your internet connection and try again.",
     "generic": "Something went wrong. Please try again.",
