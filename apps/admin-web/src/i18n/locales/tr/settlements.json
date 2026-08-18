@@ -38,6 +38,18 @@
     "holdReasonLabel": "Bekletme gerekçesi",
     "merchantInfoTitle": "İşletme bilgileri",
     "iban": "IBAN",
+    "invoicesTitle": "Fatura kayıtları",
+    "invoicesEmpty": "Bu döneme ait fatura kaydı yok.",
+    "invoiceType": {
+      "BAG_FEE": "Paket komisyonu",
+      "MEMBERSHIP": "Üyelik"
+    },
+    "invoiceStatus": {
+      "DRAFT": "Taslak",
+      "SENT": "Gönderildi",
+      "ACCEPTED": "Kabul edildi",
+      "REJECTED": "Reddedildi"
+    },
     "actions": {
       "approve": "Onayla",
       "hold": "Beklet",

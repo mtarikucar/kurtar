@@ -51,11 +51,46 @@
 }
 
 .breakdownCard,
-.sideCard {
+.sideCard,
+.invoicesCard {
   background-color: var(--color-neutral-0);
   border: 1px solid var(--color-neutral-200);
   border-radius: var(--radius-lg);
   padding: var(--space-xl);
+}
+
+.invoicesCard {
+  grid-column: 1 / -1;
+}
+
+.invoicesEmpty {
+  color: var(--color-neutral-500);
+  font-size: var(--font-size-body);
+}
+
+.invoiceStatus {
+  margin-left: var(--space-sm);
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-label);
+  padding: 2px var(--space-sm);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-neutral-100);
+  color: var(--color-neutral-700);
+}
+
+.invoiceStatus[data-status="DRAFT"] {
+  background-color: var(--color-warning-50);
+  color: var(--color-warning-700);
+}
+
+.invoiceStatus[data-status="ACCEPTED"] {
+  background-color: var(--color-success-50);
+  color: var(--color-success-700);
+}
+
+.invoiceStatus[data-status="REJECTED"] {
+  background-color: var(--color-danger-50);
+  color: var(--color-danger-700);
 }
 
 .cardTitle {

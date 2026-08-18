@@ -239,6 +239,40 @@ export function SettlementDetailPage() {
             {t("detail.iban")}: {batch.merchant.iban}
           </p>
         </section>
+
+        {/* [M16 fix] commissionInvoices was already in this response
+            (SettlementsService.adminGet's include) but no admin-web
+            screen ever rendered it — production invoices stay DRAFT
+            (mock-e-document-provider.ts refuses to register in
+            production, nilvera.adapter.ts is hard-disabled) completely
+            invisibly. This at least makes that state visible where an
+            operator is already looking at the batch it belongs to. */}
+        <section
+          className={styles.invoicesCard}
+          data-testid="settlement-invoices"
+        >
+          <h2 className={styles.cardTitle}>{t("detail.invoicesTitle")}</h2>
+          {batch.commissionInvoices.length === 0 ? (
+            <p className={styles.invoicesEmpty}>{t("detail.invoicesEmpty")}</p>
+          ) : (
+            <dl className={styles.breakdownList}>
+              {batch.commissionInvoices.map((invoice) => (
+                <div key={invoice.id} className={styles.breakdownRow}>
+                  <dt>
+                    {t(`detail.invoiceType.${invoice.type}`)}
+                    <span
+                      className={styles.invoiceStatus}
+                      data-status={invoice.status}
+                    >
+                      {t(`detail.invoiceStatus.${invoice.status}`)}
+                    </span>
+                  </dt>
+                  <dd>{formatCents(invoice.totalAmountCents)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </section>
       </div>
 
       <ConfirmDialog
