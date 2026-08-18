@@ -74,6 +74,25 @@ From the business plan — these are the numbers that decide "ready for public l
 - [ ] **[FOUNDER]** Sell-through rate ≥50%, redeem/pickup rate ≥60%.
 - [ ] **[FOUNDER]** ETBİS + KEP + the full legal document set complete (see above).
 
+## Money-path residuals carried out of the review fix rounds
+
+These two are known, documented, and deliberately not closed in the round that
+found them. Neither loses a consumer money; both leave the platform's own books
+slightly behind reality, which matters once a real accountant reads them.
+
+- [ ] **Nothing ever writes `SETTLED`.** A payout reaches `SENT` when the transfer
+      is handed to the PSP, and no code path ever confirms it landed. The
+      reconciliation alarm has been changed to fire once per batch rather than
+      forever, and the runbook now frames it as a prompt for manual bank/PSP
+      reconciliation — but until an admin `SENT → SETTLED` action exists, "the
+      money actually arrived" is not recorded anywhere in the system.
+      *Owner: engineer (needs a new endpoint plus a client regeneration).*
+- [ ] **Membership period-boundary rounding favours the merchant.** When a
+      settlement batch straddles a membership renewal, a clamped restore credits
+      the released kuruş to the new period instead of the write-off ledger. The
+      merchant is never short-changed; the platform simply under-records what it
+      forgave. *Owner: engineer (small; fix alongside the next membership change).*
+
 ## Deferred-minor items (from the engineering review ledger — real, tracked, not launch-blocking on their own, but worth a conscious decision before scale)
 
 - [ ] **[ENGINEER]** A rare concurrent-admin-action race exists between approving a settlement batch and curing its held predecessor (documented at the guard site in `settlements.service.ts`) — real, but needs two admins racing one merchant's batches simultaneously to trigger; not fixed, ruled acceptable at current scale.
