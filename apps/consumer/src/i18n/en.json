@@ -202,7 +202,10 @@
     "waitingForStaff": "Waiting for staff to confirm…",
     "syncingBadge": "Syncing…",
     "notRedeemableTitle": "This order can't be picked up right now",
-    "notRedeemableBody": "The pickup window may not have started yet, or may already be over."
+    "notRedeemableBody": "The pickup window may not have started yet, or may already be over.",
+    "pickupWindowLabel": "Pickup window",
+    "notStartedYet": "Pickup starts at {{time}}",
+    "notStartedYetHint": "It can't be picked up before this time — you can still show this screen to store staff."
   },
   "cancel": {
     "title": "Cancel order",

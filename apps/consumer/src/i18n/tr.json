@@ -202,7 +202,10 @@
     "waitingForStaff": "Personelin onayı bekleniyor…",
     "syncingBadge": "Senkronize ediliyor…",
     "notRedeemableTitle": "Bu sipariş şu anda teslim alınamıyor",
-    "notRedeemableBody": "Teslim alma penceresi henüz başlamamış ya da geçmiş olabilir."
+    "notRedeemableBody": "Teslim alma penceresi henüz başlamamış ya da geçmiş olabilir.",
+    "pickupWindowLabel": "Teslim alma penceresi",
+    "notStartedYet": "Teslim alma {{time}}'da başlıyor",
+    "notStartedYetHint": "Bu saatten önce teslim alınamaz — ekranı mağaza personeline gösterebilirsin."
   },
   "cancel": {
     "title": "Siparişi iptal et",

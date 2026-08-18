@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
@@ -12,7 +12,7 @@ import { LiveClock } from "../../components/LiveClock";
 import { SwipeToConfirm } from "../../components/SwipeToConfirm";
 import { useOrderDetails } from "../../hooks/use-order-details";
 import { useRedeemReconciliation } from "../../hooks/use-redeem-reconciliation";
-import { formatClockTime } from "../../lib/format";
+import { formatClockTime, formatPickupWindow } from "../../lib/format";
 import { getErrorMessage } from "../../lib/errors";
 
 /**
@@ -44,6 +44,17 @@ export default function RedeemScreen() {
   } = useRedeemReconciliation(id ?? "");
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
+  // [I9 fix] Ticks once a second, same cadence as the LiveClock proof-of-
+  // liveness clock below — lets the "hasn't started yet" gate re-evaluate
+  // live, so a consumer who opens this screen early sees the swipe
+  // control unlock itself the instant the window opens, with no
+  // navigation required.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleConfirm = () => {
     setConfirmError(null);
     confirm().catch((err: unknown) => setConfirmError(getErrorMessage(err, t)));
@@ -74,7 +85,22 @@ export default function RedeemScreen() {
   const isSuccess = alreadyRedeemed || reconciled;
   const isRedeemable = data.reservation.status === "CONFIRMED";
 
-  if (!isSuccess && !isRedeemable) {
+  const pickupStartAtMs = new Date(data.pickupStartAt).getTime();
+  const pickupEndAtMs = data.pickupEndAt ? new Date(data.pickupEndAt).getTime() : null;
+
+  // [I9 fix] Pre-empts two of the reasons the backend collapses into one
+  // vague RESERVATION_NOT_REDEEMABLE message (reservations.service.ts's
+  // notRedeemableError — status !== CONFIRMED || now < pickupStartAt ||
+  // now > pickupEndAt, all one code) by checking the SAME window
+  // client-side first, so the swipe is never even attempted for a reason
+  // this screen can already see coming. `queued === null` guards against
+  // yanking away an in-flight/offline-queued confirmation that was
+  // legitimately started before the window closed.
+  const windowNotStartedYet = isRedeemable && now < pickupStartAtMs;
+  const windowAlreadyPassed =
+    isRedeemable && pickupEndAtMs !== null && now > pickupEndAtMs && queued === null;
+
+  if (!isSuccess && (!isRedeemable || windowAlreadyPassed)) {
     return (
       <Screen>
         <EmptyState
@@ -130,6 +156,13 @@ export default function RedeemScreen() {
         <LiveClock color={colors.neutral[0]} />
         <Text style={styles.clockHint}>{t("redeem.liveClockHint")}</Text>
 
+        <Text style={styles.pickupWindow}>
+          {t("redeem.pickupWindowLabel")}:{" "}
+          {pickupEndAtMs !== null
+            ? formatPickupWindow(data.pickupStartAt, data.pickupEndAt as string)
+            : formatClockTime(data.pickupStartAt)}
+        </Text>
+
         <View style={styles.codeBlock}>
           <Text style={styles.codeLabel}>{t("redeem.codeLabel")}</Text>
           <Text style={styles.code} testID="redeem-code">
@@ -147,6 +180,15 @@ export default function RedeemScreen() {
           </View>
         ) : waiting ? (
           <Text style={styles.waitingText}>{t("redeem.waitingForStaff")}</Text>
+        ) : windowNotStartedYet ? (
+          <View style={styles.statusBanner} testID="redeem-not-started-yet">
+            <Ionicons name="time-outline" size={20} color={colors.neutral[900]} />
+            <Text style={styles.statusBannerText}>
+              {t("redeem.notStartedYet", { time: formatClockTime(data.pickupStartAt) })}
+              {"\n"}
+              {t("redeem.notStartedYetHint")}
+            </Text>
+          </View>
         ) : (
           <SwipeToConfirm
             label={t("redeem.swipeCta")}
@@ -155,7 +197,7 @@ export default function RedeemScreen() {
           />
         )}
 
-        {!waiting && !offline ? (
+        {!waiting && !offline && !windowNotStartedYet ? (
           <Text style={styles.swipeHint}>{t("redeem.swipeHint")}</Text>
         ) : null}
 
@@ -204,6 +246,13 @@ const styles = StyleSheet.create({
     color: colors.neutral[0],
     opacity: 0.85,
     textAlign: "center",
+  },
+  pickupWindow: {
+    fontSize: typeScale.body.size,
+    fontWeight: typeScale.bodyStrong.weight,
+    color: colors.neutral[0],
+    textAlign: "center",
+    marginTop: spacing.sm,
   },
   codeBlock: {
     alignItems: "center",

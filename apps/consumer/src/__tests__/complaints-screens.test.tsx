@@ -22,9 +22,22 @@ const mockListMine = client.complaints.listMine as jest.Mock;
 const mockGet = client.complaints.get as jest.Mock;
 const mockAddMessage = client.complaints.addMessage as jest.Mock;
 
-function renderWithQuery(ui: React.ReactElement) {
+function renderComplaintsList() {
   const queryClient = createTestQueryClient();
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MyComplaintsScreen />
+    </QueryClientProvider>,
+  );
+}
+
+function renderComplaintDetail() {
+  const queryClient = createTestQueryClient();
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ComplaintDetailScreen />
+    </QueryClientProvider>,
+  );
 }
 
 const listItem = {
@@ -54,7 +67,7 @@ describe("MyComplaintsScreen — GET /complaints/mine has a caller (I8)", () => 
   it("renders the caller's complaints from the mine endpoint", async () => {
     mockListMine.mockResolvedValue({ items: [listItem], total: 1, page: 1, pageSize: 50 });
 
-    await renderWithQuery(<MyComplaintsScreen />);
+    await renderComplaintsList();
 
     await waitFor(() => expect(mockListMine).toHaveBeenCalledWith({ page: 1, pageSize: 50 }));
     expect(await screen.findByText("Poşette bir ürün eksikti.")).toBeTruthy();
@@ -63,7 +76,7 @@ describe("MyComplaintsScreen — GET /complaints/mine has a caller (I8)", () => 
   it("shows an empty state instead of a blank screen when there are no complaints", async () => {
     mockListMine.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });
 
-    await renderWithQuery(<MyComplaintsScreen />);
+    await renderComplaintsList();
 
     expect(await screen.findByText("Henüz şikayetin yok")).toBeTruthy();
   });
@@ -71,7 +84,7 @@ describe("MyComplaintsScreen — GET /complaints/mine has a caller (I8)", () => 
   it("navigates to the detail thread when a row is pressed", async () => {
     mockListMine.mockResolvedValue({ items: [listItem], total: 1, page: 1, pageSize: 50 });
 
-    await renderWithQuery(<MyComplaintsScreen />);
+    await renderComplaintsList();
     const row = await screen.findByText("Poşette bir ürün eksikti.");
     await fireEvent.press(row);
 
@@ -112,7 +125,7 @@ describe("ComplaintDetailScreen — GET /complaints/{id} has a caller (I8)", () 
       ],
     });
 
-    await renderWithQuery(<ComplaintDetailScreen />);
+    await renderComplaintDetail();
 
     await waitFor(() => expect(mockGet).toHaveBeenCalledWith("complaint-1"));
     expect(
@@ -131,7 +144,7 @@ describe("ComplaintDetailScreen — GET /complaints/{id} has a caller (I8)", () 
       createdAt: "2026-08-17T09:00:00.000Z",
     });
 
-    await renderWithQuery(<ComplaintDetailScreen />);
+    await renderComplaintDetail();
     await waitFor(() => expect(mockGet).toHaveBeenCalled());
 
     const input = await screen.findByLabelText("Yanıt yaz…");
