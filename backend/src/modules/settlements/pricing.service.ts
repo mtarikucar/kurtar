@@ -69,11 +69,20 @@ export class PricingService {
    * recompute, which is exactly the history-mutation this table exists to
    * prevent — a genuine backdated correction should go through a manual
    * admin adjustment on the affected batch instead, not a pricing rewrite. */
-  async scheduleFuturePricing(params: {
-    bagFeeCents: number;
-    membershipAnnualCents: number;
-    effectiveFrom: Date;
-  }): Promise<ResolvedPlatformPricing & { id: string }> {
+  async scheduleFuturePricing(
+    params: {
+      bagFeeCents: number;
+      membershipAnnualCents: number;
+      effectiveFrom: Date;
+    },
+    /** [Fix round #6, I5] The admin who scheduled it. This endpoint
+     * changes the per-bag fee for EVERY merchant on the platform and,
+     * until now, left no record of who did it — settlements and pricing
+     * were the only admin mutations in the codebase without an AuditLog
+     * row (complaints, offers, merchants, moderation, memberships, stores
+     * and ratings all write one). */
+    adminId: string,
+  ): Promise<ResolvedPlatformPricing & { id: string }> {
     if (params.effectiveFrom.getTime() <= Date.now()) {
       // [Fix round, I9] A proper HTTP exception, not a bare Error — this
       // is reachable directly from AdminPricingController, and a bare
@@ -87,7 +96,28 @@ export class PricingService {
           "effectiveFrom must be in the future — a price change never rewrites already-priced history.",
       });
     }
-    return this.prisma.platformPricing.create({ data: params });
+    // The row and its audit trail commit together — a scheduled price
+    // change with no record of who scheduled it is exactly the gap this
+    // closes, so it must not be possible for one to land without the
+    // other.
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.platformPricing.create({ data: params });
+      await tx.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId: adminId,
+          action: "pricing.scheduled",
+          entity: "PlatformPricing",
+          entityId: created.id,
+          diffJson: {
+            bagFeeCents: params.bagFeeCents,
+            membershipAnnualCents: params.membershipAnnualCents,
+            effectiveFrom: params.effectiveFrom.toISOString(),
+          },
+        },
+      });
+      return created;
+    });
   }
 
   async listPricing(): Promise<(ResolvedPlatformPricing & { id: string })[]> {

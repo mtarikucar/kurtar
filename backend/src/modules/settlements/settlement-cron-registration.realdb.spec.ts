@@ -63,7 +63,7 @@ const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const d = TEST_DATABASE_URL ? describe : describe.skip;
 
 d("Settlement/membership cron registration — real AppModule boot", () => {
-  it("registers settlement-nightly-batch, settlement-payout-execute, settlement-reconciliation, membership-renewal, complaint-sla-sweep, and moderation-takedown-sweep", async () => {
+  it("registers settlement-nightly-batch, settlement-payout-execute, settlement-reconciliation, membership-renewal, complaint-sla-sweep, moderation-takedown-sweep, and commission-invoice-draft-alert", async () => {
     const module = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -97,6 +97,31 @@ d("Settlement/membership cron registration — real AppModule boot", () => {
       // registration spec.
       expect(names.has("complaint-sla-sweep")).toBe(true);
       expect(names.has("moderation-takedown-sweep")).toBe(true);
+      // [Fix round #6, I1] The commission-invoice DRAFT sweep — the alert
+      // half of "a failed e-fatura is a permanent silent dead end". Same
+      // standing gate: a sweep that ships unregistered fails here rather
+      // than quietly never running.
+      expect(names.has("commission-invoice-draft-alert")).toBe(true);
+
+      // [Fix round #6, M7] Every DAILY job must be pinned to
+      // Europe/Istanbul. The container runs UTC (no TZ in the Dockerfile
+      // or any compose file), so an unpinned "0 3 * * *" fires at 06:00
+      // Istanbul while docs/operations.md's cron table presents all of
+      // these on one clock. Only the daily ones are checked: the payout
+      // executor (*/5) and the hourly sweeps have no wall-clock meaning.
+      for (const name of [
+        "settlement-nightly-batch",
+        "membership-renewal",
+        "settlement-reconciliation",
+        "commission-invoice-draft-alert",
+      ]) {
+        const job = registry.getCronJobs().get(name)!;
+        const timeZone = (job.cronTime as { timeZone?: string }).timeZone;
+        expect({ name, timeZone }).toEqual({
+          name,
+          timeZone: "Europe/Istanbul",
+        });
+      }
     } finally {
       await app.close();
     }

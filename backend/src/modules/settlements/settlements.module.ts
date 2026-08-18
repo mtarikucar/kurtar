@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { EmailModule } from "../notifications/email/email.module";
 import { MembershipsModule } from "../memberships/memberships.module";
 import { PricingModule } from "./pricing.module";
 import { PublicHolidayService } from "./public-holiday.service";
@@ -17,7 +18,10 @@ import { SettlementsController } from "./settlements.controller";
  * OutboxModule instead (see those handlers' own doc comments for why).
  */
 @Module({
-  imports: [MembershipsModule, PricingModule],
+  // [Fix round #6, I4] EmailModule for OpsAlertService — the payout SLA
+  // (the one regulated clock here) now reaches OPS_ALERT_EMAIL like the
+  // complaint and takedown SLAs already do, instead of a log line only.
+  imports: [EmailModule, MembershipsModule, PricingModule],
   controllers: [
     AdminSettlementsController,
     AdminPricingController,

@@ -5,9 +5,36 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { PaymentsFacadeService } from "../payments-core/payments-facade.service";
 import { OutboxService } from "../outbox/outbox.service";
 import { OUTBOX_EVENT_TYPES } from "../outbox/event-types";
+import { OpsAlertService } from "../notifications/email/ops-alert.service";
+import { PublicHolidayService } from "./public-holiday.service";
+import { addBusinessDays } from "./business-days";
 import { allowedFromStatusesFor } from "./settlement-transitions";
 
 const RECONCILIATION_OVERDUE_MS = 3 * 24 * 60 * 60 * 1000;
+/** [Fix round #6, I3/M3] The bound the sibling sweeps already had
+ * (complaint-sla-cron.service.ts, moderation-takedown-cron.service.ts):
+ * a backlog is worked oldest-first over several ticks rather than scanned
+ * whole in one. */
+const BATCH_LIMIT = 500;
+/** [Fix round #6, I4] How far ahead of `dueAt` the pre-breach warning
+ * fires, on the SAME business-day calendar that produced dueAt in the
+ * first place (settlement-batch-builder.service.ts). */
+const PAYOUT_DUE_WARNING_BUSINESS_DAYS = 1;
+
+interface StaleSentRow {
+  id: string;
+  merchantId: string;
+  sentAt: Date | null;
+  netPayoutCents: number;
+}
+
+interface UnsentRow {
+  id: string;
+  merchantId: string;
+  dueAt: Date | null;
+  status: string;
+  netPayoutCents: number;
+}
 // [Fix round, I13] Derived from the transitions map, not hand-typed — see
 // settlement-transitions.ts's doc comment on why that matters (this is
 // exactly the kind of guard that silently drifted between call sites
@@ -61,6 +88,8 @@ export class SettlementPayoutService {
     private readonly prisma: PrismaService,
     private readonly facade: PaymentsFacadeService,
     private readonly outbox: OutboxService,
+    private readonly holidays: PublicHolidayService,
+    private readonly opsAlert: OpsAlertService,
   ) {}
 
   @Cron("*/5 * * * *", { name: "settlement-payout-execute" })
@@ -233,57 +262,186 @@ export class SettlementPayoutService {
   }
 
   /**
-   * Daily alert sweep — reports (never auto-transitions) two overdue
-   * conditions: (a) the brief's literal ask, a SENT batch not yet SETTLED
-   * 3+ days later (there is no automated SENT->SETTLED path in this task
-   * — that requires a real bank/PSP reconciliation feed, out of scope —
-   * so this is purely an ops alarm); (b) an extension this task adds
-   * because it directly serves the core commercial promise ("payout due
-   * <= 5 business days"): a batch still sitting CALCULATED/APPROVED/HELD
-   * past its OWN `dueAt` has missed that SLA outright and needs an admin
-   * to act (approve, or investigate a HELD one), not just wait quietly.
+   * [Fix round #6, M7] Cron entry point — `timeZone` pinned like the
+   * nightly batch builder's (the runbook presents all of these on one
+   * clock, and the container runs UTC), and the tick is wrapped so an
+   * uncaught rejection cannot vanish inside @nestjs/schedule. Every
+   * branch below is idempotent, so a failed tick simply retries tomorrow.
    */
-  @Cron("0 9 * * *", { name: "settlement-reconciliation" })
-  async reconcileStuckBatches(): Promise<{
+  @Cron("0 9 * * *", {
+    name: "settlement-reconciliation",
+    timeZone: "Europe/Istanbul",
+  })
+  async reconcileStuckBatchesCron(): Promise<void> {
+    try {
+      await this.reconcileStuckBatches(new Date());
+    } catch (err) {
+      this.logger.error(
+        `settlement-reconciliation: tick failed: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+    }
+  }
+
+  /**
+   * Daily alert sweep — reports (never auto-transitions) three
+   * conditions:
+   *
+   *  (a) a SENT batch not yet SETTLED 3+ days later. There is still no
+   *      automated SENT->SETTLED path (that needs a real bank/PSP
+   *      reconciliation feed), so this stays purely an ops alarm.
+   *  (b) [Fix round #6, I4, NEW] a batch approaching its `dueAt` — one
+   *      business day out, on the same calendar that produced dueAt. The
+   *      5-business-day payout promise is the one REGULATED clock in this
+   *      product and it was the only one with no warning before the
+   *      breach and no channel beyond a log line.
+   *  (c) a batch still CALCULATED/APPROVED/HELD past its own `dueAt` —
+   *      the SLA is already missed and an admin must act (approve, or
+   *      investigate a HELD one).
+   *
+   * [Fix round #6, I3/M3] THREE THINGS CHANGED, all of them about the
+   * alert being usable rather than about what counts as overdue:
+   *
+   *  1. SENTINEL COLUMNS. Each branch now claims its rows with a guarded
+   *     `UPDATE ... WHERE <sentinel> IS NULL ... RETURNING`, so a batch
+   *     alerts ONCE. Branch (a) in particular could never be cleared —
+   *     nothing in this codebase writes SETTLED — so it re-emitted the
+   *     same CRITICAL lines for the same batches every single day,
+   *     forever, and buried branch (c) underneath itself. (The missing
+   *     SENT->SETTLED writer is a separate, still-open gap; alerting
+   *     once is what stops it drowning everything else in the meantime.)
+   *  2. BOUNDED AND ORDERED. `LIMIT BATCH_LIMIT` + oldest-first, exactly
+   *     like complaint-sla-cron and moderation-takedown-cron, instead of
+   *     an unbounded findMany.
+   *  3. ONE AGGREGATE LOG LINE PER BRANCH plus an OPS_ALERT_EMAIL digest
+   *     — the payout SLA now reaches a human through the same channel
+   *     the complaint and takedown SLAs already use, degrading to the
+   *     log line when OPS_ALERT_EMAIL is unset.
+   *
+   * Not private / takes an explicit `now` — specs drive it directly
+   * rather than waiting on the schedule.
+   */
+  async reconcileStuckBatches(now: Date = new Date()): Promise<{
     staleSentCount: number;
+    dueSoonCount: number;
     overdueUnsentCount: number;
   }> {
-    const now = new Date();
-    const staleSentThreshold = new Date(
-      now.getTime() - RECONCILIATION_OVERDUE_MS,
-    );
-
-    const staleSent = await this.prisma.settlementBatch.findMany({
-      where: { status: "SENT", sentAt: { lte: staleSentThreshold } },
-      select: {
-        id: true,
-        merchantId: true,
-        sentAt: true,
-        netPayoutCents: true,
-      },
-    });
-    for (const b of staleSent) {
+    const staleSent = await this.claimStaleSent(now);
+    if (staleSent.length > 0) {
       this.logger.error(
-        `CRITICAL: settlement batch ${b.id} (merchant ${b.merchantId}, ${b.netPayoutCents} kuruş) has been SENT since ${b.sentAt?.toISOString()} but is still not SETTLED — needs manual bank/PSP reconciliation.`,
+        `CRITICAL: ${staleSent.length} settlement batch(es) have been SENT for more than ${RECONCILIATION_OVERDUE_MS / 86_400_000} days without being SETTLED — manual bank/PSP reconciliation needed: ${staleSent.map((b) => b.id).join(", ")}`,
+      );
+      await this.opsAlert.trySend(
+        "Hakediş ödemeleri mutabakat bekliyor (SENT → SETTLED)",
+        `${staleSent.length} hakediş, ödeme gönderildikten ${RECONCILIATION_OVERDUE_MS / 86_400_000} gün sonra hâlâ banka/PSP tarafında mutabık kılınmadı:`,
+        staleSent.map(
+          (b) =>
+            `${b.id} — işletme ${b.merchantId} — ${b.netPayoutCents} kuruş — gönderim: ${b.sentAt?.toISOString() ?? "—"}`,
+        ),
       );
     }
 
-    const overdueUnsent = await this.prisma.settlementBatch.findMany({
-      where: {
-        status: { in: ["CALCULATED", "APPROVED", "HELD"] },
-        dueAt: { lte: now },
-      },
-      select: { id: true, merchantId: true, dueAt: true, status: true },
-    });
-    for (const b of overdueUnsent) {
+    const dueSoon = await this.claimApproachingDue(now);
+    if (dueSoon.length > 0) {
+      this.logger.warn(
+        `${dueSoon.length} settlement batch(es) are within ${PAYOUT_DUE_WARNING_BUSINESS_DAYS} business day(s) of their 5-business-day payout deadline and are still unsent: ${dueSoon.map((b) => b.id).join(", ")}`,
+      );
+      await this.opsAlert.trySend(
+        "Hakediş ödeme süresi doluyor (5 iş günü)",
+        `${dueSoon.length} hakediş, 5 iş günlük ödeme süresinin son iş gününe girdi ve hâlâ gönderilmedi:`,
+        dueSoon.map(
+          (b) =>
+            `${b.id} — işletme ${b.merchantId} — ${b.status} — ${b.netPayoutCents} kuruş — son tarih: ${b.dueAt?.toISOString() ?? "—"}`,
+        ),
+      );
+    }
+
+    const overdueUnsent = await this.claimOverdueUnsent(now);
+    if (overdueUnsent.length > 0) {
       this.logger.error(
-        `CRITICAL: settlement batch ${b.id} (merchant ${b.merchantId}) is past its 5-business-day dueAt (${b.dueAt?.toISOString()}) still in ${b.status} — SLA missed, needs admin action.`,
+        `CRITICAL: ${overdueUnsent.length} settlement batch(es) are PAST their 5-business-day dueAt and still unsent — SLA missed, admin action needed: ${overdueUnsent.map((b) => `${b.id} (${b.status})`).join(", ")}`,
+      );
+      await this.opsAlert.trySend(
+        "Hakediş ödeme süresi AŞILDI (5 iş günü)",
+        `${overdueUnsent.length} hakediş, 5 iş günlük ödeme süresini aştığı hâlde hâlâ gönderilmedi — yasal taahhüt ihlal edildi:`,
+        overdueUnsent.map(
+          (b) =>
+            `${b.id} — işletme ${b.merchantId} — ${b.status} — ${b.netPayoutCents} kuruş — son tarih: ${b.dueAt?.toISOString() ?? "—"}`,
+        ),
       );
     }
 
     return {
       staleSentCount: staleSent.length,
+      dueSoonCount: dueSoon.length,
       overdueUnsentCount: overdueUnsent.length,
     };
+  }
+
+  /** Branch (a). Enum values are inline SQL literals (never bound
+   * parameters) — a bound parameter arrives as text and does not compare
+   * against a Postgres enum column; the sibling crons' raw sweeps do the
+   * same for the same reason. */
+  private async claimStaleSent(now: Date): Promise<StaleSentRow[]> {
+    const threshold = new Date(now.getTime() - RECONCILIATION_OVERDUE_MS);
+    return this.prisma.$queryRaw<StaleSentRow[]>`
+      UPDATE "settlement_batches"
+      SET "reconciliationAlertSentAt" = ${now}
+      WHERE "id" IN (
+        SELECT "id" FROM "settlement_batches"
+        WHERE "status" = 'SENT'
+          AND "sentAt" <= ${threshold}
+          AND "reconciliationAlertSentAt" IS NULL
+        ORDER BY "sentAt" ASC
+        LIMIT ${BATCH_LIMIT}
+      )
+      RETURNING "id", "merchantId", "sentAt", "netPayoutCents"
+    `;
+  }
+
+  /** Branch (b) — the pre-breach warning. The window is computed with
+   * `addBusinessDays`, the same helper that produced `dueAt`, so "one
+   * business day out" means the same thing on both sides of the
+   * comparison (weekends and Turkish public holidays included). */
+  private async claimApproachingDue(now: Date): Promise<UnsentRow[]> {
+    const holidaySet = await this.holidays.getHolidayDateKeys();
+    const warnThreshold = addBusinessDays(
+      now,
+      PAYOUT_DUE_WARNING_BUSINESS_DAYS,
+      holidaySet,
+    );
+    return this.prisma.$queryRaw<UnsentRow[]>`
+      UPDATE "settlement_batches"
+      SET "payoutDueWarningSentAt" = ${now}
+      WHERE "id" IN (
+        SELECT "id" FROM "settlement_batches"
+        WHERE "status" IN ('CALCULATED', 'APPROVED', 'HELD')
+          AND "dueAt" IS NOT NULL
+          AND "dueAt" > ${now}
+          AND "dueAt" <= ${warnThreshold}
+          AND "payoutDueWarningSentAt" IS NULL
+        ORDER BY "dueAt" ASC
+        LIMIT ${BATCH_LIMIT}
+      )
+      RETURNING "id", "merchantId", "dueAt", "status"::text AS "status", "netPayoutCents"
+    `;
+  }
+
+  /** Branch (c) — the breach itself. */
+  private async claimOverdueUnsent(now: Date): Promise<UnsentRow[]> {
+    return this.prisma.$queryRaw<UnsentRow[]>`
+      UPDATE "settlement_batches"
+      SET "payoutOverdueAlertSentAt" = ${now}
+      WHERE "id" IN (
+        SELECT "id" FROM "settlement_batches"
+        WHERE "status" IN ('CALCULATED', 'APPROVED', 'HELD')
+          AND "dueAt" IS NOT NULL
+          AND "dueAt" <= ${now}
+          AND "payoutOverdueAlertSentAt" IS NULL
+        ORDER BY "dueAt" ASC
+        LIMIT ${BATCH_LIMIT}
+      )
+      RETURNING "id", "merchantId", "dueAt", "status"::text AS "status", "netPayoutCents"
+    `;
   }
 }

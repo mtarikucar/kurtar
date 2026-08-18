@@ -8,11 +8,14 @@ describe("PricingService.scheduleFuturePricing", () => {
 
     expect.assertions(5);
     try {
-      await service.scheduleFuturePricing({
-        bagFeeCents: 3000,
-        membershipAnnualCents: 250000,
-        effectiveFrom: new Date(Date.now() - 1000),
-      });
+      await service.scheduleFuturePricing(
+        {
+          bagFeeCents: 3000,
+          membershipAnnualCents: 250000,
+          effectiveFrom: new Date(Date.now() - 1000),
+        },
+        "admin-1",
+      );
     } catch (err) {
       expect(err).toBeInstanceOf(BadRequestException);
       const response = (err as BadRequestException).getResponse() as Record<
@@ -26,10 +29,18 @@ describe("PricingService.scheduleFuturePricing", () => {
     expect(prisma.platformPricing.create).not.toHaveBeenCalled();
   });
 
-  it("accepts a future effectiveFrom and creates the row", async () => {
+  it("accepts a future effectiveFrom and creates the row WITH an ADMIN audit row, in one transaction", async () => {
     const created = { id: "p1" };
+    const auditCreate = jest.fn().mockResolvedValue({});
+    const pricingCreate = jest.fn().mockResolvedValue(created);
     const prisma = {
-      platformPricing: { create: jest.fn().mockResolvedValue(created) },
+      platformPricing: { create: pricingCreate },
+      $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
+        fn({
+          platformPricing: { create: pricingCreate },
+          auditLog: { create: auditCreate },
+        }),
+      ),
     };
     const service = new PricingService(prisma as never);
 
@@ -38,10 +49,24 @@ describe("PricingService.scheduleFuturePricing", () => {
       membershipAnnualCents: 250000,
       effectiveFrom: new Date(Date.now() + 60_000),
     };
-    const result = await service.scheduleFuturePricing(params);
+    const result = await service.scheduleFuturePricing(params, "admin-7");
     expect(result).toBe(created);
-    expect(prisma.platformPricing.create).toHaveBeenCalledWith({
-      data: params,
+    expect(pricingCreate).toHaveBeenCalledWith({ data: params });
+    // [Fix round #6, I5] This endpoint changes the per-bag fee for every
+    // merchant on the platform; it used to leave no record of who did it.
+    expect(auditCreate).toHaveBeenCalledWith({
+      data: {
+        actorType: "ADMIN",
+        actorId: "admin-7",
+        action: "pricing.scheduled",
+        entity: "PlatformPricing",
+        entityId: "p1",
+        diffJson: {
+          bagFeeCents: 3000,
+          membershipAnnualCents: 250000,
+          effectiveFrom: params.effectiveFrom.toISOString(),
+        },
+      },
     });
   });
 });

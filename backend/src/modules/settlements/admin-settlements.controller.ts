@@ -7,6 +7,7 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
+import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { AdminListSettlementsQueryDto } from "./dto/admin-list-settlements-query.dto";
 import { AdminSettlementActionDto } from "./dto/admin-settlement-action.dto";
@@ -23,6 +24,12 @@ import {
 @Controller("admin/settlements")
 @Actors("ADMIN")
 export class AdminSettlementsController {
+  // [Fix round #6, I5] Every mutating handler here binds the acting admin
+  // and threads it into the service, which writes an AuditLog row in the
+  // same transaction as the state change. Approve is what the payout cron
+  // picks up to move money to a merchant IBAN; before this, none of these
+  // four left any record of who acted — the only admin mutations in the
+  // codebase that did not.
   constructor(private readonly settlements: SettlementsService) {}
 
   @ApiOperation({
@@ -48,8 +55,8 @@ export class AdminSettlementsController {
   })
   @ApiCreatedResponse({ type: RunNightlyCycleResponseDto })
   @Post("run-nightly")
-  runNightly() {
-    return this.settlements.adminRunNightlyCycle();
+  runNightly(@CurrentUser("id") adminId: string) {
+    return this.settlements.adminRunNightlyCycle(adminId);
   }
 
   @ApiOperation({ summary: "Get one settlement batch (full detail)." })
@@ -62,8 +69,8 @@ export class AdminSettlementsController {
   @ApiOperation({ summary: "Approve a CALCULATED batch for payout." })
   @ApiCreatedResponse({ type: AdminSettlementDetailResponseDto })
   @Post(":id/approve")
-  approve(@Param("id") id: string) {
-    return this.settlements.adminApprove(id);
+  approve(@CurrentUser("id") adminId: string, @Param("id") id: string) {
+    return this.settlements.adminApprove(id, adminId);
   }
 
   @ApiOperation({
@@ -71,8 +78,12 @@ export class AdminSettlementsController {
   })
   @ApiCreatedResponse({ type: AdminSettlementDetailResponseDto })
   @Post(":id/hold")
-  hold(@Param("id") id: string, @Body() dto: AdminSettlementActionDto) {
-    return this.settlements.adminHold(id, dto.note);
+  hold(
+    @CurrentUser("id") adminId: string,
+    @Param("id") id: string,
+    @Body() dto: AdminSettlementActionDto,
+  ) {
+    return this.settlements.adminHold(id, dto.note, adminId);
   }
 
   @ApiOperation({
@@ -80,7 +91,7 @@ export class AdminSettlementsController {
   })
   @ApiCreatedResponse({ type: AdminSettlementDetailResponseDto })
   @Post(":id/retry")
-  retry(@Param("id") id: string) {
-    return this.settlements.adminRetry(id);
+  retry(@CurrentUser("id") adminId: string, @Param("id") id: string) {
+    return this.settlements.adminRetry(id, adminId);
   }
 }

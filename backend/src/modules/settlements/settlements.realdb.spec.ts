@@ -31,6 +31,11 @@ const d = TEST_DATABASE_URL ? describe : describe.skip;
 
 const SETTLEMENTS_TEST_TAG = "settlements-realdb-test";
 const WEBHOOK_SECRET = "settlements-realdb-webhook-secret";
+// [Fix round #6, I5] The admin actions now take (and record) the acting
+// admin. AuditLog.actorId has no FK, so a tagged literal is enough here —
+// the admin-actor assertions themselves live in
+// settlement-admin-audit.realdb.spec.ts.
+const ADMIN_ACTOR = `${SETTLEMENTS_TEST_TAG}-admin`;
 
 async function safeCleanup(label: string, fn: () => Promise<unknown>) {
   try {
@@ -62,7 +67,17 @@ function buildHarness(prisma: PrismaClient) {
   mockProvider.onModuleInit();
   const facade = new PaymentsFacadeService(registry, config);
   const outbox = new OutboxService();
-  const payout = new SettlementPayoutService(prisma as never, facade, outbox);
+  // Ops alerts are asserted in settlement-payout.service.spec.ts (unit)
+  // and settlement-reconciliation.realdb.spec.ts; this harness only needs
+  // the payout path, so the channel is a no-op stub here.
+  const opsAlert = { trySend: async () => true };
+  const payout = new SettlementPayoutService(
+    prisma as never,
+    facade,
+    outbox,
+    holidays,
+    opsAlert as never,
+  );
   const settlements = new SettlementsService(
     prisma as never,
     batchBuilder,
@@ -190,6 +205,28 @@ async function seedRedeemedPaidReservation(
   return { reservation, payment, totalCents, userId: user.id };
 }
 
+/** An empty, still-open batch for a merchant's given Istanbul day — the
+ * exact row shape SettlementBatchBuilderService.createOrExtendBatch
+ * creates before its first recompute (status CALCULATED, periodEnd =
+ * periodStart + 24h). Used where a scenario needs a merchant to HAVE a
+ * later open batch without seeding redemptions into it. */
+async function seedEmptyOpenBatch(
+  prisma: PrismaClient,
+  merchantId: string,
+  dayKey: string,
+) {
+  const periodStart = new Date(`${dayKey}T00:00:00.000Z`);
+  return prisma.settlementBatch.create({
+    data: {
+      merchantId,
+      periodStart,
+      periodEnd: new Date(periodStart.getTime() + 24 * 60 * 60 * 1000),
+      status: "CALCULATED",
+      dueAt: new Date(periodStart.getTime() + 5 * 24 * 60 * 60 * 1000),
+    },
+  });
+}
+
 async function cleanupMerchant(prisma: PrismaClient, merchantId: string) {
   const batches = await prisma.settlementBatch.findMany({
     where: { merchantId },
@@ -215,6 +252,13 @@ async function cleanupMerchant(prisma: PrismaClient, merchantId: string) {
         ]),
       },
     },
+  });
+  // [Fix round #6, I5] The admin actions now write AuditLog rows keyed by
+  // batch id — cleaned up here by those ids (never a table-wide
+  // deleteMany), same discipline as memberships.realdb.spec.ts's cleanup
+  // of its subscription audit rows.
+  await prisma.auditLog.deleteMany({
+    where: { entity: "SettlementBatch", entityId: { in: batchIds } },
   });
   await prisma.settlementCarriedDemandClaim.deleteMany({
     where: { claimantBatchId: { in: batchIds } },
@@ -595,7 +639,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     const batch1 = await prisma.settlementBatch.findFirstOrThrow({
       where: { merchantId: merchant.id },
     });
-    await settlements.adminApprove(batch1.id, now1);
+    await settlements.adminApprove(batch1.id, ADMIN_ACTOR, now1);
     await payout.executeOne(batch1.id);
     const sentBatch1 = await prisma.settlementBatch.findUniqueOrThrow({
       where: { id: batch1.id },
@@ -680,7 +724,11 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // Must now be a true no-op: identical numbers, twice over (approve's
     // own internal recompute, then a second explicit recompute) proving
     // stability, not a one-time coincidence.
-    const approvedBatch2 = await settlements.adminApprove(batch2.id, now2);
+    const approvedBatch2 = await settlements.adminApprove(
+      batch2.id,
+      ADMIN_ACTOR,
+      now2,
+    );
     expect(approvedBatch2.refundClawbackCents).toBe(expectedClawback);
     expect(approvedBatch2.netPayoutCents).toBe(9900);
     expect(approvedBatch2.status).toBe("APPROVED");
@@ -737,7 +785,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     const batch = await prisma.settlementBatch.findFirstOrThrow({
       where: { merchantId: merchant.id },
     });
-    await settlements.adminApprove(batch.id, now);
+    await settlements.adminApprove(batch.id, ADMIN_ACTOR, now);
 
     mockProvider.forcePayoutFailure(batch.id);
     await payout.executeOne(batch.id);
@@ -959,7 +1007,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // resolve batch2's shortfall to 0 (money forgiven). It must instead
     // reproduce EXACTLY pass 1's numbers — stable, not growing and not
     // vanishing.
-    await settlements.adminRetry(batch2.id, now2);
+    await settlements.adminRetry(batch2.id, ADMIN_ACTOR, now2);
     const batch2Retried = await prisma.settlementBatch.findUniqueOrThrow({
       where: { id: batch2.id },
     });
@@ -972,7 +1020,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // convergence, not just a one-time coincidence (the original bug this
     // fix replaced would have grown 2000 -> 4000 -> 6000 -> ... on every
     // successive retry).
-    await settlements.adminRetry(batch2.id, now2);
+    await settlements.adminRetry(batch2.id, ADMIN_ACTOR, now2);
     const batch2RetriedTwice = await prisma.settlementBatch.findUniqueOrThrow({
       where: { id: batch2.id },
     });
@@ -1020,7 +1068,11 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // GENUINELY UNRECOVERABLE: resolveCarriedShortfall only ever inherits
     // from a HELD most-recent predecessor, and batch2 is APPROVED by the
     // time anything else could look at it again. Must be a true no-op.
-    const approvedBatch2 = await settlements.adminApprove(batch2.id, now3);
+    const approvedBatch2 = await settlements.adminApprove(
+      batch2.id,
+      ADMIN_ACTOR,
+      now3,
+    );
     expect(approvedBatch2.refundClawbackCents).toBe(2000);
     expect(approvedBatch2.netPayoutCents).toBe(2930);
     expect(approvedBatch2.carriedExternalDemandCents).toBe(0); // residual — nothing left to inherit
@@ -1048,7 +1100,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // Close the loop: adminRetry's APPROVED path (payout.executeOne) must
     // actually send the correct, still-accounted-for amount — proving the
     // fix end to end, not just at the batch-row level.
-    await settlements.adminRetry(batch2.id, now3);
+    await settlements.adminRetry(batch2.id, ADMIN_ACTOR, now3);
     const sentBatch2 = await prisma.settlementBatch.findUniqueOrThrow({
       where: { id: batch2.id },
     });
@@ -1091,7 +1143,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     expect(batch1.grossCents).toBe(30000);
     expect(batch1.netPayoutCents).toBe(perLineDemand * 2);
     expect(batch1.status).toBe("CALCULATED");
-    await settlements.adminApprove(batch1.id, now1);
+    await settlements.adminApprove(batch1.id, ADMIN_ACTOR, now1);
     await payout.executeOne(batch1.id);
 
     // Both reservations refunded AFTER the batch was sent.
@@ -1167,7 +1219,11 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // clawed back) while line1's books still assert full recovery. Must
     // be a true no-op: identical numbers, and line1/line2's cumulative
     // amounts unchanged.
-    const retriedBatch2 = await settlements.adminRetry(batch2.id, now2);
+    const retriedBatch2 = await settlements.adminRetry(
+      batch2.id,
+      ADMIN_ACTOR,
+      now2,
+    );
     expect(retriedBatch2.status).toBe("HELD");
     expect(retriedBatch2.refundClawbackCents).toBe(16830);
     expect(retriedBatch2.netPayoutCents).toBe(0);
@@ -1185,7 +1241,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     expect(line2AfterRetry.clawbackAppliedAt).toBeNull();
 
     // A second no-op retry must ALSO reproduce the same numbers.
-    await settlements.adminRetry(batch2.id, now2);
+    await settlements.adminRetry(batch2.id, ADMIN_ACTOR, now2);
     const batch2AfterSecondRetry =
       await prisma.settlementBatch.findUniqueOrThrow({
         where: { id: batch2.id },
@@ -1299,7 +1355,11 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // is UNCHANGED: the refund has no effect on a batch that already has
     // the line, because recomputeBatch never looks at refunds directly, only
     // at unresolved-clawback lines belonging to OTHER, already-SENT batches.
-    const approved = await settlements.adminApprove(batch1.id, now1);
+    const approved = await settlements.adminApprove(
+      batch1.id,
+      ADMIN_ACTOR,
+      now1,
+    );
     expect(approved.netPayoutCents).toBe(11880);
     expect(approved.status).toBe("APPROVED");
 
@@ -1360,7 +1420,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     const batch = await prisma.settlementBatch.findFirstOrThrow({
       where: { merchantId: merchant.id },
     });
-    await settlements.adminApprove(batch.id, now);
+    await settlements.adminApprove(batch.id, ADMIN_ACTOR, now);
 
     // Force the FIRST payout attempt to fail at the provider — executeOne
     // stamps payoutAttemptedAt BEFORE calling the provider, so the batch
@@ -1382,7 +1442,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // running at all (adminHold resolving instead of throwing).
     expect.assertions(9);
     try {
-      await settlements.adminHold(batch.id, "should be refused");
+      await settlements.adminHold(batch.id, "should be refused", ADMIN_ACTOR);
     } catch (err) {
       expect(err).toBeInstanceOf(ConflictException);
       const response = (err as ConflictException).getResponse() as Record<
@@ -1435,7 +1495,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     const batch1 = await prisma.settlementBatch.findFirstOrThrow({
       where: { merchantId: merchant.id },
     });
-    await settlements.adminApprove(batch1.id, now1);
+    await settlements.adminApprove(batch1.id, ADMIN_ACTOR, now1);
     await payout.executeOne(batch1.id);
 
     await prisma.refund.create({
@@ -1562,7 +1622,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     const batch1 = await prisma.settlementBatch.findFirstOrThrow({
       where: { merchantId: merchant.id },
     });
-    await settlements.adminApprove(batch1.id, now1);
+    await settlements.adminApprove(batch1.id, ADMIN_ACTOR, now1);
     await payout.executeOne(batch1.id);
     await prisma.refund.create({
       data: {
@@ -1645,23 +1705,46 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
 
     // ...and the demand is genuinely still VISIBLE: the nightly cycle's
     // own clawback sweep (findMerchantsWithPendingClawback, unmodified
-    // production code) picks this merchant up and opens a batch for it.
-    // With the stale line, this predicate returned nothing at all.
+    // production code) picks this merchant up. With the stale line, this
+    // predicate returned nothing at all.
+    //
+    // [Fix round #6, M2] The sweep now recomputes the merchant's EXISTING
+    // open batch (batch2, HELD) instead of minting a brand-new empty one
+    // for today's key. This assertion used to read `.toBe(3)` — and would
+    // have read 4 the next night, 5 the night after, one empty HELD batch
+    // per night forever for a merchant whose demand cannot be absorbed,
+    // each of them eventually firing its own payout-SLA alert. Nothing is
+    // lost by not minting: the demand stays visible to this same sweep,
+    // and the moment the merchant earns again, that day's real batch pins
+    // batch2 as its carried-demand source (discoverCarriedDemandSource
+    // looks for the most recent HELD batch — it never depended on the
+    // sweep's litter).
     const now3 = new Date("2026-08-05T02:00:00.000Z");
-    await batchBuilder.runNightlyCycle(now3);
+    const sweepCycle = await batchBuilder.runNightlyCycle(now3);
+    expect(sweepCycle.batchIds).toContain(batch2.id);
     expect(
       await prisma.settlementBatch.count({
         where: { merchantId: merchant.id },
       }),
-    ).toBe(3);
+    ).toBe(2);
 
-    // [Fix round #5] That sweep batch inherits batch2's own 4000 fee
+    // [Fix round #5] A successor batch inherits batch2's own 4000 fee
     // deficit — and the handoff is now RECORDED on both sides, pinned to
     // batch2 specifically, instead of copied into a frozen column with
-    // nothing on batch2 remembering it happened.
-    const batch3 = await prisma.settlementBatch.findFirstOrThrow({
-      where: { merchantId: merchant.id, id: { notIn: [batch1.id, batch2.id] } },
-    });
+    // nothing on batch2 remembering it happened. Seeded directly (the row
+    // shape createOrExtendBatch produces for a merchant's next period)
+    // rather than through the sweep, which since [Fix round #6, M2] no
+    // longer mints one: what the rest of this test exercises is the CLAIM
+    // ledger between a predecessor and its successor, not how the
+    // successor came to exist.
+    const batch3 = await seedEmptyOpenBatch(prisma, merchant.id, "2026-08-05");
+    await batchBuilder.recomputeBatch(batch3.id, now3);
+    Object.assign(
+      batch3,
+      await prisma.settlementBatch.findUniqueOrThrow({
+        where: { id: batch3.id },
+      }),
+    );
     expect(batch3.inheritedExternalDemandCents).toBe(4000);
     expect(batch3.carriedDemandSourceBatchId).toBe(batch2.id);
     expect(batch3.status).toBe("HELD");
@@ -1757,7 +1840,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     const batch1 = await prisma.settlementBatch.findFirstOrThrow({
       where: { merchantId: merchant.id },
     });
-    await settlements.adminApprove(batch1.id, now1);
+    await settlements.adminApprove(batch1.id, ADMIN_ACTOR, now1);
     await payout.executeOne(batch1.id);
     for (const [i, r] of [resA, resB].entries()) {
       await prisma.refund.create({
@@ -1876,7 +1959,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     const batch1 = await prisma.settlementBatch.findFirstOrThrow({
       where: { merchantId: merchant.id },
     });
-    await settlements.adminApprove(batch1.id, now1);
+    await settlements.adminApprove(batch1.id, ADMIN_ACTOR, now1);
     await payout.executeOne(batch1.id);
     await prisma.refund.create({
       data: {
@@ -1964,6 +2047,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // re-derives its own 792 exactly.
     const retried = await settlements.adminRetry(
       batch2.id,
+      ADMIN_ACTOR,
       new Date("2026-08-07T02:00:00.000Z"),
     );
     expect(retried.refundClawbackCents).toBe(792);
@@ -2152,6 +2236,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     });
     await settlements.adminApprove(
       bB2.id,
+      ADMIN_ACTOR,
       new Date("2026-08-04T03:00:00.000Z"),
     );
     await payout.executeOne(bB2.id);
@@ -2164,7 +2249,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // Now cure the predecessor, through the real path: a very-late line
     // for day 1, picked up by the nightly cycle, which extends the HELD
     // batch and recomputes it. That recompute must refuse.
-    await seedRedeemedPaidReservation(prisma, {
+    const lateB = await seedRedeemedPaidReservation(prisma, {
       storeId: storeB.id,
       offerId: offerB.id,
       qty: 1,
@@ -2191,17 +2276,29 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     ]);
     expect(refusedCycle.batchIds).not.toContain(bB1.id);
 
-    // The recompute transaction rolled back: the predecessor keeps its
-    // previous, self-consistent MONEY state, the successor's sent payout is
+    // [Fix round #6, C1] The recompute transaction rolled back and took
+    // the very-late line WITH it: the predecessor keeps its previous,
+    // self-consistent MONEY state, the successor's sent payout is
     // untouched, and the claim still stands as the record of what was
-    // collected. An operator gets a named signal instead of a silent 4000
-    // under-payment. (The new line itself IS attached — createOrExtendBatch
-    // inserts lines in its own transaction before recomputing, as it always
-    // has — so the batch is visibly "has an unaccounted line", which is
-    // precisely the thing needing reconciliation.)
+    // collected.
+    //
+    // This assertion used to read `.toBe(2)` — the line was inserted on
+    // the root client BEFORE the recompute transaction, so a refusal left
+    // it committed against a batch whose totals never counted it. That end
+    // state was unrecoverable, not merely untidy: nothing in the codebase
+    // can remove or re-point a settlement line, the nightly scan skips a
+    // reservation that HAS one (`settlementLine: null`), and both admin
+    // actions re-enter the same recompute and re-throw — so the merchant
+    // could NEVER be paid for that redemption. Now nothing is committed
+    // and the work stays visible to the next cycle.
     expect(
       await prisma.settlementLine.count({ where: { batchId: bB1.id } }),
-    ).toBe(2);
+    ).toBe(1);
+    expect(
+      await prisma.settlementLine.findUnique({
+        where: { reservationId: lateB.reservation.id },
+      }),
+    ).toBeNull();
     const refusedB1 = await prisma.settlementBatch.findUniqueOrThrow({
       where: { id: bB1.id },
     });
@@ -2222,6 +2319,34 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
       }),
     ).toMatchObject({ sourceBatchId: bB1.id, amountCents: 4000 });
     await expectClawbackLedgerConsistent(prisma, merchantB.id);
+
+    // [Fix round #6, C1] ...and the merchant's work is not lost. The next
+    // night re-discovers the SAME reservation (still `settlementLine:
+    // null`) and refuses again — the reconciliation item keeps announcing
+    // itself every cycle until an operator resolves it, and the redemption
+    // is still payable the moment they do. With the line committed outside
+    // the transaction, this second cycle reported NOTHING for this
+    // merchant: the reservation was permanently invisible to the
+    // eligibility scan and permanently uncounted by the batch holding it.
+    const nextNight = await batchBuilder.runNightlyCycle(
+      new Date("2026-08-06T02:00:00.000Z"),
+    );
+    expect(
+      nextNight.failures.filter((f) => f.merchantId === merchantB.id),
+    ).toEqual([
+      {
+        merchantId: merchantB.id,
+        stage: "batch",
+        message: expect.stringContaining(
+          "SETTLEMENT_CARRIED_DEMAND_ALREADY_COLLECTED",
+        ),
+      },
+    ]);
+    expect(
+      await prisma.settlementLine.findUnique({
+        where: { reservationId: lateB.reservation.id },
+      }),
+    ).toBeNull();
   }, 30000);
 
   it("[o] [Fix round #5, follow-up] one merchant needing reconciliation does NOT stop the rest of the platform settling that night — the failure is isolated, collected and reported", async () => {
@@ -2267,6 +2392,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     });
     await settlements.adminApprove(
       aB2.id,
+      ADMIN_ACTOR,
       new Date("2026-08-04T03:00:00.000Z"),
     );
     await payout.executeOne(aB2.id);
@@ -2329,6 +2455,7 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
     // ...and the batch is genuinely payable, not merely computed.
     await settlements.adminApprove(
       batchB2.id,
+      ADMIN_ACTOR,
       new Date("2026-08-05T03:00:00.000Z"),
     );
     await payout.executeOne(batchB2.id);

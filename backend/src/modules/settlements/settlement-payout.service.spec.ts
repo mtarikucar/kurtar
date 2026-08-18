@@ -46,6 +46,12 @@ describe("SettlementPayoutService.executeOne — payoutAttemptedAt stamp race", 
       prisma as never,
       facade as never,
       outbox as never,
+      // reconcileStuckBatches' two dependencies — unused by executeOne,
+      // which is all this file exercises (the sweep itself is proved
+      // against real Postgres in settlement-reconciliation.realdb.spec.ts,
+      // since its sentinel claiming is raw UPDATE ... RETURNING).
+      { getHolidayDateKeys: async () => new Set<string>() } as never,
+      { trySend: async () => true } as never,
     );
     const result = await service.executeOne("batch1");
 
@@ -94,6 +100,12 @@ describe("SettlementPayoutService.executeOne — payoutAttemptedAt stamp race", 
       prisma as never,
       facade as never,
       outbox as never,
+      // reconcileStuckBatches' two dependencies — unused by executeOne,
+      // which is all this file exercises (the sweep itself is proved
+      // against real Postgres in settlement-reconciliation.realdb.spec.ts,
+      // since its sentinel claiming is raw UPDATE ... RETURNING).
+      { getHolidayDateKeys: async () => new Set<string>() } as never,
+      { trySend: async () => true } as never,
     );
     const result = await service.executeOne("batch1");
 
@@ -139,6 +151,12 @@ describe("SettlementPayoutService.executeOne — payoutAttemptedAt stamp race", 
       prisma as never,
       facade as never,
       outbox as never,
+      // reconcileStuckBatches' two dependencies — unused by executeOne,
+      // which is all this file exercises (the sweep itself is proved
+      // against real Postgres in settlement-reconciliation.realdb.spec.ts,
+      // since its sentinel claiming is raw UPDATE ... RETURNING).
+      { getHolidayDateKeys: async () => new Set<string>() } as never,
+      { trySend: async () => true } as never,
     );
     await service.executeOne("batch1");
 

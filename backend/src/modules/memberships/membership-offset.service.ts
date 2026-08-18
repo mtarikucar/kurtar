@@ -55,6 +55,25 @@ export interface MembershipDueForRecompute {
    * gross while exempt can't grow the offset) and never LESS (a later
    * pass can't silently drop it either). */
   exempt: boolean;
+  /** [Fix round #6, I2] True when this batch's period date falls OUTSIDE
+   * the subscription's current period — i.e. the batch belongs to a
+   * period that has since rolled over (or, defensively, to one that has
+   * not started yet). Treated exactly like `exempt`: `dueCents` becomes
+   * restore-only (this batch's own prior contribution, never the
+   * subscription's current balance) and `persistOffset` writes no
+   * lifecycle flags.
+   *
+   * THE BUG THIS CLOSES: renewal resets `outstandingCents` to the new
+   * period's full price (membership-renewal-cron.service.ts), while an
+   * open CALCULATED/HELD batch from the period that just ended is still
+   * recomputable — by adminApprove's pre-lock recompute, by adminRetry,
+   * or by a very-late line extending it. Without this guard that
+   * recompute read the NEW period's balance as its due and collected
+   * against it out of the OLD period's gross: the merchant pays part of
+   * year 2's membership fee out of a year-1 payout that was already
+   * settled against year 1's fee. A straddling batch may now only ever
+   * restore what it already took. */
+  foreignPeriod: boolean;
   /** [Fix round #4] The subscription's stored balances as they were read
    * under the lock, and THIS batch's own already-committed contribution,
    * kept separate. `persistOffset` writes `stored + batchPrior - applied`
@@ -140,20 +159,33 @@ export class MembershipOffsetService {
       membershipExemptUntil != null &&
       periodDate.getTime() < membershipExemptUntil.getTime();
 
+    // [Fix round #6, I2] The batch's own period vs the subscription's
+    // CURRENT one. `periodDate` was already passed in but only ever used
+    // for the exemption comparison above — both period columns were read
+    // by the `SELECT *` and simply never consulted.
+    const foreignPeriod =
+      periodDate.getTime() < sub.currentPeriodStart.getTime() ||
+      periodDate.getTime() >= sub.currentPeriodEnd.getTime();
+    // Both flags mean the same thing for the money: this pass may RESTORE
+    // what this batch already committed, and may collect nothing new.
+    const restoreOnly = exempt || foreignPeriod;
+
     return {
       subscriptionId: sub.id,
       // [Fix round #2, I6] Exempt: RESTORE this batch's own prior
       // contribution (not 0) — see the interface doc comment above for
-      // the double-loss bug this closes.
-      dueCents: exempt
+      // the double-loss bug this closes. [Fix round #6, I2] A batch whose
+      // period has since rolled over is capped identically.
+      dueCents: restoreOnly
         ? batchPriorOffsetCents
         : sub.outstandingCents + batchPriorOffsetCents,
-      dueVatCents: exempt
+      dueVatCents: restoreOnly
         ? batchPriorOffsetVatCents
         : sub.outstandingVatCents + batchPriorOffsetVatCents,
       alreadyMarkedPaid: sub.periodPaidAt != null,
       needsActivation: sub.status === "TRIAL" || sub.status === "PAST_DUE",
       exempt,
+      foreignPeriod,
       storedOutstandingCents: sub.outstandingCents,
       storedOutstandingVatCents: sub.outstandingVatCents,
       batchPriorOffsetCents,
@@ -266,8 +298,12 @@ export class MembershipOffsetService {
     // Lifecycle flags only on a period that is actually being collected.
     // An exempt period is PAUSED — it must not be marked paid, and a
     // TRIAL/PAST_DUE subscription must not be "activated" by a pass that
-    // collected nothing.
-    if (!due.exempt) {
+    // collected nothing. [Fix round #6, I2] Same for a batch whose own
+    // period has rolled over: whatever it restores says nothing about
+    // whether the CURRENT period has been paid, so it must never stamp
+    // periodPaidAt or activate the subscription on the new period's
+    // behalf.
+    if (!due.exempt && !due.foreignPeriod) {
       if (newOutstanding === 0 && !due.alreadyMarkedPaid) {
         data.periodPaidAt = new Date();
       }

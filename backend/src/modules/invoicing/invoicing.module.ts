@@ -1,10 +1,12 @@
 import { Module } from "@nestjs/common";
+import { EmailModule } from "../notifications/email/email.module";
 import { EDocumentProviderRegistry } from "./e-document-provider.registry";
 import { EDocumentFacadeService } from "./e-document-facade.service";
 import { MockEDocumentProvider } from "./adapters/mock-e-document-provider";
 import { NilveraAdapter } from "./adapters/nilvera.adapter";
 import { TaxpayerLookupService } from "./taxpayer-lookup.service";
 import { CommissionInvoiceService } from "./commission-invoice.service";
+import { CommissionInvoiceDraftAlertService } from "./commission-invoice-draft-alert.service";
 
 /**
  * SettlementSentInvoiceHandler is deliberately NOT declared here — same
@@ -15,6 +17,10 @@ import { CommissionInvoiceService } from "./commission-invoice.service";
  * CommissionInvoiceService for exactly that wiring.
  */
 @Module({
+  // [Fix round #6, I1] EmailModule for OpsAlertService — an unissuable
+  // commission invoice now reaches OPS_ALERT_EMAIL instead of ending at a
+  // log line.
+  imports: [EmailModule],
   providers: [
     EDocumentProviderRegistry,
     EDocumentFacadeService,
@@ -22,6 +28,7 @@ import { CommissionInvoiceService } from "./commission-invoice.service";
     NilveraAdapter,
     TaxpayerLookupService,
     CommissionInvoiceService,
+    CommissionInvoiceDraftAlertService,
   ],
   exports: [CommissionInvoiceService],
 })

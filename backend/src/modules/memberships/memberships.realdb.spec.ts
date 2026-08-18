@@ -772,5 +772,125 @@ d(
       expect(subAfterSecondClamp.outstandingCents).toBe(5752);
       expect(subAfterSecondClamp.outstandingVatCents).toBe(959);
     }, 30000);
+
+    it("[Fix round #6, I2] a batch from the period that just ended may only RESTORE what it already offset — it can never collect the NEW period's freshly-reset balance out of the old period's gross", async () => {
+      const { batchBuilder, renewalCron } = buildHarness(prisma);
+      const pricing = new PricingService(prisma as never);
+      // bagFeeCentsOverride: 0 — isolates the membership arithmetic from
+      // the bag fee, same technique as the tests above.
+      const merchant = await seedMerchant(prisma, { bagFeeCentsOverride: 0 });
+      merchantIds.push(merchant.id);
+      const store = await seedStore(prisma, merchant.id);
+      const bagTemplate = await seedBagTemplate(prisma, store.id, 20000);
+      const offer = await seedOffer(prisma, bagTemplate.id, store.id, 10);
+
+      // Period 1 runs to 2026-06-01 and owes 600 (500 net + 100 VAT).
+      const sub = await prisma.membershipSubscription.create({
+        data: {
+          merchantId: merchant.id,
+          anchorDate: new Date("2026-01-01T00:00:00.000Z"),
+          currentPeriodStart: new Date("2026-01-01T00:00:00.000Z"),
+          currentPeriodEnd: new Date("2026-06-01T00:00:00.000Z"),
+          priceCents: 500,
+          vatCents: 100,
+          status: "ACTIVE",
+          outstandingCents: 600,
+          outstandingVatCents: 100,
+        },
+      });
+
+      // A redemption INSIDE period 1 (2026-05-30). gross 20000, no bag
+      // fee, withholding round(20000*1%) = 200 -> available 19800, which
+      // comfortably clears the whole 600 membership balance.
+      await seedRedeemedPaidReservation(prisma, {
+        storeId: store.id,
+        offerId: offer.id,
+        qty: 1,
+        unitPriceCents: 20000,
+        redeemedAt: new Date("2026-05-30T11:00:00.000Z"),
+      });
+      await batchBuilder.runNightlyCycle(new Date("2026-05-31T02:00:00.000Z"));
+      const batch = await prisma.settlementBatch.findFirstOrThrow({
+        where: { merchantId: merchant.id },
+      });
+      expect(batch.membershipOffsetCents).toBe(600);
+      expect(batch.membershipOffsetVatCents).toBe(100);
+      expect(batch.netPayoutCents).toBe(19200); // 20000 - 200 - 600
+      expect(batch.status).toBe("CALCULATED"); // still open, still recomputable
+      const paidPeriod1 = await prisma.membershipSubscription.findUniqueOrThrow(
+        {
+          where: { id: sub.id },
+        },
+      );
+      expect(paidPeriod1.outstandingCents).toBe(0);
+
+      // The anniversary passes and renewal opens period 2 with a fresh,
+      // full balance — nothing carried, per the P1 forgiveness policy.
+      await renewalCron.runOnce(new Date("2026-06-02T03:00:00.000Z"));
+      const period2 = await prisma.membershipSubscription.findUniqueOrThrow({
+        where: { id: sub.id },
+      });
+      expect(period2.currentPeriodStart.toISOString()).toBe(
+        "2026-06-01T00:00:00.000Z",
+      );
+      const newPricing = await pricing.resolvePlatformPricing(
+        prisma as never,
+        period2.currentPeriodStart,
+      );
+      const period2Due =
+        newPricing.membershipAnnualCents +
+        Math.round((newPricing.membershipAnnualCents * 20) / 100);
+      expect(period2.outstandingCents).toBe(period2Due);
+
+      // Now the period-1 batch is recomputed — the ordinary path: an
+      // admin approving it does exactly this (a pre-lock recompute), as
+      // does a retry or a very-late line. Its periodStart (2026-05-30)
+      // is BEFORE the subscription's current period, so it may only
+      // restore its own 600.
+      const recomputed = await batchBuilder.recomputeBatch(
+        batch.id,
+        new Date("2026-06-03T02:00:00.000Z"),
+      );
+
+      // Without the guard, lockAndResolveDue returned
+      // `sub.outstandingCents (period 2's full price) + 600` as this
+      // batch's due, computeSettlement clamped that to the 19800 this
+      // batch had available, and the merchant paid a large slice of YEAR
+      // TWO's membership fee out of a YEAR ONE payout that had already
+      // settled year one's fee in full.
+      expect(recomputed.membershipOffsetCents).toBe(600);
+      expect(recomputed.membershipOffsetVatCents).toBe(100);
+      expect(recomputed.netPayoutCents).toBe(19200);
+
+      const afterRecompute =
+        await prisma.membershipSubscription.findUniqueOrThrow({
+          where: { id: sub.id },
+        });
+      // Period 2's balance is untouched — not reduced by the old batch,
+      // and not marked paid or re-activated on its behalf either.
+      expect(afterRecompute.outstandingCents).toBe(period2Due);
+      expect(afterRecompute.outstandingVatCents).toBe(
+        period2.outstandingVatCents,
+      );
+      expect(afterRecompute.periodPaidAt).toBeNull();
+      expect(afterRecompute.currentPeriodStart.toISOString()).toBe(
+        "2026-06-01T00:00:00.000Z",
+      );
+
+      // ...and it converges: recomputing again changes nothing further.
+      const again = await batchBuilder.recomputeBatch(
+        batch.id,
+        new Date("2026-06-04T02:00:00.000Z"),
+      );
+      expect(again.membershipOffsetCents).toBe(600);
+      expect(again.netPayoutCents).toBe(19200);
+      expect(
+        (
+          await prisma.membershipSubscription.findUniqueOrThrow({
+            where: { id: sub.id },
+          })
+        ).outstandingCents,
+      ).toBe(period2Due);
+    }, 30000);
   },
 );

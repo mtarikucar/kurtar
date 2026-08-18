@@ -1,0 +1,27 @@
+-- [Fix round #6, C2] One commission invoice per (batch, type).
+--
+-- The outbox is at-least-once by design (outbox-worker.service.ts: a
+-- throwing handler is retried with backoff, and a handler that SUCCEEDED
+-- but whose markDone write failed is deliberately left PROCESSING for the
+-- stale-lease reclaim to re-dispatch exactly once more). Commission
+-- invoicing had no idempotency of its own: an unconditional
+-- `commissionInvoice.create` minted a new row — and therefore a new
+-- `invoice.id`, which IS the e-document provider's idempotency key — so a
+-- redelivery issued a SECOND legally-valid e-fatura for the same batch,
+-- and the provider's own dedupe could never see it.
+--
+-- This index is the storage-level half of the fix (the service-level half
+-- is CommissionInvoiceService.createAndIssue reusing the existing row and
+-- re-issuing with the SAME invoice id).
+--
+-- "batchId" is nullable (the FK is onDelete: SetNull), and Postgres's
+-- default NULLS DISTINCT semantics are exactly what is wanted: invoices
+-- orphaned by a deleted batch must never collide with one another.
+--
+-- If this statement fails with a unique-violation, duplicate invoices
+-- already exist for some batch — i.e. the defect above already fired.
+-- That is a real-tax-document reconciliation item (which of the two was
+-- actually issued at the provider, and does the other need an iptal), not
+-- something a migration may resolve by deleting rows.
+CREATE UNIQUE INDEX IF NOT EXISTS "commission_invoices_batchId_type_key"
+  ON "commission_invoices" ("batchId", "type");

@@ -91,7 +91,18 @@ export class MembershipRenewalCronService {
     private readonly pricing: PricingService,
   ) {}
 
-  @Cron("0 3 * * *", { name: "membership-renewal" }) // 03:00 server time, daily
+  // [Fix round #6, M7] 03:00 Europe/Istanbul, daily — pinned like the
+  // settlement batch builder's (02:00) and the reconciliation sweep's
+  // (09:00). The container runs UTC (no TZ is set in the Dockerfile or
+  // any compose file), so an unpinned "0 3 * * *" actually fired at 06:00
+  // Istanbul while the runbook presented all three crons on one clock.
+  // The intended ordering — nightly batch, then renewal — survived by
+  // accident (23:00 UTC precedes 03:00 UTC), which is exactly the kind of
+  // accident that stops being one the moment a schedule is edited.
+  @Cron("0 3 * * *", {
+    name: "membership-renewal",
+    timeZone: "Europe/Istanbul",
+  })
   async renewDueSubscriptions(): Promise<void> {
     await this.runOnce(new Date());
   }

@@ -907,6 +907,24 @@ model SettlementBatch {
   pspTransferRef String?
   sentAt         DateTime?
 
+  // [Fix round #6, I3/I4/M3] Alert sentinels for the daily reconciliation
+  // sweep (settlement-payout.service.ts's reconcileStuckBatches), the same
+  // alert-once shape complaint_tickets.slaWarningSentAt uses. Without
+  // them, that cron re-logged one CRITICAL per matching batch every single
+  // day: nothing ever writes SETTLED, so the stale-SENT set only ever grew
+  // and could never be cleared — which is also what buried the branch
+  // carrying the regulated 5-business-day payout deadline. Each is
+  // stamped by a guarded `UPDATE ... WHERE <sentinel> IS NULL ...
+  // RETURNING`, so selecting and claiming a batch is one atomic step.
+  /// SENT but still not SETTLED 3+ days later — alerted once.
+  reconciliationAlertSentAt DateTime?
+  /// One business day out from dueAt and still unsent — warned once,
+  /// BEFORE the deadline is missed rather than only after.
+  payoutDueWarningSentAt    DateTime?
+  /// Past dueAt while still unsent (the 5-business-day SLA is already
+  /// missed) — alerted once.
+  payoutOverdueAlertSentAt  DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1113,9 +1131,12 @@ model CommissionInvoice {
 
   // [Task 8] netAmountCents/vatCents/totalAmountCents are the invoice's own
   // aggregate totals (BAG_FEE type: bagFeeCents / bagFeeVatCents / their
-  // sum; MEMBERSHIP type: the amount offset this batch / 0 / same value —
-  // no KDV line, see invoicing/commission-invoice.service.ts's doc
-  // comment for why). Withholding is DELIBERATELY never one of these
+  // sum; MEMBERSHIP type: the batch's membershipOffsetCents MINUS its VAT
+  // portion / membershipOffsetVatCents / the offset total — a membership
+  // invoice DOES carry a real KDV line, see invoicing/
+  // commission-invoice.service.ts:109-127 and its "[Fix round, P2, POLICY
+  // DECISION]" doc comment, which reversed the original "no KDV on
+  // membership" call). Withholding is DELIBERATELY never one of these
   // fields or a linesJson entry — it is a tevkifat on the payout dekont,
   // not a commission-invoice line (brief §6). linesJson is the itemized
   // breakdown (one entry per SettlementLine contributing to this invoice)
@@ -1128,6 +1149,20 @@ model CommissionInvoice {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // [Fix round #6, C2] ONE invoice per (batch, type) — the storage-level
+  // half of commission-invoice idempotency. The outbox is at-least-once
+  // (a throwing handler is retried; a handler whose markDone fails is
+  // deliberately left for the stale-lease reclaim), and without this
+  // constraint each redelivery drafted a SECOND invoice with a fresh id,
+  // which is also the provider's idempotency key — so the provider's own
+  // dedupe could never catch it and a second REAL e-fatura was issued for
+  // the same batch. CommissionInvoiceService now reuses the existing row
+  // (re-issuing with the SAME invoice id, which the provider contract
+  // dedupes) and this index is what makes that reuse race-proof.
+  // batchId is nullable (onDelete: SetNull); Postgres's default
+  // NULLS DISTINCT is exactly right here — invoices orphaned by a deleted
+  // batch must not collide with each other.
+  @@unique([batchId, type])
   @@map("commission_invoices")
 }
 

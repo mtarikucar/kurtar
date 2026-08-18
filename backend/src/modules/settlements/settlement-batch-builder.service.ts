@@ -33,6 +33,19 @@ export interface NightlyCycleFailure {
   message: string;
 }
 
+/** [Fix round #6, C1] A settlement line that has been COMPUTED but not yet
+ * inserted. `createOrExtendBatch` hands these to `recomputeBatch`, which
+ * inserts them INSIDE its own transaction — see recomputeBatch's doc
+ * comment for the orphaning bug that boundary closes. */
+export interface PendingSettlementLine {
+  reservationId: string;
+  redeemedAt: Date;
+  grossCents: number;
+  bagFeeCents: number;
+  bagFeeVatCents: number;
+  withholdingCents: number;
+}
+
 /** One settlement line this recompute has LOCKED and is responsible for
  * re-projecting from the allocation ledger — whether or not it ends up
  * funding it. The set is the union of "still has outstanding clawback
@@ -328,13 +341,13 @@ export class SettlementBatchBuilderService {
     for (const group of groups.values()) {
       merchantsWithFreshLines.add(group.merchantId);
       await isolate(group.merchantId, "batch", async () => {
-        const batchId = await this.createOrExtendBatch(
+        const { batchId, pendingLines } = await this.createOrExtendBatch(
           group.merchantId,
           group.dayKey,
           group.lines,
           group.redeemedAtByReservation,
         );
-        await this.recomputeBatch(batchId, now);
+        await this.recomputeBatch(batchId, now, pendingLines);
         touched.add(batchId);
       });
     }
@@ -363,12 +376,30 @@ export class SettlementBatchBuilderService {
     for (const merchantId of clawbackMerchantIds) {
       if (merchantsWithFreshLines.has(merchantId)) continue;
       await isolate(merchantId, "clawback-sweep", async () => {
-        const batchId = await this.createOrExtendBatch(
-          merchantId,
-          todayKey,
-          [],
-          new Map(),
-        );
+        // [Fix round #6, M2] Recompute the merchant's EXISTING open batch
+        // when it has one, and only mint a fresh (empty) batch when it has
+        // none. Before this, the sweep always built for `todayKey` — a
+        // different (merchantId, periodStart) key every night — so a
+        // merchant whose clawback demand cannot be absorbed (nothing new
+        // being earned) collected one brand-new empty HELD batch per night,
+        // forever: none of them chains anything forward
+        // (exportableCarriedDemandCents is 0 for an empty batch), each one
+        // re-appears in the payout SLA alert once its own dueAt passes, and
+        // the demand is simply re-discovered by the same scan the next
+        // night. One standing open batch carries the same information
+        // without the daily litter.
+        const openBatch = await this.prisma.settlementBatch.findFirst({
+          where: {
+            merchantId,
+            status: { in: [...RECOMPUTABLE_SETTLEMENT_STATUSES] },
+          },
+          orderBy: { periodStart: "desc" },
+          select: { id: true },
+        });
+        const batchId =
+          openBatch?.id ??
+          (await this.createOrExtendBatch(merchantId, todayKey, [], new Map()))
+            .batchId;
         await this.recomputeBatch(batchId, now);
         touched.add(batchId);
       });
@@ -398,16 +429,24 @@ export class SettlementBatchBuilderService {
 
   /**
    * Find-or-create the batch for (merchantId, the Istanbul calendar day
-   * `dayKey`), bulk-insert `lines` as new SettlementLine rows with
-   * `skipDuplicates: true` — the actual mechanism that makes "each
-   * reservation lands in exactly one line" true under concurrency: two
-   * concurrent callers racing the SAME candidate reservation both attempt
-   * the insert, Postgres's unique index on reservationId lets only one
-   * succeed, `skipDuplicates` means the loser's whole batch statement does
-   * not abort over it. Per-line bagFee/VAT/withholding for the NEW rows is
-   * computed via a throwaway computeSettlement() call (its aggregate is
-   * discarded — recomputeBatch, called right after by every caller, is the
-   * authoritative aggregate over ALL the batch's lines, old and new).
+   * `dayKey`) and COMPUTE (never insert — see below) `lines` as
+   * PendingSettlementLine rows. Per-line bagFee/VAT/withholding for the
+   * NEW rows is computed via a throwaway computeSettlement() call (its
+   * aggregate is discarded — recomputeBatch, called right after by every
+   * caller, is the authoritative aggregate over ALL the batch's lines, old
+   * and new).
+   *
+   * [Fix round #6, C1] The rows are RETURNED, not written. They are
+   * inserted by `recomputeBatch` inside the same transaction that
+   * re-derives the batch from them, with the same `skipDuplicates: true`
+   * that makes "each reservation lands in exactly one line" true under
+   * concurrency (two callers racing the SAME candidate reservation both
+   * attempt the insert; Postgres's unique index on reservationId lets only
+   * one succeed, and `skipDuplicates` means the loser's whole statement
+   * does not abort over it). What changed is only WHERE the insert
+   * commits: a recompute that refuses now takes its lines down with it,
+   * instead of leaving them committed against a batch that never counted
+   * them. See recomputeBatch's doc comment.
    *
    * [Fix round, minor] Matches CALCULATED **or HELD** — a HELD batch can
    * legitimately receive new lines (a very-late redemption for a day whose
@@ -435,7 +474,7 @@ export class SettlementBatchBuilderService {
     dayKey: string,
     lines: SettlementInputLine[],
     redeemedAtByReservation: Map<string, Date>,
-  ): Promise<string> {
+  ): Promise<{ batchId: string; pendingLines: PendingSettlementLine[] }> {
     const periodStart = offerDateToDbDate(dayKey);
     const periodEnd = new Date(periodStart.getTime() + 24 * 60 * 60 * 1000);
     const lockKey = `settlement-batch:${merchantId}:${dayKey}`;
@@ -470,37 +509,36 @@ export class SettlementBatchBuilderService {
       return batch.id;
     });
 
-    if (lines.length > 0) {
-      const bagFeeCents = await this.pricing.resolveBagFeeCentsForMerchant(
-        this.prisma,
-        await this.prisma.merchant.findUniqueOrThrow({
-          where: { id: merchantId },
-          select: { bagFeeCentsOverride: true },
-        }),
-        periodStart,
-      );
-      const { perLine } = computeSettlement({
-        lines,
-        bagFeeCents,
-        membershipDueCents: 0,
-        priorClawbackCents: 0,
-      });
+    if (lines.length === 0) return { batchId, pendingLines: [] };
 
-      await this.prisma.settlementLine.createMany({
-        data: perLine.map((pl) => ({
-          batchId,
-          reservationId: pl.reservationId,
-          redeemedAt: redeemedAtByReservation.get(pl.reservationId)!,
-          grossCents: pl.grossCents,
-          bagFeeCents: pl.bagFeeCents,
-          bagFeeVatCents: pl.bagFeeVatCents,
-          withholdingCents: pl.withholdingCents,
-        })),
-        skipDuplicates: true,
-      });
-    }
+    const bagFeeCents = await this.pricing.resolveBagFeeCentsForMerchant(
+      this.prisma,
+      await this.prisma.merchant.findUniqueOrThrow({
+        where: { id: merchantId },
+        select: { bagFeeCentsOverride: true },
+      }),
+      periodStart,
+    );
+    const { perLine } = computeSettlement({
+      lines,
+      bagFeeCents,
+      membershipDueCents: 0,
+      priorClawbackCents: 0,
+    });
 
-    return batchId;
+    // [Fix round #6, C1] COMPUTED here, INSERTED by recomputeBatch inside
+    // its own transaction — see recomputeBatch's doc comment.
+    return {
+      batchId,
+      pendingLines: perLine.map((pl) => ({
+        reservationId: pl.reservationId,
+        redeemedAt: redeemedAtByReservation.get(pl.reservationId)!,
+        grossCents: pl.grossCents,
+        bagFeeCents: pl.bagFeeCents,
+        bagFeeVatCents: pl.bagFeeVatCents,
+        withholdingCents: pl.withholdingCents,
+      })),
+    };
   }
 
   /**
@@ -518,8 +556,35 @@ export class SettlementBatchBuilderService {
    * OUT of APPROVED in the first place, so this should be unreachable, but
    * a future code path reaching recomputeBatch on such a batch must still
    * never touch its now-frozen amount) once `payoutAttemptedAt` is set.
+   *
+   * [Fix round #6, C1] `pendingLines` — the rows `createOrExtendBatch`
+   * computed for this pass — are INSERTED HERE, inside this transaction,
+   * rather than committed separately before it. They used to be written on
+   * the root client, so the two writes had independent fates, and the one
+   * that can legitimately refuse is this one: `assertIrrevocableClaimsHonoured`
+   * throws SETTLEMENT_CARRIED_DEMAND_ALREADY_COLLECTED when a very-late
+   * line would cure a HELD batch whose successor already collected the
+   * carried demand and was paid. The refusal rolled the recompute back
+   * while the lines stayed committed — and nothing in this codebase can
+   * ever remove or re-point a settlement line (the only other writers are
+   * two column-only updates), the nightly eligibility scan excludes a
+   * reservation that HAS a line forever (`settlementLine: null`), and both
+   * admin actions re-enter this method and re-throw. The merchant was
+   * never paid for that work and the batch was wedged with no way out.
+   *
+   * Inside the transaction, the refusal takes the lines with it: nothing
+   * is committed, the reservations keep `settlementLine: null`, and the
+   * next nightly cycle re-discovers them and refuses again — a repeating,
+   * self-healing reconciliation signal instead of a permanent silent loss.
+   * The insert deliberately sits AFTER the recomputable/payoutAttemptedAt
+   * guard: a batch that froze between `createOrExtendBatch` and here must
+   * not receive lines it will never count either.
    */
-  async recomputeBatch(batchId: string, now: Date): Promise<SettlementBatch> {
+  async recomputeBatch(
+    batchId: string,
+    now: Date,
+    pendingLines: PendingSettlementLine[] = [],
+  ): Promise<SettlementBatch> {
     return this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<SettlementBatch[]>(Prisma.sql`
         SELECT * FROM "settlement_batches" WHERE "id" = ${batchId} FOR UPDATE
@@ -532,7 +597,21 @@ export class SettlementBatchBuilderService {
         !RECOMPUTABLE_SETTLEMENT_STATUSES.includes(batch.status) ||
         batch.payoutAttemptedAt !== null
       ) {
+        if (pendingLines.length > 0) {
+          this.logger.warn(
+            `recomputeBatch: batch ${batchId} is ${batch.status}${batch.payoutAttemptedAt ? " with a payout already attempted" : ""} — NOT attaching ${pendingLines.length} newly-computed line(s); their reservations stay eligible and will be batched by the next cycle.`,
+          );
+        }
         return batch;
+      }
+
+      // [Fix round #6, C1] The lines join the batch here, in the same
+      // transaction that re-derives it from them.
+      if (pendingLines.length > 0) {
+        await tx.settlementLine.createMany({
+          data: pendingLines.map((pl) => ({ batchId, ...pl })),
+          skipDuplicates: true,
+        });
       }
 
       const merchant = await tx.merchant.findUniqueOrThrow({

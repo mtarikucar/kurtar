@@ -7,6 +7,7 @@ import {
   ApiTags,
 } from "@nestjs/swagger";
 import { Actors } from "../auth/decorators/actors.decorator";
+import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { ApiStandardErrors } from "../../common/swagger/api-standard-errors.decorator";
 import { SchedulePricingDto } from "./dto/schedule-pricing.dto";
 import { PricingService } from "./pricing.service";
@@ -46,7 +47,13 @@ export class AdminPricingController {
   })
   @ApiCreatedResponse({ type: PlatformPricingDto })
   @Post()
-  schedule(@Body() dto: SchedulePricingDto) {
-    return this.pricing.scheduleFuturePricing(dto);
+  // [Fix round #6, I5] Binds the acting admin — this changes the per-bag
+  // fee for every merchant on the platform and used to leave no record of
+  // who scheduled it.
+  schedule(
+    @CurrentUser("id") adminId: string,
+    @Body() dto: SchedulePricingDto,
+  ) {
+    return this.pricing.scheduleFuturePricing(dto, adminId);
   }
 }

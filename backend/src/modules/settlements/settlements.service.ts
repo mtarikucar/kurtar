@@ -3,7 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { SettlementStatus } from "@prisma/client";
+import { Prisma, SettlementStatus } from "@prisma/client";
+import { istanbulDateKey } from "../../common/utils/istanbul-date.util";
 import { PrismaService } from "../../prisma/prisma.service";
 import { SettlementBatchBuilderService } from "./settlement-batch-builder.service";
 import { SettlementPayoutService } from "./settlement-payout.service";
@@ -79,8 +80,16 @@ export class SettlementsService {
   /** Recomputes once more (picking up anything that changed since the
    * batch was last touched — a very-late refund, a bag-fee override edit)
    * before locking it in; only proceeds to APPROVED if that recompute
-   * lands on CALCULATED (not HELD). */
-  async adminApprove(id: string, now: Date = new Date()) {
+   * lands on CALCULATED (not HELD).
+   *
+   * [Fix round #6, I5] Takes the acting admin and records them. APPROVED
+   * is precisely what the payout cron picks up to move money to a
+   * merchant's IBAN, and this was one of five admin mutations — the only
+   * ones in the codebase — that left no trace of who acted. The guarded
+   * updateMany and the AuditLog row now commit together: an approval
+   * without a record of its author is the state this fix exists to make
+   * unreachable. */
+  async adminApprove(id: string, adminId: string, now: Date = new Date()) {
     const existing = await this.prisma.settlementBatch.findUnique({
       where: { id },
       select: { status: true },
@@ -103,11 +112,30 @@ export class SettlementsService {
       });
     }
 
-    const guarded = await this.prisma.settlementBatch.updateMany({
-      where: { id, status: { in: APPROVED_FROM_STATUSES } },
-      data: { status: "APPROVED" },
+    const approved = await this.prisma.$transaction(async (tx) => {
+      const guarded = await tx.settlementBatch.updateMany({
+        where: { id, status: { in: APPROVED_FROM_STATUSES } },
+        data: { status: "APPROVED" },
+      });
+      if (guarded.count === 0) return false;
+      await tx.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId: adminId,
+          action: "settlement.approved",
+          entity: "SettlementBatch",
+          entityId: id,
+          diffJson: {
+            fromStatus: existing.status,
+            toStatus: "APPROVED",
+            netPayoutCents: recomputed.netPayoutCents,
+            merchantId: recomputed.merchantId,
+          },
+        },
+      });
+      return true;
     });
-    if (guarded.count === 0) {
+    if (!approved) {
       throw new ConflictException({
         statusCode: 409,
         errorCode: "SETTLEMENT_NOT_APPROVABLE",
@@ -124,17 +152,32 @@ export class SettlementsService {
    * flight/attempted cannot be held through this endpoint at all — it
    * needs a manual reconciliation path (out of this task's scope) once a
    * real bank/PSP feed exists, not a silent re-open. */
-  async adminHold(id: string, note: string | undefined) {
-    const guarded = await this.prisma.settlementBatch.updateMany({
-      where: {
-        id,
-        status: { in: HELD_FROM_STATUSES },
-        payoutAttemptedAt: null,
-      },
-      data: {
-        status: "HELD",
-        holdReason: note?.trim() || "Admin tarafından beklemeye alındı",
-      },
+  async adminHold(id: string, note: string | undefined, adminId: string) {
+    const holdReason = note?.trim() || "Admin tarafından beklemeye alındı";
+    // [Fix round #6, I5] Guarded update + audit row in one transaction —
+    // same shape as adminApprove.
+    const guarded = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.settlementBatch.updateMany({
+        where: {
+          id,
+          status: { in: HELD_FROM_STATUSES },
+          payoutAttemptedAt: null,
+        },
+        data: { status: "HELD", holdReason },
+      });
+      if (result.count > 0) {
+        await tx.auditLog.create({
+          data: {
+            actorType: "ADMIN",
+            actorId: adminId,
+            action: "settlement.held",
+            entity: "SettlementBatch",
+            entityId: id,
+            diffJson: { holdReason },
+          },
+        });
+      }
+      return result;
     });
     if (guarded.count === 0) {
       const existing = await this.prisma.settlementBatch.findUnique({
@@ -162,12 +205,31 @@ export class SettlementsService {
   /** HELD -> recompute (may resolve back to CALCULATED, or stay HELD with
    * an updated shortfall). APPROVED -> retry the payout call right now
    * instead of waiting for the next cron tick. Anything else: 409. */
-  async adminRetry(id: string, now: Date = new Date()) {
+  async adminRetry(id: string, adminId: string, now: Date = new Date()) {
     const batch = await this.prisma.settlementBatch.findUnique({
       where: { id },
       select: { status: true },
     });
     if (!batch) throw batchNotFoundError();
+
+    if (batch.status === "HELD" || batch.status === "APPROVED") {
+      // [Fix round #6, I5] Recorded BEFORE the action, and outside it: a
+      // retry's effect is a recompute or a provider call, neither of
+      // which can be wrapped in this transaction (provider I/O never runs
+      // inside one, and recomputeBatch opens its own). What matters for
+      // the audit trail is that an admin asked for it, which is true the
+      // moment we get here.
+      await this.prisma.auditLog.create({
+        data: {
+          actorType: "ADMIN",
+          actorId: adminId,
+          action: "settlement.retried",
+          entity: "SettlementBatch",
+          entityId: id,
+          diffJson: { fromStatus: batch.status },
+        },
+      });
+    }
 
     if (batch.status === "HELD") {
       await this.batchBuilder.recomputeBatch(id, now);
@@ -190,8 +252,27 @@ export class SettlementsService {
    * normal 02:00 Europe/Istanbul schedule; this is for ops to run it
    * immediately (verifying a fix, catching up after an incident) without
    * waiting for the next tick. */
-  async adminRunNightlyCycle(now: Date = new Date()) {
-    return this.batchBuilder.runNightlyCycle(now);
+  async adminRunNightlyCycle(adminId: string, now: Date = new Date()) {
+    const result = await this.batchBuilder.runNightlyCycle(now);
+    // [Fix round #6, I5] Platform-wide, so the entity is the CYCLE (keyed
+    // by its Istanbul day) rather than any one batch; the batches it
+    // touched and the merchants it could not settle are the diff. Written
+    // after the fact deliberately — the cycle's own per-merchant
+    // isolation means "what actually happened" is only known here.
+    await this.prisma.auditLog.create({
+      data: {
+        actorType: "ADMIN",
+        actorId: adminId,
+        action: "settlement.nightly_run",
+        entity: "SettlementCycle",
+        entityId: istanbulDateKey(now),
+        diffJson: {
+          batchIds: result.batchIds,
+          failures: result.failures as unknown as Prisma.InputJsonValue,
+        },
+      },
+    });
+    return result;
   }
 
   async listMine(merchantId: string, page: number, pageSize: number) {
