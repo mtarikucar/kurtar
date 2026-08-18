@@ -84,7 +84,6 @@ export default function NotificationPreferencesScreen() {
   const [favoritesEnabled, setFavoritesEnabled] = useState(true);
   const [nearbyEnabled, setNearbyEnabled] = useState(true);
   const [nearbyRadiusM, setNearbyRadiusM] = useState(3000);
-  const [marketingEnabled, setMarketingEnabled] = useState(false);
   const [quietHoursStart, setQuietHoursStart] = useState<number | null>(null);
   const [quietHoursEnd, setQuietHoursEnd] = useState<number | null>(null);
   const [saved, setSaved] = useState(false);
@@ -94,7 +93,6 @@ export default function NotificationPreferencesScreen() {
     setFavoritesEnabled(prefsQuery.data.favoritesEnabled);
     setNearbyEnabled(prefsQuery.data.nearbyEnabled);
     setNearbyRadiusM(prefsQuery.data.nearbyRadiusM);
-    setMarketingEnabled(prefsQuery.data.marketingEnabled);
     setQuietHoursStart(prefsQuery.data.quietHoursStart ?? null);
     setQuietHoursEnd(prefsQuery.data.quietHoursEnd ?? null);
   }, [prefsQuery.data]);
@@ -105,7 +103,13 @@ export default function NotificationPreferencesScreen() {
       favoritesEnabled,
       nearbyEnabled,
       nearbyRadiusM,
-      marketingEnabled,
+      // [M16 fix] marketingEnabled is deliberately never sent from here
+      // anymore — no NotificationKind maps to it anywhere in the backend
+      // (notification-policy.table.ts), so the toggle that used to be
+      // here controlled nothing: consent was captured and never
+      // consulted. Removed rather than left as a false promise; see the
+      // (now-deleted) PreferenceRow below's own history for why.
+      //
       // PATCH cannot currently clear a quiet-hour field back to null once
       // set (backend's own documented gap — see
       // update-notification-preferences.dto.ts's doc comment) — omitting
@@ -145,13 +149,6 @@ export default function NotificationPreferencesScreen() {
             value={nearbyEnabled}
             onChange={setNearbyEnabled}
           />
-          <PreferenceRow
-            title={t("notificationPrefs.marketing")}
-            body=""
-            value={marketingEnabled}
-            onChange={setMarketingEnabled}
-          />
-
           <Text style={styles.sectionTitle}>{t("notificationPrefs.quietHours")}</Text>
           <Text style={styles.sectionBody}>{t("notificationPrefs.quietHoursBody")}</Text>
           <HourStepper
