@@ -84,7 +84,7 @@ describe("Purchase screen — losing the race at drop time (OFFER_UNAVAILABLE)",
     await fireEvent.press(screen.getByTestId("purchase-confirm"));
 
     await waitFor(() =>
-      expect(screen.getByText("Bu paket az önce tükendi")).toBeTruthy(),
+      expect(screen.getByText("Bu paket artık alınamıyor")).toBeTruthy(),
     );
     expect(screen.getByText(/Yakınındaki diğer paketlere göz atabilirsin/)).toBeTruthy();
     expect(mockCreate).toHaveBeenCalledWith({

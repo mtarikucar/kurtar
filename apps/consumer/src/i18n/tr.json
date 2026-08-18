@@ -163,8 +163,8 @@
     "quantityTitle": "Kaç paket istersin?",
     "total": "Toplam",
     "confirmCta": "Ödemeye geç",
-    "unavailableTitle": "Bu paket az önce tükendi",
-    "unavailableBody": "Çok popüler bir paketti — başka biri senden önce davrandı. Yakınındaki diğer paketlere göz atabilirsin.",
+    "unavailableTitle": "Bu paket artık alınamıyor",
+    "unavailableBody": "Tükenmiş ya da mağaza tarafından kaldırılmış olabilir. Yakınındaki diğer paketlere göz atabilirsin.",
     "backToDiscoverCta": "Başka paket bul",
     "creating": "Rezervasyon oluşturuluyor…",
     "genericError": "Satın alma tamamlanamadı. Lütfen tekrar dene.",
@@ -181,7 +181,7 @@
     "successBody": "Rezervasyonun onaylandı. Siparişlerim'den kodunu görebilirsin.",
     "viewOrderCta": "Siparişi görüntüle",
     "failedTitle": "Ödeme tamamlanamadı",
-    "failedBody": "Ödemen onaylanmadı ya da iptal edildi. Tekrar deneyebilirsin.",
+    "failedBody": "Rezervasyonun tamamlanmadı: ödemen onaylanmadı ya da paket artık mevcut değil. Diğer paketlere göz atabilirsin.",
     "loadError": "Ödeme sayfası açılamadı.",
     "closeConfirmTitle": "Ödemeden vazgeç?",
     "closeConfirmBody": "Ödemeyi tamamlamazsan rezervasyonun onaylanmaz."
@@ -285,6 +285,28 @@
       "SAFETY_HYGIENE": "Güvenlik / hijyen",
       "OTHER": "Diğer"
     }
+  },
+  "complaints": {
+    "title": "Şikayetlerim",
+    "emptyTitle": "Henüz şikayetin yok",
+    "emptyBody": "Bir siparişle ilgili sorun yaşarsan buradan bildirebilirsin.",
+    "slaDeadline": "Yanıt süresi: {{date}}",
+    "resolvedAt": "Çözüldü: {{date}}",
+    "status": {
+      "OPEN": "Açık",
+      "MERCHANT_RESPONDED": "Mağaza yanıtladı",
+      "RESOLVED": "Çözüldü",
+      "ESCALATED": "Yükseltildi"
+    },
+    "threadEmpty": "Henüz mesaj yok.",
+    "authorLabels": {
+      "CONSUMER": "Sen",
+      "MERCHANT": "Mağaza",
+      "ADMIN": "kurtar Destek"
+    },
+    "replyPlaceholder": "Yanıt yaz…",
+    "replySend": "Gönder",
+    "replyError": "Mesaj gönderilemedi. Lütfen tekrar dene."
   },
   "report": {
     "title": {

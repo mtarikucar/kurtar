@@ -163,8 +163,8 @@
     "quantityTitle": "How many bags?",
     "total": "Total",
     "confirmCta": "Go to payment",
-    "unavailableTitle": "This bag just sold out",
-    "unavailableBody": "It was a popular one — someone beat you to it. You can browse other bags nearby.",
+    "unavailableTitle": "This bag isn't available anymore",
+    "unavailableBody": "It may have sold out or been removed by the store. You can browse other bags nearby.",
     "backToDiscoverCta": "Find another bag",
     "creating": "Creating your reservation…",
     "genericError": "Your purchase couldn't be completed. Please try again.",
@@ -181,7 +181,7 @@
     "successBody": "Your reservation is confirmed. You'll find your code under Orders.",
     "viewOrderCta": "View order",
     "failedTitle": "Payment didn't go through",
-    "failedBody": "Your payment wasn't confirmed or was cancelled. You can try again.",
+    "failedBody": "Your reservation wasn't completed: the payment wasn't confirmed, or the bag is no longer available. You can browse other bags.",
     "loadError": "The payment page couldn't be opened.",
     "closeConfirmTitle": "Give up on this payment?",
     "closeConfirmBody": "If you don't finish paying, your reservation won't be confirmed."
@@ -285,6 +285,28 @@
       "SAFETY_HYGIENE": "Safety / hygiene",
       "OTHER": "Other"
     }
+  },
+  "complaints": {
+    "title": "My complaints",
+    "emptyTitle": "No complaints yet",
+    "emptyBody": "If something goes wrong with an order, you can report it from here.",
+    "slaDeadline": "Response due: {{date}}",
+    "resolvedAt": "Resolved: {{date}}",
+    "status": {
+      "OPEN": "Open",
+      "MERCHANT_RESPONDED": "Store replied",
+      "RESOLVED": "Resolved",
+      "ESCALATED": "Escalated"
+    },
+    "threadEmpty": "No messages yet.",
+    "authorLabels": {
+      "CONSUMER": "You",
+      "MERCHANT": "Store",
+      "ADMIN": "kurtar Support"
+    },
+    "replyPlaceholder": "Write a reply…",
+    "replySend": "Send",
+    "replyError": "Couldn't send the message. Please try again."
   },
   "report": {
     "title": {

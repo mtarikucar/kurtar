@@ -93,6 +93,11 @@ export default function ProfileScreen() {
             onPress={() => router.push("/complaint/new")}
           />
           <MenuRow
+            icon="chatbubble-ellipses-outline"
+            label={t("complaints.title")}
+            onPress={() => router.push("/complaints")}
+          />
+          <MenuRow
             icon="document-text-outline"
             label={t("profile.legal")}
             onPress={() =>
