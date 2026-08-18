@@ -29,8 +29,8 @@
   },
   "attestation": {
     "heading": "Onaya göndermeden önce",
-    "stt": "Satış Sözleşmesi ve Teslim Taahhüdü'nü okudum ve kabul ediyorum.",
-    "intermediation": "kurtar Aracılık Sözleşmesi'ni okudum ve kabul ediyorum.",
+    "stt": "Sürpriz Paket içeriğine son tüketim tarihi geçmiş hiçbir ürün dahil etmeyeceğimi kabul ve taahhüt ederim (STT Taahhüdü — <legal>Aracılık Sözleşmesi</legal> Madde 3).",
+    "intermediation": "kurtar <legal>Aracılık Sözleşmesi</legal>'ni okudum ve kabul ediyorum.",
     "contractVersion": "Sözleşme sürümü",
     "notesLabel": "Notlar (opsiyonel)",
     "submit": "Onaya gönder",

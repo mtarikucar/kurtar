@@ -117,7 +117,7 @@ export default function PurchaseScreen() {
           <View style={styles.stepper}>
             <IconButton
               name="remove"
-              accessibilityLabel="Azalt"
+              accessibilityLabel={t("purchase.decreaseQty")}
               onPress={() => setQty((prev) => Math.max(1, prev - 1))}
               disabled={qty <= 1}
               variant="filled"
@@ -127,7 +127,7 @@ export default function PurchaseScreen() {
             </Text>
             <IconButton
               name="add"
-              accessibilityLabel="Artır"
+              accessibilityLabel={t("purchase.increaseQty")}
               onPress={() => setQty((prev) => Math.min(maxQty, prev + 1))}
               disabled={qty >= maxQty}
               variant="filled"

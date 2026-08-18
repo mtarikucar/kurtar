@@ -19,6 +19,18 @@ Notifications.setNotificationHandler({
 });
 
 /**
+ * The most recently registered Expo push token for this app run, kept so
+ * `unregisterPushToken` (below) can DELETE the exact row logout must clear
+ * without re-resolving it (that resolution can itself require permission
+ * state that's no longer meaningful once the user is signing out). Module
+ * state, not AsyncStorage — losing it on a cold start is fine, since the
+ * only caller that matters (logout) always follows a session in which
+ * `registerPushTokenIfPermitted` has already run at least once (root
+ * layout registers on every `signedIn` transition, see app/_layout.tsx).
+ */
+let lastRegisteredExpoPushToken: string | null = null;
+
+/**
  * Registers this device's Expo push token with the backend
  * (`POST /me/push-tokens` — see docs/frontend-contract.md). Must run only
  * AFTER the user is signed in (the endpoint is @Actors("CONSUMER")) and
@@ -47,8 +59,32 @@ export async function registerPushTokenIfPermitted(): Promise<void> {
       expoPushToken: tokenResponse.data,
       platform: Platform.OS === "ios" ? "IOS" : "ANDROID",
     });
+    lastRegisteredExpoPushToken = tokenResponse.data;
   } catch (error) {
     console.warn("Push token registration skipped:", error);
+  }
+}
+
+/**
+ * Deregisters this device's Expo push token (`DELETE /me/push-tokens/
+ * {token}`) — MUST be called before the session's tokens are torn down
+ * (the endpoint is @Actors("CONSUMER")), otherwise the backend row stays
+ * bound to the outgoing user until someone else's device happens to
+ * register the same Expo token, and every transactional notification
+ * (reservation confirmations, the pickup reminder with the redeem code in
+ * plain text) keeps landing on a device that just signed out.
+ *
+ * Never throws — logout must always complete locally even if this
+ * best-effort call fails (offline, already revoked, no token was ever
+ * registered this run).
+ */
+export async function unregisterPushToken(): Promise<void> {
+  try {
+    if (!lastRegisteredExpoPushToken) return;
+    await client.account.pushTokens.remove(lastRegisteredExpoPushToken);
+    lastRegisteredExpoPushToken = null;
+  } catch (error) {
+    console.warn("Push token unregistration skipped:", error);
   }
 }
 

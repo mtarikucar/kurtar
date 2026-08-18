@@ -45,6 +45,12 @@
   font-weight: var(--font-weight-bodyStrong);
 }
 
+/* [M8 fix] --color-danger-900 exists as of packages/ui-tokens/src/
+   colors.ts — before that, semantic.danger only defined 50/500/700, so
+   this custom property was never set by the token bridge
+   (styles/tokens.ts), the shorthand below fell back to its initial
+   `border-style: none` at computed-value time, and .breached was the
+   only one of the four urgency states rendering no border. */
 .breached {
   color: var(--color-neutral-0);
   background-color: var(--color-danger-700);

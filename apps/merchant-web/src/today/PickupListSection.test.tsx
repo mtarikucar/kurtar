@@ -28,7 +28,7 @@ function renderSection() {
   );
 }
 
-describe("PickupListSection — the real per-reservation pickup list, plus the manual fallback", () => {
+describe("PickupListSection — the real per-reservation pickup list (M20: no manual by-id fallback)", () => {
   beforeEach(() => {
     listForMerchant.mockReset();
     redeem.mockReset();
@@ -131,33 +131,26 @@ describe("PickupListSection — the real per-reservation pickup list, plus the m
     ).toBeInTheDocument();
   });
 
-  it("keeps the manual by-id fallback working independently of the list", async () => {
+  // [M20 fix] The manual by-id fallback asked for a "Rezervasyon kimliği"
+  // (reservation id) that no surface in this app ever shows the merchant —
+  // only the 6-char code is rendered anywhere. It's gone; the per-row
+  // button above covers every reservation the list returns.
+  it("renders no manual by-id fallback form", async () => {
     listForMerchant.mockResolvedValue({
       items: [],
       total: 0,
       page: 1,
       pageSize: 20,
     });
-    redeem.mockResolvedValue({
-      reservationId: "resv-manual",
-      status: "REDEEMED",
-      redeemedAt: "2026-08-15T16:05:00.000Z",
-    });
 
     renderSection();
     await screen.findByText("Bugün için henüz rezervasyon yok.");
 
-    await userEvent.type(
-      screen.getByLabelText("Rezervasyon kimliği"),
-      "resv-manual",
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Teslim edildi olarak işaretle" }),
-    );
-
-    await waitFor(() => expect(redeem).toHaveBeenCalledWith("resv-manual"));
     expect(
-      await screen.findByText("Rezervasyon teslim edildi olarak işaretlendi."),
-    ).toBeInTheDocument();
+      screen.queryByLabelText("Rezervasyon kimliği"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Teslim edildi olarak işaretle" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -12,9 +12,20 @@ export function createReservationsDomain(engine: RequestEngine) {
     cancel: (id: string) =>
       engine.request("post", "/api/reservations/{id}/cancel", { path: { id } }),
 
-    /** GET /reservations/mine — the authenticated consumer's own reservation history, paginated (`page`/`pageSize` both required). */
-    listMine: (query: QueryParams<"/api/reservations/mine", "get">) =>
-      engine.request("get", "/api/reservations/mine", { query }),
+    /**
+     * GET /reservations/mine — the authenticated consumer's own
+     * reservation history, paginated (`page`/`pageSize` both required).
+     * [M18 fix] Accepts an optional `AbortSignal` — see discovery.ts's
+     * `offers()` doc comment for why this exists on a read-heavy method.
+     */
+    listMine: (
+      query: QueryParams<"/api/reservations/mine", "get">,
+      opts?: { signal?: AbortSignal },
+    ) =>
+      engine.request("get", "/api/reservations/mine", {
+        query,
+        signal: opts?.signal,
+      }),
 
     /** POST /reservations/{id}/redeem — merchant-side: marks a reservation picked up (pickup-code verified). */
     redeem: (id: string) =>

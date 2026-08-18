@@ -128,6 +128,7 @@
     "emptyPastTitle": "Geçmiş siparişin yok",
     "emptyPastBody": "İlk paketini kurtardığında burada görünecek.",
     "browseCta": "Paketlere göz at",
+    "unknownStoreName": "Mağaza",
     "status": {
       "PENDING_PAYMENT": "Ödeme bekleniyor",
       "CONFIRMED": "Onaylandı",
@@ -161,10 +162,12 @@
   "purchase": {
     "title": "Satın al",
     "quantityTitle": "Kaç paket istersin?",
+    "decreaseQty": "Azalt",
+    "increaseQty": "Artır",
     "total": "Toplam",
     "confirmCta": "Ödemeye geç",
-    "unavailableTitle": "Bu paket az önce tükendi",
-    "unavailableBody": "Çok popüler bir paketti — başka biri senden önce davrandı. Yakınındaki diğer paketlere göz atabilirsin.",
+    "unavailableTitle": "Bu paket artık alınamıyor",
+    "unavailableBody": "Tükenmiş ya da mağaza tarafından kaldırılmış olabilir. Yakınındaki diğer paketlere göz atabilirsin.",
     "backToDiscoverCta": "Başka paket bul",
     "creating": "Rezervasyon oluşturuluyor…",
     "genericError": "Satın alma tamamlanamadı. Lütfen tekrar dene.",
@@ -181,7 +184,7 @@
     "successBody": "Rezervasyonun onaylandı. Siparişlerim'den kodunu görebilirsin.",
     "viewOrderCta": "Siparişi görüntüle",
     "failedTitle": "Ödeme tamamlanamadı",
-    "failedBody": "Ödemen onaylanmadı ya da iptal edildi. Tekrar deneyebilirsin.",
+    "failedBody": "Rezervasyonun tamamlanmadı: ödemen onaylanmadı ya da paket artık mevcut değil. Diğer paketlere göz atabilirsin.",
     "loadError": "Ödeme sayfası açılamadı.",
     "closeConfirmTitle": "Ödemeden vazgeç?",
     "closeConfirmBody": "Ödemeyi tamamlamazsan rezervasyonun onaylanmaz."
@@ -191,8 +194,10 @@
     "codeLabel": "Kod",
     "qtyLabel": "Adet",
     "swipeCta": "Teslim almak için kaydır",
+    "swipeAccessibilityHint": "Teslim almayı onaylamak için etkinleştir",
     "swipeHint": "Bu ekranı mağaza personeline göster ve önünde kaydır.",
     "liveClockHint": "Bu saat canlı akıyor — ekran görüntüsü olmadığının kanıtı.",
+    "liveClockAccessibilityLabel": "Canlı saat: {{time}}",
     "offlineTitle": "Çevrimdışı onaylandı",
     "offlineBody": "İnternet bağlantısı olmadan yerel olarak onayladık. Bağlantı gelince otomatik olarak senkronize edeceğiz — bu ekranı kapatmadan personele göster.",
     "successTitle": "Afiyet olsun!",
@@ -202,7 +207,10 @@
     "waitingForStaff": "Personelin onayı bekleniyor…",
     "syncingBadge": "Senkronize ediliyor…",
     "notRedeemableTitle": "Bu sipariş şu anda teslim alınamıyor",
-    "notRedeemableBody": "Teslim alma penceresi henüz başlamamış ya da geçmiş olabilir."
+    "notRedeemableBody": "Teslim alma penceresi henüz başlamamış ya da geçmiş olabilir.",
+    "pickupWindowLabel": "Teslim alma penceresi",
+    "notStartedYet": "Teslim alma {{time}}'da başlıyor",
+    "notStartedYetHint": "Bu saatten önce teslim alınamaz — ekranı mağaza personeline gösterebilirsin."
   },
   "cancel": {
     "title": "Siparişi iptal et",
@@ -259,7 +267,6 @@
     "nearby": "Yakınımdaki fırsatlar",
     "nearbyBody": "Konumuna yakın yeni paketler yayınlandığında haber ver.",
     "nearbyRadius": "Yakınlık yarıçapı",
-    "marketing": "Kampanya ve duyurular",
     "quietHours": "Sessiz saatler",
     "quietHoursBody": "Bu saatler arasında bildirim gönderilmez.",
     "quietHoursFrom": "Başlangıç",
@@ -286,6 +293,28 @@
       "OTHER": "Diğer"
     }
   },
+  "complaints": {
+    "title": "Şikayetlerim",
+    "emptyTitle": "Henüz şikayetin yok",
+    "emptyBody": "Bir siparişle ilgili sorun yaşarsan buradan bildirebilirsin.",
+    "slaDeadline": "Yanıt süresi: {{date}}",
+    "resolvedAt": "Çözüldü: {{date}}",
+    "status": {
+      "OPEN": "Açık",
+      "MERCHANT_RESPONDED": "Mağaza yanıtladı",
+      "RESOLVED": "Çözüldü",
+      "ESCALATED": "Yükseltildi"
+    },
+    "threadEmpty": "Henüz mesaj yok.",
+    "authorLabels": {
+      "CONSUMER": "Sen",
+      "MERCHANT": "Mağaza",
+      "ADMIN": "kurtar Destek"
+    },
+    "replyPlaceholder": "Yanıt yaz…",
+    "replySend": "Gönder",
+    "replyError": "Mesaj gönderilemedi. Lütfen tekrar dene."
+  },
   "report": {
     "title": {
       "OFFER": "İlanı bildir",
@@ -299,6 +328,11 @@
   },
   "legal": {
     "title": "Yasal metinler"
+  },
+  "notFoundScreen": {
+    "title": "Bu sayfa bulunamadı",
+    "body": "Aradığın sayfa taşınmış ya da hiç var olmamış olabilir.",
+    "cta": "Ana sayfaya dön"
   },
   "errors": {
     "network": "İnternet bağlantını kontrol et ve tekrar dene.",

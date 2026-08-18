@@ -12,7 +12,11 @@ const THRESHOLDS: DeadlineThresholds = {
 describe("DeadlineBadge", () => {
   it("renders a safe countdown with the safe urgency marker", () => {
     render(
-      <DeadlineBadge countdownMs={10 * 3_600_000} thresholds={THRESHOLDS} />,
+      <DeadlineBadge
+        countdownMs={10 * 3_600_000}
+        thresholds={THRESHOLDS}
+        live
+      />,
     );
     const badge = screen.getByRole("status");
     expect(badge).toHaveAttribute("data-urgency", "safe");
@@ -24,6 +28,7 @@ describe("DeadlineBadge", () => {
       <DeadlineBadge
         countdownMs={THRESHOLDS.warningMs}
         thresholds={THRESHOLDS}
+        live
       />,
     );
     expect(screen.getByRole("status")).toHaveAttribute(
@@ -37,6 +42,7 @@ describe("DeadlineBadge", () => {
       <DeadlineBadge
         countdownMs={THRESHOLDS.criticalMs}
         thresholds={THRESHOLDS}
+        live
       />,
     );
     expect(screen.getByRole("status")).toHaveAttribute(
@@ -46,14 +52,16 @@ describe("DeadlineBadge", () => {
   });
 
   it("renders breached exactly AT the deadline instant (countdownMs === 0)", () => {
-    render(<DeadlineBadge countdownMs={0} thresholds={THRESHOLDS} />);
+    render(<DeadlineBadge countdownMs={0} thresholds={THRESHOLDS} live />);
     const badge = screen.getByRole("status");
     expect(badge).toHaveAttribute("data-urgency", "breached");
     expect(badge).toHaveTextContent("SÜRESİ DOLDU");
   });
 
   it("renders breached for a deadline in the past", () => {
-    render(<DeadlineBadge countdownMs={-3_600_000} thresholds={THRESHOLDS} />);
+    render(
+      <DeadlineBadge countdownMs={-3_600_000} thresholds={THRESHOLDS} live />,
+    );
     expect(screen.getByRole("status")).toHaveAttribute(
       "data-urgency",
       "breached",
@@ -62,7 +70,7 @@ describe("DeadlineBadge", () => {
 
   it("flags a breached deadline through text AND an icon glyph, not colour alone", () => {
     const { container } = render(
-      <DeadlineBadge countdownMs={-1} thresholds={THRESHOLDS} />,
+      <DeadlineBadge countdownMs={-1} thresholds={THRESHOLDS} live />,
     );
     // Non-colour signal #1: the urgency word is real, readable text.
     expect(screen.getByText("SÜRESİ DOLDU")).toBeInTheDocument();
@@ -74,10 +82,14 @@ describe("DeadlineBadge", () => {
 
   it("uses a DIFFERENT icon glyph for safe vs. breached (not just a colour swap)", () => {
     const { container: safeContainer } = render(
-      <DeadlineBadge countdownMs={10 * 3_600_000} thresholds={THRESHOLDS} />,
+      <DeadlineBadge
+        countdownMs={10 * 3_600_000}
+        thresholds={THRESHOLDS}
+        live
+      />,
     );
     const { container: breachedContainer } = render(
-      <DeadlineBadge countdownMs={-1} thresholds={THRESHOLDS} />,
+      <DeadlineBadge countdownMs={-1} thresholds={THRESHOLDS} live />,
     );
     const safeIcon = safeContainer.querySelector(
       '[aria-hidden="true"]',
@@ -94,6 +106,7 @@ describe("DeadlineBadge", () => {
       <DeadlineBadge
         countdownMs={twoDaysThreeHours}
         thresholds={{ criticalMs: 0, warningMs: 0 }}
+        live
       />,
     );
     expect(screen.getByText(/2 gün 3 saat kaldı/)).toBeInTheDocument();
@@ -105,10 +118,28 @@ describe("DeadlineBadge", () => {
       <DeadlineBadge
         countdownMs={twoDaysThreeHoursAgo}
         thresholds={THRESHOLDS}
+        live
       />,
     );
     expect(
       screen.getByText(/2 gün 3 saat önce süresi doldu/),
     ).toBeInTheDocument();
+  });
+
+  // [M21 fix] A queue table renders one DeadlineBadge per row — an
+  // unconditional `role="status"` on every one of them stood up ~20
+  // simultaneous polite live regions on a single page render.
+  describe("live region (M21)", () => {
+    it("is NOT an aria-live region by default (list/table usage)", () => {
+      render(<DeadlineBadge countdownMs={3_600_000} thresholds={THRESHOLDS} />);
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    });
+
+    it("IS an aria-live region when live is explicitly passed (standalone detail usage)", () => {
+      render(
+        <DeadlineBadge countdownMs={3_600_000} thresholds={THRESHOLDS} live />,
+      );
+      expect(screen.getByRole("status")).toBeInTheDocument();
+    });
   });
 });

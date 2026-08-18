@@ -13,6 +13,17 @@ export interface DeadlineBadgeProps {
   thresholds: DeadlineThresholds;
   /** Rendered before the countdown text for extra context, e.g. "SLA:". */
   label?: string;
+  /**
+   * [M21 fix] Announce this badge's text to assistive tech as it changes
+   * (`role="status"`, a polite live region). Defaults to false: a queue
+   * table renders one of these per row, and an unconditional live region
+   * on every row stood up ~20 simultaneous polite regions on one page
+   * render — noisy for a screen-reader user, not useful (a list is
+   * scanned, not narrated). Pass `true` only on a standalone, single-badge
+   * detail view (complaint/settlement detail pages), where announcing a
+   * countdown ticking past a threshold is actually meaningful.
+   */
+  live?: boolean;
 }
 
 const URGENCY_ICON: Record<string, string> = {
@@ -37,6 +48,7 @@ export function DeadlineBadge({
   countdownMs,
   thresholds,
   label,
+  live = false,
 }: DeadlineBadgeProps) {
   const { t } = useTranslation("common");
   const urgency = classifyDeadline(countdownMs, thresholds);
@@ -67,7 +79,7 @@ export function DeadlineBadge({
     <span
       className={`${styles.badge} ${styles[urgency]}`}
       data-urgency={urgency}
-      role="status"
+      role={live ? "status" : undefined}
     >
       <span className={styles.icon} aria-hidden="true">
         {URGENCY_ICON[urgency]}

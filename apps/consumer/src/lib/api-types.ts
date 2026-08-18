@@ -1,270 +1,107 @@
 /**
- * App-level response types for every operation this app calls.
+ * App-level response types re-exported for readability at call sites
+ * (component props, local state, test fixtures) — derived straight from
+ * `@kurtar/api-client`'s own (now-correctly-typed) return types, not
+ * hand-duplicated copies of the backend DTOs.
  *
- * ALL hand-typed here, none derived from `@kurtar/api-client`'s
- * `SuccessBody<path, method>` helper — a CRITICAL bug found while wiring
- * this up: `packages/api-client/src/core-types.ts`'s `SuccessBody` filters
- * response keys with `K extends \`2${string}\`` (a STRING template-literal
- * check), but `openapi-typescript` emits HTTP status codes as NUMERIC
- * literal keys (`200: {...}`, not `"200": {...}` — confirmed by direct
- * inspection: `operations["DiscoveryController_offers"]["responses"][200]`
- * resolves to the real response shape, while the `SuccessBody` mapped type
- * itself resolves to `never` for that exact same operation). A number
- * literal type never extends a string template-literal type, so EVERY key
- * in EVERY operation's `responses` object fails that check and
- * `SuccessBody<P, M>` collapses to `never` for ALL 81 operations —
- * regardless of whether the backend declared a real response schema or
- * not. This is not specific to a handful of "known gap" operations (see
- * docs/frontend-contract.md §9): it silently defeats typed responses
- * client-wide, for every one of the four frontend apps that import this
- * package. Flagged prominently in the task report — packages/api-client is
- * out of this app's scope to edit, and this is exactly the kind of "genuine
- * bug, don't patch around it silently" case docs/frontend-contract.md
- * calls out. Every type below is instead read directly from the real
- * backend response DTO (cited per type) — the SAME sanctioned pattern the
- * placeholder health-check code already used for a genuinely undocumented
- * response, just applied here because the generated helper turned out to
- * be unusable rather than merely incomplete.
+ * *** HISTORY — why this file used to be ~270 lines ***
+ * This file used to hand-mirror ~15 backend response DTOs field-for-field,
+ * with a 27-line header claiming `SuccessBody<P, M>`
+ * (`packages/api-client/src/core-types.ts`) collapsed to `never` for every
+ * one of the client's 81 operations because openapi-typescript emits
+ * response-status keys as NUMERIC literals while the old check compared
+ * them against a STRING template-literal pattern. That bug is fixed (see
+ * `SuccessBody`'s doc comment and commit e5621a3): every `client.*` call
+ * now resolves its real, correct response type on its own —
+ * `packages/api-client/dist/domains/*.d.ts` proves it (e.g.
+ * `discovery.offers` resolves a concrete `{ items, total, page, pageSize }`
+ * shape, not `Promise<never>`). apps/merchant-web and apps/admin-web
+ * already completed this same migration (response-types.ts / admin-
+ * types.ts, both citing the same commit); this file was the one holdout,
+ * still carrying the stale premise and a second, hand-maintained copy of
+ * every shape that could silently drift from the real contract again.
+ * Every type below is now a straight `Awaited<ReturnType<typeof
+ * client...>>` projection instead.
  */
+
+import { client } from "./api-client";
 
 export type BagCategory = "MEAL" | "BAKERY" | "GROCERY" | "PRODUCE" | "OTHER";
 export type DietFlag = "VEGETARIAN" | "VEGAN" | "GLUTEN_FREE" | "LACTOSE_FREE";
 
-/** backend/src/modules/discovery/dto/discovery-offers-response.dto.ts */
-export interface DiscoveryOfferTemplate {
-  title: string;
-  category: string;
-  dietFlags: string[];
-  priceCents: number;
-  originalValueCentsMin: number;
-  originalValueCentsMax: number;
-}
+// ---------------------------------------------------------------------
+// Discovery — backend/src/modules/discovery
+// ---------------------------------------------------------------------
 
-export interface DiscoveryOfferItem {
-  offerId: string;
-  store: { id: string; name: string; district: string; distanceM: number };
-  template: DiscoveryOfferTemplate;
-  pickupStartAt: string;
-  pickupEndAt: string;
-  qtyLeft: number;
-  coverImageUrl: string | null;
-}
+export type DiscoveryOffersResponse = Awaited<
+  ReturnType<typeof client.discovery.offers>
+>;
+export type DiscoveryOfferItem = DiscoveryOffersResponse["items"][number];
+export type DiscoveryOfferTemplate = DiscoveryOfferItem["template"];
 
-export interface DiscoveryOffersResponse {
-  items: DiscoveryOfferItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
+export type DiscoveryMapResponse = Awaited<
+  ReturnType<typeof client.discovery.map>
+>;
+export type DiscoveryMapPin = DiscoveryMapResponse[number];
 
-export interface DiscoveryMapPin {
-  storeId: string;
-  lat: number;
-  lng: number;
-  minPriceCents: number;
-  offersCount: number;
-}
+export type DiscoveryStoreProfile = Awaited<
+  ReturnType<typeof client.discovery.store>
+>;
+export type DiscoveryTodaysOffer = DiscoveryStoreProfile["todaysOffers"][number];
+/** [I12] storeProfile()'s bagTemplate select also carries
+ * allergenDisclaimer — a field the search-list shape (DiscoveryOfferTemplate
+ * above) does NOT have, so this is its own type rather than reusing that
+ * one. */
+export type DiscoveryTodaysOfferTemplate = DiscoveryTodaysOffer["template"];
 
-export type DiscoveryMapResponse = DiscoveryMapPin[];
+// ---------------------------------------------------------------------
+// Favorites — backend/src/modules/favorites
+// ---------------------------------------------------------------------
 
-/** [I12 fix] storeProfile()'s bagTemplate select now also carries
- * allergenDisclaimer (backend/src/modules/discovery/discovery.service.ts)
- * — a dedicated type rather than adding the field to the shared
- * DiscoveryOfferTemplate, which the search-list endpoint (DiscoveryOfferItem
- * above) does NOT select it for. */
-export interface DiscoveryTodaysOfferTemplate extends DiscoveryOfferTemplate {
-  allergenDisclaimer: string;
-}
+export type FavoriteListResponse = Awaited<
+  ReturnType<typeof client.favorites.listMine>
+>;
+export type FavoriteListItem = FavoriteListResponse["items"][number];
 
-export interface DiscoveryTodaysOffer {
-  offerId: string;
-  template: DiscoveryTodaysOfferTemplate;
-  pickupStartAt: string;
-  pickupEndAt: string;
-  qtyLeft: number;
-}
+// ---------------------------------------------------------------------
+// Impact — backend/src/modules/impact
+// ---------------------------------------------------------------------
 
-export interface DiscoveryStoreProfile {
-  store: {
-    id: string;
-    name: string;
-    address: string;
-    district: string;
-    city: string;
-    coverImageUrl: string | null;
-    categoryTags: string[];
-    openingHoursJson: unknown;
-  };
-  todaysOffers: DiscoveryTodaysOffer[];
-  rating: { average: number; count: number };
-}
+export type ImpactTotals = Awaited<ReturnType<typeof client.impact.getMine>>;
 
-/** backend/src/modules/favorites/dto/favorite-list-response.dto.ts */
-export interface FavoriteListItem {
-  storeId: string;
-  favoritedAt: string;
-  store: {
-    id: string;
-    name: string;
-    district: string;
-    city: string;
-    coverImageUrl: string | null;
-    avgStars: number;
-    ratingCount: number;
-    active: boolean;
-  };
-  hasLiveOfferToday: boolean;
-}
+// ---------------------------------------------------------------------
+// Complaints — backend/src/modules/complaints
+// ---------------------------------------------------------------------
 
-export interface FavoriteListResponse {
-  items: FavoriteListItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
+export type ComplaintListResponse = Awaited<
+  ReturnType<typeof client.complaints.listMine>
+>;
+export type ComplaintTicket = ComplaintListResponse["items"][number];
+export type ComplaintCategory = ComplaintTicket["category"];
+export type ComplaintDetail = Awaited<ReturnType<typeof client.complaints.get>>;
+export type ComplaintMessage = ComplaintDetail["messages"][number];
 
-/** backend/src/modules/impact/dto/impact-response.dto.ts */
-export interface ImpactTotals {
-  mealsSaved: number;
-  co2eGrams: number;
-  moneySavedCents: number;
-  count: number;
-}
+// ---------------------------------------------------------------------
+// Reservations — backend/src/modules/reservations
+// ---------------------------------------------------------------------
 
-/** backend/src/modules/complaints/dto/complaint-response.dto.ts */
-export type ComplaintCategory =
-  | "FOOD_QUALITY"
-  | "MISSING_ITEMS"
-  | "WRONG_ITEMS"
-  | "STORE_CLOSED_NO_SHOW"
-  | "RUDE_STAFF"
-  | "PAYMENT_BILLING"
-  | "SAFETY_HYGIENE"
-  | "OTHER";
+export type ReservationListResponse = Awaited<
+  ReturnType<typeof client.reservations.listMine>
+>;
+export type ReservationItem = ReservationListResponse["items"][number];
+export type ReservationStatus = ReservationItem["status"];
+export type ReservationCreateResponse = Awaited<
+  ReturnType<typeof client.reservations.create>
+>;
+export type ReservationCancelResponse = Awaited<
+  ReturnType<typeof client.reservations.cancel>
+>;
+export type RatingResult = Awaited<ReturnType<typeof client.reservations.rate>>;
 
-export interface ComplaintTicket {
-  id: string;
-  userId: string;
-  merchantId: string | null;
-  reservationId: string | null;
-  category: ComplaintCategory;
-  description: string;
-  status: "OPEN" | "MERCHANT_RESPONDED" | "RESOLVED" | "ESCALATED";
-  slaDeadlineAt: string;
-  resolvedAt: string | null;
-  slaWarningSentAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+// ---------------------------------------------------------------------
+// Notification preferences — backend/src/modules/notifications
+// ---------------------------------------------------------------------
 
-export interface ComplaintListResponse {
-  items: ComplaintTicket[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-/** The 7 states `Reservation.status` can be in — from
- * backend/prisma/schema.prisma's `ReservationStatus` enum. */
-export type ReservationStatus =
-  | "PENDING_PAYMENT"
-  | "CONFIRMED"
-  | "REDEEMED"
-  | "CANCELLED_BY_USER"
-  | "CANCELLED_BY_MERCHANT"
-  | "NO_SHOW"
-  | "EXPIRED";
-
-/** backend/src/modules/reservations/dto/reservation-response.dto.ts's
- * `ReservationDto` (the raw Reservation Prisma model, scalar columns
- * only; Date fields arrive as ISO strings over JSON). The nullable fields
- * below are typed `| undefined` too because the committed OpenAPI schema
- * doesn't list them in `required` (a nullable `@ApiProperty()` without an
- * explicit `required: true`) even though the backend always serializes
- * them (as `null` or a real value, never an absent key) — matching the
- * real, now-correctly-typed `@kurtar/api-client` response shape exactly,
- * rather than a narrower hand guess that a real response can violate. */
-export interface ReservationItem {
-  id: string;
-  code: string;
-  userId: string;
-  offerId: string;
-  storeId: string;
-  qty: number;
-  unitPriceCents: number;
-  totalCents: number;
-  status: ReservationStatus;
-  cancelDeadlineAt: string;
-  redeemedAt?: string | null;
-  redeemedByActorType?: "CONSUMER" | "MERCHANT" | "ADMIN" | null;
-  redeemedByUserId?: string | null;
-  redeemedByMerchantUserId?: string | null;
-  pickupReminderSentAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** `ReservationListResponseDto`. This app's worktree forked from commit
- * 117dd8c, whose committed `reservation-response.dto.ts` names this field
- * `limit` (documented there as a deliberate, known inconsistency vs. every
- * other paginated envelope's `pageSize`). Live verification against the
- * shared dev backend (2026-08-15, see the task report's verification
- * section) showed the ACTUAL running `GET /reservations/mine` response
- * uses `pageSize` — i.e. the rename that progress.md records as "dispatched
- * … before merchant-web is built on" has already landed on whatever
- * commit that backend is running, ahead of this worktree's frozen base.
- * Typed to match the verified-live shape; this field isn't read anywhere
- * in this app (grepped), so the choice is zero-risk either way. */
-export interface ReservationListResponse {
-  items: ReservationItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-}
-
-/** `ReservationCreateResponseDto`/`ReservationPaymentDto`. */
-export interface ReservationCreateResponse {
-  reservationId: string;
-  code: string;
-  totalCents: number;
-  payment: { merchantOid: string; redirectUrl?: string };
-}
-
-/** `ReservationCancelResponseDto`. */
-export interface ReservationCancelResponse {
-  reservationId: string;
-  status: ReservationStatus;
-}
-
-/** backend/src/modules/ratings/dto/rating-response.dto.ts's `RatingDto`
- * (the raw Rating model — what `POST /reservations/:id/rating` returns
- * unmodified). */
-export interface RatingResult {
-  id: string;
-  reservationId: string;
-  userId: string;
-  storeId: string;
-  overallStars: number;
-  foodQuality: number | null;
-  service: number | null;
-  comment: string | null;
-  moderationStatus: "PENDING" | "APPROVED" | "REJECTED";
-  createdAt: string;
-  updatedAt: string;
-}
-
-/** backend/src/modules/notifications/dto/notification-preference-response.dto.ts's
- * `NotificationPreferenceDto` (the raw NotificationPreference model —
- * both GET and PATCH return it unmodified). */
-export interface NotificationPreferences {
-  id: string;
-  userId: string;
-  favoritesEnabled: boolean;
-  nearbyEnabled: boolean;
-  nearbyRadiusM: number;
-  marketingEnabled: boolean;
-  quietHoursStart: number | null;
-  quietHoursEnd: number | null;
-  createdAt: string;
-  updatedAt: string;
-}
+export type NotificationPreferences = Awaited<
+  ReturnType<typeof client.account.notificationPreferences.get>
+>;

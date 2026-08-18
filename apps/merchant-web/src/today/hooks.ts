@@ -84,11 +84,19 @@ export function useCancelOffer() {
   });
 }
 
-/** Redeem-by-id — used both by the real pickup list's per-row button and
- * the manual "teslim edildi" fallback (see PickupListSection's own doc
- * comment for why the fallback takes a reservation ID rather than a
- * code). */
-export function useManualRedeem() {
+/**
+ * [M20 fix] Redeem-by-id — was also wired to a "Manuel teslim" typed-input
+ * fallback that asked the merchant for a "Rezervasyon kimliği" (the
+ * reservation's internal id), a value no surface in this app ever shows
+ * them (only the 6-char `code` is rendered anywhere), so it could only
+ * ever be used by pasting an id out of a network tab. That fallback is
+ * gone — GET /reservations/for-merchant already returns every one of
+ * today's reservations across every store, and the per-row button below
+ * covers all of them with no typed input needed. Kept as its own hook
+ * (rather than inlined) since PickupListSection is already the only
+ * caller and a named mutation reads better at the call site.
+ */
+export function useRedeemReservation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (reservationId: string) =>

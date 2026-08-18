@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useReservations } from "./use-reservations";
 import { useStoreProfile } from "./use-discovery";
 import { getPurchaseSnapshot, type PurchaseSnapshot } from "../lib/purchase-cache";
@@ -29,6 +30,7 @@ export function useOrderDetails(reservationId: string): {
   data: OrderDetails | null;
   isLoading: boolean;
 } {
+  const { t } = useTranslation();
   const reservationsQuery = useReservations();
   const reservation =
     reservationsQuery.data?.items.find((r) => r.id === reservationId) ?? null;
@@ -103,7 +105,7 @@ export function useOrderDetails(reservationId: string): {
   return {
     data: {
       reservation,
-      storeName: storeProfileQuery.data?.store.name ?? "Mağaza",
+      storeName: storeProfileQuery.data?.store.name ?? t("orders.unknownStoreName"),
       storeDistrict: storeProfileQuery.data?.store.district ?? null,
       bagTitle: null,
       coverImageUrl: storeProfileQuery.data?.store.coverImageUrl ?? null,

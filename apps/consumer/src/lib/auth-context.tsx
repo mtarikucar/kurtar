@@ -15,6 +15,7 @@ import {
   getStoredRefreshToken,
   setStoredRefreshToken,
 } from "./secure-tokens";
+import { unregisterPushToken } from "./push";
 
 const USER_CACHE_KEY = "kurtar.user";
 
@@ -139,6 +140,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Unregister the push token BEFORE the access token is torn down —
+    // the DELETE call needs a still-valid bearer token (the endpoint is
+    // @Actors("CONSUMER")), and it must always run so a signed-out device
+    // stops receiving the outgoing user's notifications. Best-effort:
+    // push.ts's unregisterPushToken never throws.
+    await unregisterPushToken();
     try {
       await client.auth.logout();
     } catch {

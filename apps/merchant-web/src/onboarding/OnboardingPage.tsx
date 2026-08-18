@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { useTranslation } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { useMutation } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
 import { client } from "../api/client";
 import { getErrorMessage } from "../shared/errors";
+import { legalDocumentUrl } from "../shared/externalLinks";
 import { Button } from "../shared/ui/Button";
 import { Checkbox } from "../shared/ui/Checkbox";
 import { TextField } from "../shared/ui/TextField";
@@ -11,10 +12,17 @@ import { Banner } from "../shared/ui/Banner";
 import { Card } from "../shared/ui/Card";
 import styles from "./OnboardingPage.module.css";
 
-/** The intermediation contract's current version — a fixed constant rather
- * than merchant input; a future task that actually versions the legal text
- * would source this from wherever that text lives. */
-const CONTRACT_VERSION = "2026-08";
+/**
+ * [I11 fix] The intermediation contract's own version label — was a
+ * hand-typed, unrelated identifier ("2026-08") stamped alongside
+ * `sttAttestationAccepted`/`intermediationAccepted` as the platform's ONLY
+ * record of what the merchant actually attested to, while the published
+ * document (landing/content/legal/aracilik-sozlesmesi.ts) stamps a
+ * completely different string. Sourced from that document's own
+ * `versionLabel.tr` so the two can never drift silently — bump this
+ * constant only when that file's versionLabel changes.
+ */
+const CONTRACT_VERSION = "v0.1 — 15 Ağustos 2026";
 
 /** Guided onboarding for DRAFT/SUBMITTED/UNDER_REVIEW/REJECTED/SUSPENDED
  * merchants (see auth/guards.tsx's OnboardingLayout — an APPROVED merchant
@@ -136,13 +144,39 @@ export function OnboardingPage() {
           <h2>{t("onboarding:attestation.heading")}</h2>
           {error ? <Banner tone="danger">{error}</Banner> : null}
           <Checkbox
-            label={t("onboarding:attestation.stt")}
+            label={
+              <Trans
+                i18nKey="onboarding:attestation.stt"
+                components={{
+                  legal: (
+                    <a
+                      href={legalDocumentUrl("aracilik-sozlesmesi")}
+                      target="_blank"
+                      rel="noreferrer"
+                    />
+                  ),
+                }}
+              />
+            }
             checked={sttAccepted}
             onChange={(e) => setSttAccepted(e.target.checked)}
             required
           />
           <Checkbox
-            label={t("onboarding:attestation.intermediation")}
+            label={
+              <Trans
+                i18nKey="onboarding:attestation.intermediation"
+                components={{
+                  legal: (
+                    <a
+                      href={legalDocumentUrl("aracilik-sozlesmesi")}
+                      target="_blank"
+                      rel="noreferrer"
+                    />
+                  ),
+                }}
+              />
+            }
             checked={intermediationAccepted}
             onChange={(e) => setIntermediationAccepted(e.target.checked)}
             required

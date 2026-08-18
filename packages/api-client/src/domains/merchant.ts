@@ -41,9 +41,6 @@ export function createMerchantDomain(
         engine.request("post", "/api/stores", { body }),
       /** GET /stores */
       list: () => engine.request("get", "/api/stores"),
-      /** GET /stores/{id} */
-      get: (id: string) =>
-        engine.request("get", "/api/stores/{id}", { path: { id } }),
       /** PATCH /stores/{id} */
       update: (id: string, body: RequestBody<"/api/stores/{id}", "patch">) =>
         engine.request("patch", "/api/stores/{id}", { path: { id }, body }),
@@ -56,9 +53,6 @@ export function createMerchantDomain(
       /** GET /bag-templates — optionally scoped to one store. */
       list: (query?: QueryParams<"/api/bag-templates", "get">) =>
         engine.request("get", "/api/bag-templates", { query }),
-      /** GET /bag-templates/{id} */
-      get: (id: string) =>
-        engine.request("get", "/api/bag-templates/{id}", { path: { id } }),
       /** PATCH /bag-templates/{id} */
       update: (
         id: string,

@@ -2,15 +2,18 @@ import { useEffect, useState } from "react";
 import { StyleSheet, Text } from "react-native";
 import { useTranslation } from "react-i18next";
 import { colors, typeScale } from "@kurtar/ui-tokens";
-import { formatCountdown, formatClockTime } from "../lib/format";
+import { formatRemaining, formatClockTime } from "../lib/format";
 
 interface PickupCountdownProps {
   pickupStartAt: string;
 }
 
-/** "Teslim alma: 18:30 (2s 14dk sonra)" style live countdown on an active
+/** "Teslim alma: 18:30 · 2 sa 14 dk" style live countdown on an active
  * order row — ticks every second so it stays honest as time passes,
- * without needing a network round-trip. */
+ * without needing a network round-trip. [M5 fix] Renders via
+ * `formatRemaining` (minutes -> hours+minutes -> days+hours), not the old
+ * fixed mm:ss `formatCountdown` — a pickup hours away used to print e.g.
+ * "420:00" right next to its own "18:30" absolute time. */
 export function PickupCountdown({ pickupStartAt }: PickupCountdownProps) {
   const { t } = useTranslation();
   const [now, setNow] = useState(() => Date.now());
@@ -26,7 +29,7 @@ export function PickupCountdown({ pickupStartAt }: PickupCountdownProps) {
   return (
     <Text style={styles.text}>
       {t("orders.pickupWindow")}: {formatClockTime(pickupStartAt)}
-      {remaining > 0 ? ` · ${formatCountdown(remaining)}` : ""}
+      {remaining > 0 ? ` · ${formatRemaining(remaining)}` : ""}
     </Text>
   );
 }
