@@ -60,13 +60,7 @@
       "CANCELLED_BY_MERCHANT": "İşletme iptal etti",
       "NO_SHOW": "Gelinmedi",
       "EXPIRED": "Süresi doldu"
-    },
-    "manualHeading": "Manuel teslim",
-    "manualBody": "Müşterinin telefonu çalışmıyorsa, rezervasyon kimliğini girerek teslim edildi olarak işaretleyebilirsiniz.",
-    "manualLabel": "Rezervasyon kimliği",
-    "manualSubmit": "Teslim edildi olarak işaretle",
-    "manualSubmitting": "İşaretleniyor…",
-    "manualSuccess": "Rezervasyon teslim edildi olarak işaretlendi."
+    }
   },
   "empty": {
     "heading": "Bugün için paket eklemediniz",
