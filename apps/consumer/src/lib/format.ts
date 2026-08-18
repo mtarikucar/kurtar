@@ -1,6 +1,16 @@
 /** Formatting helpers — Turkish locale throughout (₺ money, tr-TR dates/times). */
 import { formatMoneyCents } from "@kurtar/ui-tokens";
 
+/** [M9 fix] kurtar is Turkey-only, and every instant this app renders
+ * (pickup windows, cancel deadlines, the live redeem clock) is a business
+ * instant the consumer needs read against Turkey's clock — not whatever
+ * zone their device happens to be set to (an auto-set device clock covers
+ * almost the whole user base, but not a traveller/expat with a manually
+ * pinned foreign clock, or a Jest/emulator environment defaulting to
+ * UTC). Mirrors apps/merchant-web/src/shared/format.ts, which already
+ * pins this. */
+const ISTANBUL_TIME_ZONE = "Europe/Istanbul";
+
 /** Cents (kuruş) -> "₺49,90". Every price in the API is an integer cents
  * field. Re-exported from the shared `@kurtar/ui-tokens` formatter — this
  * app's own hand-rolled version used to suffix the symbol ("49,90 ₺"),
@@ -33,6 +43,7 @@ export function formatClockTime(iso: string | Date): string {
   return date.toLocaleTimeString("tr-TR", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: ISTANBUL_TIME_ZONE,
   });
 }
 
@@ -47,21 +58,40 @@ export function formatClockWithSeconds(date: Date): string {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    timeZone: ISTANBUL_TIME_ZONE,
   });
 }
 
 /** "12 Ağu" day+month, used on order history rows. */
 export function formatShortDate(iso: string | Date): string {
   const date = typeof iso === "string" ? new Date(iso) : iso;
-  return date.toLocaleDateString("tr-TR", { day: "numeric", month: "short" });
+  return date.toLocaleDateString("tr-TR", {
+    day: "numeric",
+    month: "short",
+    timeZone: ISTANBUL_TIME_ZONE,
+  });
 }
 
-/** mm:ss countdown from a millisecond duration, floored at 00:00. */
-export function formatCountdown(msRemaining: number): string {
-  const total = Math.max(0, Math.floor(msRemaining / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+/**
+ * [M5 fix] Range-aware remaining-time text — replaces `formatCountdown`
+ * (mm:ss), which had no hour rollover: a pickup hours away used to render
+ * e.g. "420:00" next to its "18:30" absolute time. <1h -> minutes only;
+ * <24h -> hours + minutes (dropping a redundant " 0 dk" tail); >=24h ->
+ * days + hours. Floored at "0 dk", never negative.
+ */
+export function formatRemaining(msRemaining: number): string {
+  const totalMinutes = Math.max(0, Math.floor(msRemaining / 60_000));
+  if (totalMinutes < 60) return `${totalMinutes} dk`;
+
+  const totalHours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (totalHours < 24) {
+    return minutes > 0 ? `${totalHours} sa ${minutes} dk` : `${totalHours} sa`;
+  }
+
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return hours > 0 ? `${days} gün ${hours} sa` : `${days} gün`;
 }
 
 /** kg from grams, one decimal — impact stats come back as integer grams. */
