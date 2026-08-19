@@ -40,3 +40,35 @@ export function extractText(node: ReactNode): string[] {
 
   return [];
 }
+
+/**
+ * `extractText` walks `props.children` only, so content that lives inside
+ * a child COMPONENT (`<OfferPreview …/>`, `<Receipt …/>`) reads as empty.
+ * This calls the components named in `renderable` on the way down, so a
+ * test can assert on what the reader sees rather than on which element a
+ * page happened to delegate to.
+ *
+ * Deliberately an allowlist rather than "call anything that is a
+ * function": a client component with hooks (components/OfferAppOpener.tsx)
+ * called outside a real render is a React error, not a test result.
+ */
+export function extractTextDeep(
+  node: ReactNode,
+  renderable: readonly unknown[],
+): string[] {
+  if (node === null || node === undefined || typeof node === "boolean") return [];
+  if (typeof node === "string") return node.length > 0 ? [node] : [];
+  if (typeof node === "number") return [String(node)];
+  if (Array.isArray(node)) return node.flatMap((child) => extractTextDeep(child, renderable));
+
+  if (typeof node === "object" && "props" in node) {
+    const element = node as { type?: unknown; props?: { children?: ReactNode } };
+    if (renderable.includes(element.type)) {
+      const rendered = (element.type as (props: unknown) => ReactNode)(element.props);
+      return extractTextDeep(rendered, renderable);
+    }
+    return extractTextDeep(element.props?.children, renderable);
+  }
+
+  return [];
+}

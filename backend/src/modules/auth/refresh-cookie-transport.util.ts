@@ -111,7 +111,17 @@ export function setRefreshCookie(
 ): void {
   res.cookie(refreshCookieName(actor), token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    // Production always; any other deployment opts in once it is
+    // actually behind TLS. This used to be `=== "production"` alone,
+    // which wrote the long-lived session credential WITHOUT Secure on
+    // staging — a validated NODE_ENV and a real deployment target — so it
+    // travelled in cleartext on any plain-HTTP hop. Hard-coding Secure
+    // for staging instead would break sign-in there outright:
+    // ops/docker-compose.staging.yml terminates no TLS today, so the flag
+    // is the deployment's to set (REFRESH_COOKIE_SECURE=true).
+    secure:
+      process.env.NODE_ENV === "production" ||
+      process.env.REFRESH_COOKIE_SECURE === "true",
     sameSite: "strict" as const,
     path: refreshCookiePath(actor),
     expires: expiresAt,

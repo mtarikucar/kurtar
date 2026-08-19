@@ -28,9 +28,11 @@ Both mechanisms are equally "not hardcoded" — every string a user sees is loca
 
 Every document under `content/legal/` is a working draft written to be grounded in the platform's real backend mechanics (see each file's own top-of-file comment for the specific commercial figures/deadlines and their source), but **none has been reviewed by a lawyer**. See `content/legal/README.md` for the full notice and the open items that block publishing these as binding text. That warning is deliberately *not* rendered anywhere on the live site (task-13 brief) — only a neutral `v0.1 — <date>` stamp shows on each legal page itself.
 
-## Known gap: `/o/[id]` has no rich preview
+## `/o/[id]` — the share-link bridge
 
-The universal-link bridge page (`app/[locale]/o/[id]/page.tsx`) renders a generic, brand-consistent "open the app" page rather than a rich preview of the specific shared offer (store name, photo, price) — the backend's discovery API (`docs/openapi.json`, `DiscoveryController`) exposes a filtered offers list and a single *store* lookup (`GET /discovery/stores/{id}`), but no public single-*offer* lookup by ID. Adding one would let this page fetch and show the real offer without changing its URL shape.
+The universal-link bridge page (`app/[locale]/o/[id]/page.tsx`) reads the offer it is about through the backend's public single-offer lookup (`GET /discovery/offers/{id}` — `DiscoveryController`, exposed as `client.discovery.offer(id)`) and renders the shop, the bag, the value band, the price and the pickup window, in the site's own receipt, plus an og card carrying the same. `lib/offer.ts` degrades every failure — unset `NEXT_PUBLIC_API_BASE_URL`, backend down, or the 404 a sold-out/closed offer returns — to the generic "open the app" bridge, never an error page.
+
+Still deliberate: `app/robots.ts` disallows `/o/`. These pages are for a person who was sent a link, not organic search results (the same reasoning excludes them from `sitemap.ts`), and the chat apps that unfurl the og card do not consult robots.txt.
 
 ## Design system
 

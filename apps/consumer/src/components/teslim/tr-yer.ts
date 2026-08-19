@@ -42,12 +42,24 @@ function kucult(harf: string): string {
  * Names that are already a possessive construction take a buffer `n`
  * before the case suffix — "Zeytinburnu'nda", not "Zeytinburnu'da". That
  * is a fact about the WORD (burun + u), not about its spelling, so it
- * cannot be derived and is listed instead. These are the İstanbul
- * districts in the seed data that need it; a name not on the list gets
- * the regular suffix, which is right for every ordinary vowel-final name
- * ("Ankara'da", "Bursa'da").
+ * cannot be derived and is listed instead: "Beyoğlu" (bey + oğlu) and
+ * "Ankara" both end in a vowel and only the first takes the n.
+ *
+ * The list is complete for where kurtar operates. Across all 39 İstanbul
+ * districts exactly three are possessive compounds — Beyoğlu (bey+oğlu),
+ * Zeytinburnu (zeytin+burnu) and Beylikdüzü (beylik+düzü) — and
+ * lib/location.ts's ISTANBUL_DISTRICTS is the list the picker offers and
+ * every seeded store's district comes from. `src/__tests__/
+ * tr-yer-ilceler.test.ts` pins the locative of every shipped district, so
+ * a 16th one cannot be added without deciding this.
+ *
+ * NOT on the list: "Sultanbeyli", which was, and was wrong —
+ * "Sultanbeyli'de". Its -li is the ordinary derivational suffix (Sultan
+ * Bey + li), not a possessive; a possessive would be "Sultanbeyi". A name
+ * belongs here because of how it is BUILT, never because it ends in a
+ * vowel.
  */
-const TAMLAMALI = new Set(["zeytinburnu", "beylikdüzü", "sultanbeyli"]);
+const TAMLAMALI = new Set(["beyoğlu", "zeytinburnu", "beylikdüzü"]);
 
 function kucultHepsi(ad: string): string {
   return [...ad].map(kucult).join("");

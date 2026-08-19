@@ -29,6 +29,11 @@ import { SokakSatiri } from "../../components/kesif/SokakSatiri";
 import { SokakYukleniyor } from "../../components/kesif/SokakYukleniyor";
 import { useIlkYuklemeKademesi } from "../../components/kesif/use-ilk-yukleme";
 import type { MapRegion } from "../../components/MapPane.types";
+// Straight from the module, not the `teslim` barrel: that barrel re-exports
+// the whole redeem track (TeslimSeli, KepenkKolu, TamKepenk…), and the
+// discovery screen has no business pulling the handover's animation code
+// into its own chunk to borrow one pure string function.
+import { yerBulunma } from "../../components/teslim/tr-yer";
 import { useSimdi } from "../../design/saat";
 import { usePalet, useTema } from "../../design/theme";
 import { kart, s, yazi } from "../../design/tokens";
@@ -114,9 +119,16 @@ export default function KesifEkrani() {
     () => baskinBolge(filtreliTeklifler, simdi),
     [filtreliTeklifler, simdi],
   );
+  // The locative belongs to the NAME, not to the sentence: Turkish picks
+  // between 'de / 'da / 'te / 'ta from the district's own last vowel and
+  // last consonant, so a suffix baked into the copy string printed
+  // "Beşiktaş'de" — the exact failure teslim/tr-yer.ts exists to prevent,
+  // and already prevents on the redeem screen. `bolge` stays the
+  // placeholder name so en.json, which puts the district after "in", is
+  // untouched.
   const basaligMetni =
     acikSayisi > BASLIK_ESIGI && baskinBolgeAdi
-      ? t("kesif.acikCok", { bolge: baskinBolgeAdi, count: acikSayisi })
+      ? t("kesif.acikCok", { bolge: yerBulunma(baskinBolgeAdi), count: acikSayisi })
       : t("kesif.acikTekil", { count: acikSayisi });
 
   const ilkYukHazir = !offersQuery.isLoading && !offersQuery.isError;

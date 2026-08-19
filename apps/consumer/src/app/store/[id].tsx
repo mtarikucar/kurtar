@@ -15,6 +15,7 @@ import {
   fiyatMetni,
   kalanDakika,
   sayi,
+  sureMetni,
   teklifDurumu,
 } from "../../components/kepenk/olcum";
 import { useReduceMotion } from "../../design/reduce-motion";
@@ -205,10 +206,35 @@ function TeklifSatiri({
   const bitis = new Date(teklif.pickupEndAt);
   const durum = teklifDurumu(teklif.qtyLeft, baslangic, bitis, simdi);
 
+  const pencere = formatPickupWindow(teklif.pickupStartAt, teklif.pickupEndAt);
+  const bant = t("vitrin.degerBandi", {
+    band: degerBandiMetni(
+      teklif.template.originalValueCentsMin,
+      teklif.template.originalValueCentsMax,
+    ),
+  });
+
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={teklif.template.title}
+      /**
+       * A Pressable is `accessible` by default in React Native, so an
+       * explicit label REPLACES its children's text instead of adding to
+       * it — the bag's title alone left the price, the value band, the
+       * window and the time pill unsaid, and a reader comparing two bags
+       * had to open each one and come back. The row says everything it
+       * draws, in the order it draws it, and the countdown is phrased the
+       * same way VitrinKarti phrases it (`sureMetni` + the vitrin.sure*
+       * keys) so the two surfaces do not describe the same clock in two
+       * different sentences.
+       */
+      accessibilityLabel={[
+        teklif.template.title,
+        fiyatMetni(teklif.template.priceCents),
+        bant,
+        pencere,
+        satirDurumMetni(t, durum, simdi, baslangic, bitis),
+      ].join(". ")}
       onPress={onPress}
       style={({ pressed }) => [
         styles.satir,
@@ -237,7 +263,7 @@ function TeklifSatiri({
           numberOfLines={1}
           maxFontSizeMultiplier={1.3}
         >
-          {formatPickupWindow(teklif.pickupStartAt, teklif.pickupEndAt)}
+          {pencere}
         </Text>
       </View>
 
@@ -254,12 +280,7 @@ function TeklifSatiri({
           numberOfLines={1}
           maxFontSizeMultiplier={1.3}
         >
-          {t("vitrin.degerBandi", {
-            band: degerBandiMetni(
-              teklif.template.originalValueCentsMin,
-              teklif.template.originalValueCentsMax,
-            ),
-          })}
+          {bant}
         </Text>
         {durum === "tukendi" ? null : (
           <View style={styles.hapAlani}>
@@ -275,6 +296,31 @@ function TeklifSatiri({
       </View>
     </Pressable>
   );
+}
+
+/**
+ * The one clause the row's label ends on: what the time pill is showing.
+ * A sold-out bag says so instead of counting down to nothing, a bag that
+ * has not opened yet names its opening hour, and an open one reads the
+ * hours out as hours — "1 saat 30 dakika", never "90 dakika", which is
+ * how VitrinKarti already reads the same clock.
+ */
+function satirDurumMetni(
+  t: (anahtar: string, secenekler?: Record<string, unknown>) => string,
+  durum: ReturnType<typeof teklifDurumu>,
+  simdi: Date,
+  baslangic: Date,
+  bitis: Date,
+): string {
+  if (durum === "tukendi") return t("vitrin.tukendi");
+  if (durum === "acilmadi") {
+    return t("vitrin.acilis", { saat: saatBulunma(formatClockTime(baslangic)) });
+  }
+  const { saat, dakika } = sureMetni(kalanDakika(simdi, bitis));
+  if (saat === 0) return t("vitrin.sureDk", { dk: dakika });
+  return dakika === 0
+    ? t("vitrin.sureSaatTam", { saat })
+    : t("vitrin.sureSaat", { saat, dk: dakika });
 }
 
 const styles = StyleSheet.create({

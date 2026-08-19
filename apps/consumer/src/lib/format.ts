@@ -73,6 +73,28 @@ export function formatShortDate(iso: string | Date): string {
 }
 
 /**
+ * The calendar day an instant falls on IN İSTANBUL, as a sortable
+ * "YYYY-MM-DD" key — the only honest way to answer "is this today?" for
+ * copy that says BUGÜN.
+ *
+ * `en-CA` is not a locale choice, it is the shortest route to ISO order
+ * from `toLocaleDateString`; the locale never reaches a user, only the
+ * timezone matters. Comparing raw timestamps or UTC dates would call
+ * 00:30 in İstanbul "yesterday" for the whole first three hours of every
+ * day — exactly when a late pickup window is being read.
+ */
+export function istanbulGunAnahtari(iso: string | Date): string {
+  const date = typeof iso === "string" ? new Date(iso) : iso;
+  return date.toLocaleDateString("en-CA", { timeZone: ISTANBUL_TIME_ZONE });
+}
+
+/** Do these two instants fall on the same İstanbul day? The one question
+ * a screen has to answer before it is allowed to print "BUGÜN". */
+export function ayniIstanbulGunu(a: string | Date, b: string | Date): boolean {
+  return istanbulGunAnahtari(a) === istanbulGunAnahtari(b);
+}
+
+/**
  * [M5 fix] Range-aware remaining-time text — replaces `formatCountdown`
  * (mm:ss), which had no hour rollover: a pickup hours away used to render
  * e.g. "420:00" next to its "18:30" absolute time. <1h -> minutes only;

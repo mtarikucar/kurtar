@@ -11,6 +11,7 @@ import {
   IkonDugmesi,
 } from "../../components/teslim";
 import { OnayEkrani } from "../../components/teslim/OnayEkrani";
+import { PanelButton } from "../../components/panel/PanelButton";
 import { useReduceMotion } from "../../design/reduce-motion";
 import { usePalet } from "../../design/theme";
 import { s, yazi } from "../../design/tokens";
@@ -19,7 +20,13 @@ import {
   fetchMyReservations,
 } from "../../hooks/use-reservations";
 import { useOrderDetails } from "../../hooks/use-order-details";
-import { formatPickupWindow } from "../../lib/format";
+import {
+  ayniIstanbulGunu,
+  formatPickupWindow,
+  formatShortDate,
+} from "../../lib/format";
+import { trUpper } from "../../design/tr-upper";
+import { useSimdi } from "../../design/saat";
 
 const YOKLAMA_MS = 3000;
 const BITEN_DURUMLAR = new Set([
@@ -44,6 +51,7 @@ export default function OdemeEkrani() {
   const router = useRouter();
   const palet = usePalet();
   const azaltHareket = useReduceMotion();
+  const simdi = useSimdi();
   const { id, redirectUrl } = useLocalSearchParams<{
     id: string;
     redirectUrl: string;
@@ -51,6 +59,10 @@ export default function OdemeEkrani() {
   }>();
 
   const [webHatasi, setWebHatasi] = useState(false);
+  /** Bumped by "Tekrar dene" and used as the WebView's key, so a retry
+   * genuinely re-creates the view. Clearing `webHatasi` alone would put
+   * the same instance back, still sitting on the page that failed. */
+  const [deneme, setDeneme] = useState(0);
 
   const yoklama = useQuery({
     queryKey: RESERVATIONS_QUERY_KEY,
@@ -94,6 +106,11 @@ export default function OdemeEkrani() {
         toplamKurus={benim.totalCents}
         kod={benim.code}
         pencere={formatPickupWindow(benim.pickupStartAt, benim.pickupEndAt)}
+        gun={
+          ayniIstanbulGunu(benim.pickupStartAt, simdi)
+            ? null
+            : trUpper(formatShortDate(benim.pickupStartAt))
+        }
         azaltHareket={azaltHareket}
         onKepengiAc={() =>
           router.replace({ pathname: "/redeem/[id]", params: { id } })
@@ -138,13 +155,15 @@ export default function OdemeEkrani() {
         <View style={styles.ikonBosluk} />
       </View>
 
-      <Text
-        style={[yazi.body, styles.bekleme, { color: palet.yaziSisZemin }]}
-        maxFontSizeMultiplier={1.5}
-      >
-        {t("payment.waiting")}
-      </Text>
-
+      {/*
+        This screen used to stack three statements that cannot all be true
+        at once — "finish paying at the provider", "the payment page could
+        not be opened", "we are checking your payment status" — and offer
+        nothing to do about it. The instruction belongs to the branch it
+        is an instruction FOR: it is only shown while the provider's page
+        is actually up. Money is the last place a screen may say two
+        things at once.
+      */}
       {webHatasi || !redirectUrl ? (
         <View style={styles.orta}>
           <Text style={[yazi.body, styles.bekleme, { color: palet.yaziAnaZemin }]}>
@@ -153,15 +172,43 @@ export default function OdemeEkrani() {
           <Text style={[yazi.data, styles.bekleme, { color: palet.yaziSisZemin }]}>
             {t("payment.checking")}
           </Text>
+          {/*
+            The user is holding a PENDING_PAYMENT reservation with stock
+            reserved against it, and the only other control on the screen
+            is the ✕, which asks whether to abandon the payment. A retry
+            is the action that gets them out of this without waiting for
+            the sweeper. With no redirectUrl at all there is nothing to
+            retry, so no button is offered rather than one that cannot
+            work.
+          */}
+          {webHatasi && redirectUrl ? (
+            <PanelButton
+              label={t("common.retry")}
+              onPress={() => {
+                setWebHatasi(false);
+                setDeneme((n) => n + 1);
+              }}
+              testID="odeme-yeniden-dene"
+            />
+          ) : null}
         </View>
       ) : (
-        <WebView
-          source={{ uri: redirectUrl }}
-          style={styles.web}
-          onError={() => setWebHatasi(true)}
-          onHttpError={() => setWebHatasi(true)}
-          startInLoadingState
-        />
+        <>
+          <Text
+            style={[yazi.body, styles.bekleme, { color: palet.yaziSisZemin }]}
+            maxFontSizeMultiplier={1.5}
+          >
+            {t("payment.waiting")}
+          </Text>
+          <WebView
+            key={deneme}
+            source={{ uri: redirectUrl }}
+            style={styles.web}
+            onError={() => setWebHatasi(true)}
+            onHttpError={() => setWebHatasi(true)}
+            startInLoadingState
+          />
+        </>
       )}
     </SafeAreaView>
   );

@@ -108,7 +108,7 @@
       "mutfak": "MUTFAK"
     },
     "acikTekil": "{{count}} dükkân açık",
-    "acikCok": "{{bolge}}'de {{count}} kepenk hâlâ açık",
+    "acikCok": "{{bolge}} {{count}} kepenk hâlâ açık",
     "kacirdiklarin": "KAÇIRDIKLARIN",
     "yukleniyor": "Kepenkler kalkıyor…",
     "bosGeceBaslik": "Bu civarda kepenkler indi.",
@@ -175,6 +175,7 @@
     "kurtarildiMuhru": "KURTARILDI",
     "ticketOzet": "kod {{kod}} · {{fiyat}} · {{saat}}",
     "aliniyor": "BUGÜN {{pencere}} arası al",
+    "aliniyorTarihli": "{{tarih}} {{pencere}} arası al",
     "emptyActiveTitle": "Aktif siparişin yok",
     "emptyActiveBody": "Keşfet'ten yeni bir paket bul.",
     "emptyPastTitle": "Geçmiş siparişin yok",
@@ -246,6 +247,7 @@
     "adet": "{{adet}} adet",
     "odendi": "{{fiyat}} ödendi · #{{kod}}",
     "arasindaAl": "BUGÜN {{pencere}} arası al",
+    "arasindaAlTarihli": "{{tarih}} {{pencere}} arası al",
     "canta": "Kendi çantanı getir",
     "siparislerimde": "Siparişlerim'de de duruyor"
   },

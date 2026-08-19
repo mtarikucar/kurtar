@@ -70,8 +70,23 @@ export function Cephe({
   return (
     <View
       onLayout={olcum}
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
+      /**
+       * The shopfront is the ONLY place either of its two screens prints
+       * the name — the shop page draws no other title, and the sign-in
+       * screen none at all. Hiding the whole thing from the accessibility
+       * tree (which is what this used to do) therefore took away the one
+       * thing a shop page must always say: which shop it is.
+       *
+       * `accessible` collapses the awning, the corrugated steel, the
+       * light and the plaque into a single element — they are all one
+       * picture of one shopfront, and a reader has no use for them one at
+       * a time — and the explicit label is the name in its raw form, not
+       * the sign's `trUpper()`'d lettering, so a screen reader pronounces
+       * it rather than spelling it.
+       */
+      accessible
+      accessibilityRole="header"
+      accessibilityLabel={ad}
       style={[
         styles.cephe,
         {
