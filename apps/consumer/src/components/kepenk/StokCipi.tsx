@@ -97,7 +97,10 @@ const styles = StyleSheet.create({
   cip: {
     flexDirection: "row",
     alignItems: "center",
-    height: 18,
+    // A floor, not a fixed height: `data` is 16pt of leading at 1× and
+    // 20.8 at the 1.3 ceiling, and a pill pinned to 18 drew its own
+    // border through the number it exists to show.
+    minHeight: 18,
     borderRadius: r.pill,
     borderWidth: 1,
     paddingHorizontal: s.s2,

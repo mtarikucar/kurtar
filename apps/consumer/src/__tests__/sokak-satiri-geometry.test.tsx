@@ -1,22 +1,28 @@
 import { render, screen } from "@testing-library/react-native";
 import type { ReactTestRendererJSON } from "react-test-renderer";
-import { View } from "react-native";
+import { Dimensions, View } from "react-native";
 import { ClockProvider } from "../design/saat";
 import { ThemeProvider } from "../design/theme";
 import {
   KESIF_SAG_KENAR,
   KESIF_SOL_KENAR,
   SPINE_BOSLUK,
-  SPINE_ETIKET_GENISLIGI,
   SPINE_HAIRLINE_GENISLIGI,
+  spineEtiketGenisligi,
 } from "../components/kesif/duzen";
 import { SokakSatiri } from "../components/kesif/SokakSatiri";
 import { SokakYukleniyor } from "../components/kesif/SokakYukleniyor";
 import "../i18n";
 
 const KART_GENISLIGI = 313;
-const SPINE_KOLON_GENISLIGI =
-  SPINE_ETIKET_GENISLIGI + SPINE_BOSLUK + SPINE_HAIRLINE_GENISLIGI;
+/** Both frames read the SAME viewport through `useWindowDimensions`, so
+ * the column they reserve is whatever that width and the user's text
+ * scale come to — the point of these specs is that it is the same number
+ * in both, not what the number happens to be. */
+const SPINE_KOLON_GENISLIGI = () =>
+  spineEtiketGenisligi(Dimensions.get("window").width) +
+  SPINE_BOSLUK +
+  SPINE_HAIRLINE_GENISLIGI;
 
 /** Recursively collects every numeric value under a given style key
  * anywhere in a rendered RNTL JSON tree. Used to prove the loading
@@ -86,8 +92,8 @@ describe("street-spine geometry — loading vs loaded (review fix #3)", () => {
 
     // Same column width in both — the number is what differs, not the
     // geometry it sits in.
-    expect(stilDegerleriTopla(yukleniyor, "width")).toContain(SPINE_KOLON_GENISLIGI);
-    expect(stilDegerleriTopla(yuklu, "width")).toContain(SPINE_KOLON_GENISLIGI);
+    expect(stilDegerleriTopla(yukleniyor, "width")).toContain(SPINE_KOLON_GENISLIGI());
+    expect(stilDegerleriTopla(yuklu, "width")).toContain(SPINE_KOLON_GENISLIGI());
 
     // And the card itself is the same width in both, so nothing shifts
     // horizontally when the real offer swaps in for the placeholder.
@@ -104,7 +110,7 @@ describe("street-spine geometry — loading vs loaded (review fix #3)", () => {
       ),
     );
     const bos = screen.toJSON();
-    expect(stilDegerleriTopla(bos, "width")).toContain(SPINE_KOLON_GENISLIGI);
+    expect(stilDegerleriTopla(bos, "width")).toContain(SPINE_KOLON_GENISLIGI());
     // No distance is printed — real data this frame does not have yet.
     expect(JSON.stringify(bos)).not.toContain("1,3 km");
     await unmount();
@@ -119,7 +125,7 @@ describe("street-spine geometry — loading vs loaded (review fix #3)", () => {
       ),
     );
     const dolu = screen.toJSON();
-    expect(stilDegerleriTopla(dolu, "width")).toContain(SPINE_KOLON_GENISLIGI);
+    expect(stilDegerleriTopla(dolu, "width")).toContain(SPINE_KOLON_GENISLIGI());
     expect(JSON.stringify(dolu)).toContain("1,3 km");
     await unmount();
   });

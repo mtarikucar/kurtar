@@ -1,5 +1,6 @@
 import { PixelRatio, StyleSheet, View } from "react-native";
 import { Kepenk, Tabela, Tente } from "../kepenk";
+import { kartOlculeri } from "../kepenk/kart-olcu";
 import { usePalet } from "../../design/theme";
 import { kart, r } from "../../design/tokens";
 
@@ -24,10 +25,14 @@ import { kart, r } from "../../design/tokens";
  */
 export function KapaliKart({ genislik = kart.genislik }: { genislik?: number }) {
   const palet = usePalet();
-  const buyuk = PixelRatio.getFontScale() >= kart.buyumeEsigi;
-  const band = buyuk ? kart.bandBuyuk : kart.band;
-  const tabelaYuksekligi = buyuk ? kart.tabelaBuyuk : kart.tabela;
-  const kartYuksekligi = buyuk ? kart.yukseklikBuyuk : kart.yukseklik;
+  // The SAME measurement the loaded card uses — a placeholder that is a
+  // different height from the card replacing it is the reflow §4.8 says
+  // loading must not be.
+  const {
+    band,
+    tabela: tabelaYuksekligi,
+    yukseklik: kartYuksekligi,
+  } = kartOlculeri(PixelRatio.getFontScale());
 
   return (
     <View

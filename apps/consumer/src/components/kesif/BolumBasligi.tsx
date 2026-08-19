@@ -1,10 +1,10 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { usePalet } from "../../design/theme";
 import { s, yazi } from "../../design/tokens";
 import {
   SPINE_BOSLUK,
-  SPINE_ETIKET_GENISLIGI,
   SPINE_HAIRLINE_GENISLIGI,
+  spineEtiketGenisligi,
 } from "./duzen";
 
 /**
@@ -16,9 +16,13 @@ import {
  */
 export function BolumBasligi({ baslik }: { baslik: string }) {
   const palet = usePalet();
+  const { width } = useWindowDimensions();
+  // Same column the rows reserve, so the hairline runs straight through
+  // the section title instead of stepping sideways at every heading.
+  const kolon = spineEtiketGenisligi(width) + SPINE_BOSLUK + SPINE_HAIRLINE_GENISLIGI;
   return (
     <View style={styles.satir} accessibilityRole="header">
-      <View style={styles.spine}>
+      <View style={[styles.spine, { width: kolon }]}>
         <View style={[styles.hairline, { backgroundColor: palet.cizgiKil }]} />
       </View>
       <Text
@@ -38,10 +42,7 @@ const styles = StyleSheet.create({
     paddingTop: s.s5,
     paddingBottom: s.s2,
   },
-  spine: {
-    width: SPINE_ETIKET_GENISLIGI + SPINE_BOSLUK + SPINE_HAIRLINE_GENISLIGI,
-    alignItems: "flex-end",
-  },
+  spine: { alignItems: "flex-end" },
   hairline: { width: SPINE_HAIRLINE_GENISLIGI, height: 14 },
   baslik: { marginLeft: SPINE_BOSLUK },
 });
