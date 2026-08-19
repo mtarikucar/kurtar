@@ -33,11 +33,26 @@ function FavoriSatiri({ item, onPress }: { item: FavoriteListItem; onPress: () =
   const desen = tenteDeseni(item.storeId);
   const puanli = item.store.ratingCount > 0;
 
+  const altSatir = puanli
+    ? `${item.store.district} · ★ ${sayi(item.store.avgStars, 1)} · ${t("storeProfile.ratingCount", { count: item.store.ratingCount })}`
+    : item.store.district;
+  const durumMetni = item.hasLiveOfferToday
+    ? t("favorites.hasOfferToday")
+    : t("favorites.noOfferToday");
+
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={item.store.name}
+      /**
+       * A Pressable is `accessible` by default, so the shop's name alone
+       * REPLACED the row's children rather than introducing them — and
+       * the child it silenced was the badge this whole screen exists to
+       * carry. Twelve favourites read as twelve names, and the one
+       * question the list answers ("which of these has a bag tonight?")
+       * could only be answered by opening all twelve.
+       */
+      accessibilityLabel={`${item.store.name}. ${altSatir}. ${durumMetni}`}
       style={({ pressed }) => [
         styles.satir,
         {
@@ -66,22 +81,13 @@ function FavoriSatiri({ item, onPress }: { item: FavoriteListItem; onPress: () =
           numberOfLines={1}
           maxFontSizeMultiplier={1.3}
         >
-          {puanli
-            ? `${item.store.district} · ★ ${sayi(item.store.avgStars, 1)} · ${t("storeProfile.ratingCount", { count: item.store.ratingCount })}`
-            : item.store.district}
+          {altSatir}
         </Text>
         {/* Under the name rather than beside it: "Bugün paketi var" is
             four words, and squeezed into the right-hand column it took
             the shop's own name down to an ellipsis. */}
         <View style={styles.durum}>
-          <Badge
-            label={
-              item.hasLiveOfferToday
-                ? t("favorites.hasOfferToday")
-                : t("favorites.noOfferToday")
-            }
-            ton={item.hasLiveOfferToday ? "sodyum" : "notr"}
-          />
+          <Badge label={durumMetni} ton={item.hasLiveOfferToday ? "sodyum" : "notr"} />
         </View>
       </View>
     </Pressable>
