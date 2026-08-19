@@ -20,7 +20,13 @@ import {
   fetchMyReservations,
 } from "../../hooks/use-reservations";
 import { useOrderDetails } from "../../hooks/use-order-details";
-import { formatPickupWindow } from "../../lib/format";
+import {
+  ayniIstanbulGunu,
+  formatPickupWindow,
+  formatShortDate,
+} from "../../lib/format";
+import { trUpper } from "../../design/tr-upper";
+import { useSimdi } from "../../design/saat";
 
 const YOKLAMA_MS = 3000;
 const BITEN_DURUMLAR = new Set([
@@ -45,6 +51,7 @@ export default function OdemeEkrani() {
   const router = useRouter();
   const palet = usePalet();
   const azaltHareket = useReduceMotion();
+  const simdi = useSimdi();
   const { id, redirectUrl } = useLocalSearchParams<{
     id: string;
     redirectUrl: string;
@@ -99,6 +106,11 @@ export default function OdemeEkrani() {
         toplamKurus={benim.totalCents}
         kod={benim.code}
         pencere={formatPickupWindow(benim.pickupStartAt, benim.pickupEndAt)}
+        gun={
+          ayniIstanbulGunu(benim.pickupStartAt, simdi)
+            ? null
+            : trUpper(formatShortDate(benim.pickupStartAt))
+        }
         azaltHareket={azaltHareket}
         onKepengiAc={() =>
           router.replace({ pathname: "/redeem/[id]", params: { id } })

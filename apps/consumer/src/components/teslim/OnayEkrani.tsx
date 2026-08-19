@@ -43,6 +43,7 @@ export function OnayEkrani({
   toplamKurus,
   kod,
   pencere,
+  gun,
   onKepengiAc,
   onSiparisler,
   azaltHareket,
@@ -55,6 +56,14 @@ export function OnayEkrani({
   kod: string;
   /** "18:30–21:00" */
   pencere: string;
+  /**
+   * The pickup DAY, `null` when it is today. Discovery filters on
+   * `pickupEndAt` alone, so a bag published today for tomorrow's window
+   * is listed and buyable — and this ticket used to tell whoever bought
+   * one to collect it "BUGÜN". Already uppercased by the caller (through
+   * trUpper, never toUpperCase).
+   */
+  gun: string | null;
   onKepengiAc: () => void;
   onSiparisler: () => void;
   azaltHareket: boolean | null;
@@ -164,7 +173,9 @@ export function OnayEkrani({
               style={[yazi.body, styles.satir, styles.bosluk, { color: palet.yaziAnaCukur }]}
               maxFontSizeMultiplier={1.4}
             >
-              {t("payment.arasindaAl", { pencere })}
+              {gun === null
+                ? t("payment.arasindaAl", { pencere })
+                : t("payment.arasindaAlTarihli", { pencere, tarih: gun })}
             </Text>
             <Text
               style={[yazi.body, styles.satir, { color: palet.yaziSisCukur }]}

@@ -19,7 +19,14 @@ import { fiyatMetni } from "../../components/kepenk/olcum";
 import { siparisKalanDakika, siparisPillDurumu } from "../../lib/order-durum";
 import { saatBulunma } from "../../components/kepenk/tr-saat";
 import { useOrderDetails, type OrderDetails } from "../../hooks/use-order-details";
-import { formatClockTime, formatClockWithSeconds, formatPickupWindow } from "../../lib/format";
+import {
+  ayniIstanbulGunu,
+  formatClockTime,
+  formatClockWithSeconds,
+  formatPickupWindow,
+  formatShortDate,
+} from "../../lib/format";
+import { trUpper } from "../../design/tr-upper";
 
 const TENTE_YUKSEKLIK = 6;
 const TABELA_YUKSEKLIK = 40;
@@ -154,8 +161,28 @@ function SiparisDurumBolumu({
     const acilisSaati = saatBulunma(formatClockTime(pickupStartAt));
     return (
       <View style={styles.durumBlok}>
+        {/*
+          "BUGÜN" is a claim, and nothing ever moves a CONFIRMED
+          reservation off CONFIRMED — no NO_SHOW writer exists, and
+          EXPIRED is only reachable from PENDING_PAYMENT — so a bag
+          nobody collected on Tuesday still read "BUGÜN 18:30–21:00 arası
+          al" on Friday, over a live-looking KEPENGİ AÇ. It is also wrong
+          forward: discovery filters on pickupEndAt alone, so a bag
+          published today for tomorrow's window is listed and buyable. The
+          day is named unless it really is today, and named through
+          trUpper() — `formatShortDate` returns "19 Ağu"/"3 Eyl", and
+          toUpperCase() would print "NIS" for Nisan.
+        */}
         <Text style={[yazi.data, { color: palet.yaziSis }]}>
-          {t("orders.aliniyor", { pencere: formatPickupWindow(pickupStartAt, pickupEndAt) })}
+          {t(
+            ayniIstanbulGunu(pickupStartAt, simdi)
+              ? "orders.aliniyor"
+              : "orders.aliniyorTarihli",
+            {
+              pencere: formatPickupWindow(pickupStartAt, pickupEndAt),
+              tarih: trUpper(formatShortDate(pickupStartAt)),
+            },
+          )}
         </Text>
         <ZamanHapi
           durum={durum}
