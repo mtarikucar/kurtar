@@ -15,6 +15,37 @@ import { useGlobalRedeemSync } from "../hooks/use-global-redeem-sync";
 import { useUygulamaFontlari } from "../design/fonts";
 import { ClockProvider } from "../design/saat";
 import { ThemeProvider } from "../design/theme";
+import type { Faz } from "../design/tokens";
+
+/**
+ * Pins the palette for a review build, so a screenshot of the night phase
+ * does not depend on the hour someone happens to run it. Read at BUILD
+ * time from an `EXPO_PUBLIC_` variable, so a normal build inlines
+ * `undefined` here and the app follows the sun as it should — there is no
+ * runtime switch and nothing to reach in a shipped binary.
+ *
+ * Faking the browser clock instead does not work: the clock provider's
+ * subscribers keep running on real timers while `Date.now()` stands
+ * still, and the app renders nothing.
+ *
+ *   EXPO_PUBLIC_FAZ_ZORLA=gece npx expo export -p web
+ */
+const INCELEME_FAZI = (process.env.EXPO_PUBLIC_FAZ_ZORLA as Faz | undefined) || undefined;
+
+/**
+ * Pins the whole app's clock for a review build, through the provider's
+ * own `sabitZaman` — the review screens already use it, so one instant
+ * governs the palette, every countdown and every open/closed label at
+ * once. Faking the BROWSER clock cannot do this: the provider's minute
+ * bucket keeps the pre-fake time while components that read the clock
+ * directly see the faked one, and the screen ends up disagreeing with
+ * itself about what time it is.
+ *
+ *   EXPO_PUBLIC_INCELEME_ZAMANI=2026-08-19T17:35:00.000Z npx expo export -p web
+ */
+const INCELEME_ZAMANI = process.env.EXPO_PUBLIC_INCELEME_ZAMANI
+  ? new Date(process.env.EXPO_PUBLIC_INCELEME_ZAMANI)
+  : undefined;
 
 /** Handles a notification TAP (foreground, background, or cold-start) by
  * deep-linking into the offer/order it refers to — see push.ts's
@@ -112,8 +143,10 @@ export default function RootLayout() {
         <StatusBar style="dark" />
         {/* One clock for the whole app, one palette swapped whole on the
             solar phase change (spec §1.1 / §2). */}
-        <ClockProvider>
-          <ThemeProvider>{fontlarHazir ? <RootNavigator /> : null}</ThemeProvider>
+        <ClockProvider sabitZaman={INCELEME_ZAMANI}>
+          <ThemeProvider fazZorla={INCELEME_FAZI}>
+            {fontlarHazir ? <RootNavigator /> : null}
+          </ThemeProvider>
         </ClockProvider>
       </AuthProvider>
     </PersistQueryClientProvider>
