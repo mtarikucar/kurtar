@@ -4,6 +4,7 @@ import { ReservationsController } from "./reservations.controller";
 import { ReservationsService } from "./reservations.service";
 import { OfferStockService } from "./offer-stock.service";
 import { PickupReminderCronService } from "./pickup-reminder-cron.service";
+import { NoShowSweeperService } from "./no-show-sweeper.service";
 
 /**
  * PrismaService (PrismaModule), PaymentsFacadeService (PaymentsCoreModule)
@@ -25,6 +26,7 @@ import { PickupReminderCronService } from "./pickup-reminder-cron.service";
     ReservationsService,
     OfferStockService,
     PickupReminderCronService,
+    NoShowSweeperService,
   ],
   exports: [OfferStockService, ReservationsService],
 })

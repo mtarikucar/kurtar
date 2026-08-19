@@ -100,6 +100,44 @@ describe("Order detail — the ticket (spec §4.6)", () => {
     expect(screen.queryByText("İptal et")).toBeNull();
   });
 
+  it("a NO_SHOW order says the money is gone, in words, and never offers a live pickup", async () => {
+    // The whole point of the no-show branch. Before the sweeper existed
+    // this reservation stayed CONFIRMED for ever and this screen showed a
+    // red "SON 0 DK" over a live KEPENGİ AÇ for a window that closed days
+    // ago; now it has to say the true, unwelcome thing instead.
+    await ciz(
+      reservation({
+        status: "NO_SHOW",
+        redeemedAt: null,
+        cancelDeadlineAt: "2026-08-19T16:00:00.000Z",
+      }),
+    );
+
+    expect(await screen.findByText("Alınmadı")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Bu paketi teslim alma penceresi içinde almadın. Ödediğin 69₺ iade edilmiyor: paket senin için hazırlandığından sipariş normal satış sayılıyor ve tutar işletmeye ödeniyor.",
+      ),
+    ).toBeTruthy();
+
+    // No live pickup, no countdown, no rating invite for a bag nobody
+    // collected — and no cancel, which would read as a refund offer.
+    expect(screen.queryByText("KEPENGİ AÇ")).toBeNull();
+    expect(screen.queryByText("İptal et")).toBeNull();
+    expect(screen.queryByText("Değerlendir")).toBeNull();
+    expect(screen.queryByText("SON 0 DK")).toBeNull();
+  });
+
+  it("a NO_SHOW order still leaves the complaint route open — the only recourse there is", async () => {
+    await ciz(reservation({ status: "NO_SHOW", redeemedAt: null }));
+    const cta = await screen.findByText("Bir sorun mu vardı? Bildir");
+    fireEvent.press(cta);
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/complaint/new",
+      params: { reservationId: "resv-1" },
+    });
+  });
+
   it("shows a not-found state for an unknown reservation id", async () => {
     mockSearchParams = { id: "does-not-exist" };
     mockListMine.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });

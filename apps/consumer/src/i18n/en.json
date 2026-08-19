@@ -173,6 +173,8 @@
     "viewCta": "View",
     "kepenkAc": "OPEN THE SHUTTER",
     "kurtarildiMuhru": "RESCUED",
+    "noShowAciklama": "You did not collect this bag inside its pickup window. The {{fiyat}} you paid is not refunded: the bag was set aside for you, so the order counts as a normal sale and the money goes to the store.",
+    "noShowSikayetCta": "Was something wrong? Tell us",
     "ticketOzet": "code {{kod}} · {{fiyat}} · {{saat}}",
     "aliniyor": "PICK UP TODAY {{pencere}}",
     "aliniyorTarihli": "PICK UP {{tarih}} {{pencere}}",

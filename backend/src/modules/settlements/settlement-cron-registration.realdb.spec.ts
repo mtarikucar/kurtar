@@ -63,7 +63,7 @@ const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 const d = TEST_DATABASE_URL ? describe : describe.skip;
 
 d("Settlement/membership cron registration — real AppModule boot", () => {
-  it("registers settlement-nightly-batch, settlement-payout-execute, settlement-reconciliation, membership-renewal, complaint-sla-sweep, moderation-takedown-sweep, and commission-invoice-draft-alert", async () => {
+  it("registers settlement-nightly-batch, settlement-payout-execute, settlement-reconciliation, membership-renewal, complaint-sla-sweep, moderation-takedown-sweep, commission-invoice-draft-alert, and reservation-no-show-sweep", async () => {
     const module = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -102,6 +102,14 @@ d("Settlement/membership cron registration — real AppModule boot", () => {
       // standing gate: a sweep that ships unregistered fails here rather
       // than quietly never running.
       expect(names.has("commission-invoice-draft-alert")).toBe(true);
+      // [No-show] The sweep that closes the pickup window on a bag nobody
+      // collected (reservations/no-show-sweeper.service.ts). It belongs on
+      // this SAME standing gate for a money reason, not a tidiness one: a
+      // reservation that never reaches NO_SHOW is never picked up by the
+      // settlement eligibility scan either, so a sweep shipped
+      // unregistered means merchants silently stop being paid for
+      // no-shows — the exact hole the sweeper exists to close.
+      expect(names.has("reservation-no-show-sweep")).toBe(true);
 
       // [Fix round #6, M7] Every DAILY job must be pinned to
       // Europe/Istanbul. The container runs UTC (no TZ in the Dockerfile

@@ -212,6 +212,46 @@ describe("useRedeemReconciliation — the defining redeem interaction's state ma
     expect(await getQueuedConfirmation("resv-1")).toBeNull();
   });
 
+  it("stops polling once the reservation is swept to NO_SHOW — a queued swipe nobody reconciled is a dead end, not a forever-poll", async () => {
+    // Until the backend's no-show sweep existed, an unreconciled queued
+    // swipe stayed CONFIRMED for ever and this hook polled for ever with
+    // it. NO_SHOW is the terminal answer it never used to get.
+    jest.useFakeTimers({ doNotFake: ["nextTick"] });
+    try {
+      mockRedeem.mockRejectedValueOnce(
+        new KurtarApiError({
+          statusCode: 0,
+          errorCode: "NETWORK_ERROR",
+          message: "Network request failed.",
+          isBackendErrorCode: false,
+        }),
+      );
+      mockListMine.mockResolvedValue(
+        listResponse(reservation({ status: "NO_SHOW", redeemedAt: null })),
+      );
+
+      const { result } = await renderHookWithProviders(() =>
+        useRedeemReconciliation("resv-1"),
+      );
+      await waitFor(() => expect(result.current.queueChecked).toBe(true));
+      await act(async () => {
+        await result.current.confirm();
+      });
+
+      await waitFor(() => expect(mockListMine).toHaveBeenCalledTimes(1));
+      expect(result.current.reconciled).toBe(false);
+
+      // Several poll intervals' worth of time passes, and the read is not
+      // repeated: the status can no longer change.
+      await act(async () => {
+        jest.advanceTimersByTime(20_000);
+      });
+      expect(mockListMine).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("does not poll at all before the user swipes", async () => {
     mockListMine.mockResolvedValue(listResponse(reservation({ status: "CONFIRMED" })));
     const { result } = await renderHookWithProviders(() => useRedeemReconciliation("resv-1"));

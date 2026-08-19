@@ -173,6 +173,8 @@
     "viewCta": "Görüntüle",
     "kepenkAc": "KEPENGİ AÇ",
     "kurtarildiMuhru": "KURTARILDI",
+    "noShowAciklama": "Bu paketi teslim alma penceresi içinde almadın. Ödediğin {{fiyat}} iade edilmiyor: paket senin için hazırlandığından sipariş normal satış sayılıyor ve tutar işletmeye ödeniyor.",
+    "noShowSikayetCta": "Bir sorun mu vardı? Bildir",
     "ticketOzet": "kod {{kod}} · {{fiyat}} · {{saat}}",
     "aliniyor": "BUGÜN {{pencere}} arası al",
     "aliniyorTarihli": "{{tarih}} {{pencere}} arası al",
