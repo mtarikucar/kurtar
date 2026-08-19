@@ -77,6 +77,15 @@ npm run ios -w consumer      # requires Xcode / iOS Simulator
 npm run android -w consumer  # requires Android Studio / an emulator
 ```
 
+To run it on a **real phone** — which is the only way to judge touch targets,
+safe-area insets and native type scaling — see
+[`docs/consumer-on-a-phone.md`](docs/consumer-on-a-phone.md). Read its first
+section before you decide the app is empty: the seeded surprise bags open at
+19:00 and close at 21:00 Istanbul time, so at any other hour every shop is
+correctly shut, and there is a build flag that pins the clock so you can see
+the evening without waiting for it.
+
+
 ### Prove it from scratch
 
 To convince yourself this genuinely works from nothing (not just "works on this machine"):
