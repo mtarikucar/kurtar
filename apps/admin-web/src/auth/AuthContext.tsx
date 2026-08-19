@@ -132,6 +132,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const result = await client.auth.adminLogin({ email, password });
+    // engine.ts fires onTokensIssued from inside performRefresh and
+    // nowhere else — never for a plain login response — so this is the
+    // ONE place a fresh session's access token can be recorded. Without
+    // it the first request after a successful login goes out with no
+    // bearer, 401s, and only recovers through the engine's 401->refresh
+    // branch; if the refresh cookie is missing or blocked, the admin is
+    // bounced straight back to the login screen. merchant-web
+    // (auth/AuthContext.tsx) and apps/consumer both already do this.
+    setStoredAccessToken(result.accessToken);
     sessionSettledRef.current = true;
     writeCachedProfile(result.user);
     setUser(result.user);
