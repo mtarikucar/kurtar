@@ -83,8 +83,43 @@ jest.mock("react-native-webview", () => {
   return { WebView: (props: object) => React.createElement(View, props) };
 });
 
-// react-native-maps and supercluster are only ever imported by
-// MapPane.native.tsx, which no spec below imports directly (Discover
-// screen tests exercise the list view path — see the report's coverage
-// notes for what native map rendering could NOT be exercised in this
-// Node/jsdom environment).
+// react-native-maps resolves to its native bridge under Jest's default
+// (non-`.web`) platform resolution — with no real bridge in this Node/
+// jsdom environment, `TurboModuleRegistry.getEnforcing` throws before any
+// screen that mounts `MapPane.native.tsx` (Keşfet's collapsing header,
+// the Harita tab) can even render. This stands in the plainest possible
+// `View`s for `MapView`/`Marker`; the real native rendering (markers,
+// clustering, the dark map style) is exercised by looking at the actual
+// exported web/native builds, not by a Jest unit test — see the design
+// build log's coverage notes.
+jest.mock("react-native-maps", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require("react");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { View } = require("react-native");
+  const MapView = (props: { children?: React.ReactNode }) =>
+    React.createElement(View, props, props.children);
+  const Marker = (props: { children?: React.ReactNode }) =>
+    React.createElement(View, props, props.children);
+  return { __esModule: true, default: MapView, Marker, PROVIDER_GOOGLE: "google" };
+});
+
+// `supercluster` (MapPane.native.tsx's client-side pin clustering) ships
+// ESM-only and sits outside jest-expo's `transformIgnorePatterns`
+// allowlist (it's not an RN/Expo package) — Jest can't parse its `import`
+// syntax at all. An empty cluster index is enough for a screen test: no
+// spec here asserts on real cluster geometry.
+jest.mock("supercluster", () => {
+  class SahteSupercluster {
+    load() {
+      return this;
+    }
+    getClusters() {
+      return [];
+    }
+    getClusterExpansionZoom(id: number) {
+      return id;
+    }
+  }
+  return { __esModule: true, default: SahteSupercluster };
+});

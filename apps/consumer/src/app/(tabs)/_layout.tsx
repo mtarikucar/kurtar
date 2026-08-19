@@ -39,6 +39,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="harita"
+        options={{
+          title: t("tabs.harita"),
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="map-outline" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="search"
         options={{
           title: t("tabs.search"),

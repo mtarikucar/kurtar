@@ -16,6 +16,7 @@
   },
   "tabs": {
     "discover": "Keşfet",
+    "harita": "Harita",
     "search": "Ara",
     "favorites": "Favoriler",
     "orders": "Siparişler",
@@ -94,6 +95,47 @@
     "locationDeniedBanner": "Konum izni yok — ilçe seçerek arayabilirsin.",
     "chooseDistrict": "İlçe seç",
     "mapUnavailableWeb": "Harita görünümü mobil uygulamada kullanılabilir. Şimdilik liste görünümünü kullan."
+  },
+  "kesif": {
+    "konumDegistir": "Konumu değiştir",
+    "filtreler": {
+      "tumu": "TÜMÜ",
+      "firin": "FIRIN",
+      "pastane": "PASTANE",
+      "manav": "MANAV",
+      "kafe": "KAFE",
+      "mutfak": "MUTFAK"
+    },
+    "acikTekil": "{{count}} dükkân açık",
+    "acikCok": "{{bolge}}'de {{count}} kepenk hâlâ açık",
+    "kacirdiklarin": "KAÇIRDIKLARIN",
+    "yukleniyor": "Kepenkler kalkıyor…",
+    "bosGeceBaslik": "Bu civarda kepenkler indi.",
+    "bosGeceGovde": "Yarın 17:00'den itibaren ışıklar yeniden yanar.",
+    "bosGeceGeriSayim": "{{sure}} sonra",
+    "bosGunduzBaslik": "Henüz erken.",
+    "bosGunduzGovde": "İlk paketler 17:00 civarı çıkar.",
+    "bosFiltre": "Bu filtreyle açık kepenk yok.",
+    "filtreleriTemizle": "Filtreleri temizle",
+    "haberVer": "Haber ver",
+    "hata": "Bağlantı yok — tekrar dene",
+    "konumKapali": "Konumun kapalı. Kadıköy'ü gösteriyoruz.",
+    "konumAc": "Konumu aç",
+    "haritayaGit": "Haritayı aç",
+    "listeyeDon": "Listeye dön"
+  },
+  "harita": {
+    "baslik": "Harita",
+    "yakinTeklifler": "Yakındaki teklifler",
+    "webUyari": "Harita bu tarayıcıda gösterilemiyor.",
+    "webUyariGovde": "Mobil uygulamada gerçek haritayı görürsün — aşağıda yakınındaki teklifler duruyor.",
+    "magazaGor": "Mağazayı gör",
+    "kumeEtiket": "{{count}} mağaza, yakınlaştırmak için dokun",
+    "pinEtiket": "{{fiyat}}'den başlayan fiyatlarla",
+    "pinEtiketSecili": "Seçili: {{fiyat}}'den başlayan fiyatlarla",
+    "bosBaslik": "Şu an yakında açık kepenk yok",
+    "sonucAdet_one": "{{count}} teklif",
+    "sonucAdet_other": "{{count}} teklif"
   },
   "search": {
     "placeholder": "Paket, mağaza ara…",

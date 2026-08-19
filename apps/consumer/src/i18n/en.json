@@ -16,6 +16,7 @@
   },
   "tabs": {
     "discover": "Discover",
+    "harita": "Map",
     "search": "Search",
     "favorites": "Favorites",
     "orders": "Orders",
@@ -94,6 +95,47 @@
     "locationDeniedBanner": "No location access — pick a district to browse instead.",
     "chooseDistrict": "Choose district",
     "mapUnavailableWeb": "Map view is available in the mobile app. Use list view for now."
+  },
+  "kesif": {
+    "konumDegistir": "Change location",
+    "filtreler": {
+      "tumu": "ALL",
+      "firin": "BAKERY",
+      "pastane": "PATISSERIE",
+      "manav": "PRODUCE",
+      "kafe": "CAFE",
+      "mutfak": "KITCHEN"
+    },
+    "acikTekil": "{{count}} shops open",
+    "acikCok": "{{count}} shutters still open in {{bolge}}",
+    "kacirdiklarin": "MISSED IT",
+    "yukleniyor": "Shutters are rising…",
+    "bosGeceBaslik": "Shutters are down around here.",
+    "bosGeceGovde": "Lights come back on from 17:00 tomorrow.",
+    "bosGeceGeriSayim": "in {{sure}}",
+    "bosGunduzBaslik": "Still early.",
+    "bosGunduzGovde": "First bags usually appear around 17:00.",
+    "bosFiltre": "No open shutters match this filter.",
+    "filtreleriTemizle": "Clear filters",
+    "haberVer": "Notify me",
+    "hata": "No connection — try again",
+    "konumKapali": "Location is off. Showing {{bolge}}.",
+    "konumAc": "Turn on location",
+    "haritayaGit": "Open map",
+    "listeyeDon": "Back to list"
+  },
+  "harita": {
+    "baslik": "Map",
+    "yakinTeklifler": "Nearby offers",
+    "webUyari": "The map can't render in this browser.",
+    "webUyariGovde": "You'll see the real map in the mobile app — nearby offers are listed below.",
+    "magazaGor": "View shop",
+    "kumeEtiket": "{{count}} shops, tap to zoom in",
+    "pinEtiket": "From {{fiyat}}",
+    "pinEtiketSecili": "Selected: from {{fiyat}}",
+    "bosBaslik": "No open shutters nearby right now",
+    "sonucAdet_one": "{{count}} offer",
+    "sonucAdet_other": "{{count}} offers"
   },
   "search": {
     "placeholder": "Search bags, stores…",
