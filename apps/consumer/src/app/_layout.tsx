@@ -12,6 +12,9 @@ import {
 } from "../lib/query-client";
 import { registerPushTokenIfPermitted, resolvePushDeepLink } from "../lib/push";
 import { useGlobalRedeemSync } from "../hooks/use-global-redeem-sync";
+import { useUygulamaFontlari } from "../design/fonts";
+import { ClockProvider } from "../design/saat";
+import { ThemeProvider } from "../design/theme";
 
 /** Handles a notification TAP (foreground, background, or cold-start) by
  * deep-linking into the offer/order it refers to — see push.ts's
@@ -85,11 +88,18 @@ function RootNavigator() {
       <Stack.Screen name="o/[id]" />
       <Stack.Screen name="report/new" options={{ presentation: "modal" }} />
       <Stack.Screen name="legal/[doc]" />
+      {/* The Phase 1 review gate — docs/design/consumer-app-spec.md §6. */}
+      <Stack.Screen name="vitrin" />
     </Stack>
   );
 }
 
 export default function RootLayout() {
+  // Nothing renders type until the three families are in (spec §1.2); a
+  // load FAILURE also releases the gate, falling back to the system face
+  // rather than holding the app on a blank screen forever.
+  const fontlarHazir = useUygulamaFontlari();
+
   return (
     <PersistQueryClientProvider
       client={queryClient}
@@ -100,7 +110,11 @@ export default function RootLayout() {
     >
       <AuthProvider>
         <StatusBar style="dark" />
-        <RootNavigator />
+        {/* One clock for the whole app, one palette swapped whole on the
+            solar phase change (spec §1.1 / §2). */}
+        <ClockProvider>
+          <ThemeProvider>{fontlarHazir ? <RootNavigator /> : null}</ThemeProvider>
+        </ClockProvider>
       </AuthProvider>
     </PersistQueryClientProvider>
   );

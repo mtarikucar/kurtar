@@ -360,5 +360,42 @@
     "ACCOUNT_DELETED": "Bu hesapla giriş yapılamıyor.",
     "PAYMENT_PROVIDER_UNAVAILABLE": "Ödeme başlatılamadı. Lütfen tekrar dene.",
     "STORE_NOT_FOUND": "Mağaza bulunamadı."
+  },
+  "vitrin": {
+    "kalanSaat": "{{saat}} sa {{dk}} dk",
+    "kalanSaatTam": "{{saat}} sa",
+    "kalanDk": "{{dk}} dk",
+    "sonDk": "SON {{dk}} DK",
+    "acilis": "{{saat}} açılıyor",
+    "yarinAcilis": "yarın {{saat}} açılıyor",
+    "tukendi": "TÜKENDİ",
+    "degerBandi": "{{band}} değerinde",
+    "kat": "{{kat}} değer",
+    "stok": "son {{adet}}",
+    "stokAlarm": "SON {{adet}}",
+    "sureSaat": "{{saat}} saat {{dk}} dakika",
+    "sureSaatTam": "{{saat}} saat",
+    "sureDk": "{{dk}} dakika",
+    "erisim": "{{dukkan}}. {{paket}}. {{fiyat}} lira, {{degerMin}} ile {{degerMax}} lira değerinde, {{kat}} kat değer. Son {{adet}} paket. Alış {{pencere}}, kapanmasına {{kalan}}. {{mesafe}}, {{yurume}} dakika yürüme.",
+    "erisimAcilmadi": "{{dukkan}}. {{paket}}. {{fiyat}} lira, {{degerMin}} ile {{degerMax}} lira değerinde, {{kat}} kat değer. Son {{adet}} paket. Alış {{pencere}}, {{acilis}}. {{mesafe}}, {{yurume}} dakika yürüme.",
+    "erisimTukendi": "{{dukkan}}. {{paket}}. Tükendi. {{acilis}}."
+  },
+  "vitrinInceleme": {
+    "baslik": "VİTRİN KARTI — İNCELEME",
+    "altBaslik": "Dört gerçek teklif · altı zaman · üç palet",
+    "parcalar": "PARÇALAR",
+    "tenteler": "TENTE — dükkânın kalıcı kimliği",
+    "hapler": "ZAMAN HAPI",
+    "stoklar": "STOK ÇİPİ",
+    "cubuklar": "DEĞER ÇUBUĞU",
+    "fazGece": "GECE",
+    "fazAlacakaranlik": "ALACAKARANLIK",
+    "fazGunduz": "GÜNDÜZ",
+    "zaman3sa": "3 SAAT KALA · kepenk 0,08",
+    "zaman90dk": "90 DAKİKA KALA · kepenk 0,50",
+    "zaman56dk": "56 DAKİKA KALA · kepenk 0,69",
+    "zaman20dk": "20 DAKİKA KALA · kepenk 0,78",
+    "zamanAcilmadi": "AÇILMADI · kepenk 0,78",
+    "zamanTukendi": "TÜKENDİ · kepenk 1,00"
   }
 }

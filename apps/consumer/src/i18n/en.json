@@ -360,5 +360,42 @@
     "ACCOUNT_DELETED": "This account can't sign in.",
     "PAYMENT_PROVIDER_UNAVAILABLE": "Payment couldn't be started. Please try again.",
     "STORE_NOT_FOUND": "Store not found."
+  },
+  "vitrin": {
+    "kalanSaat": "{{saat}} h {{dk}} m",
+    "kalanSaatTam": "{{saat}} h",
+    "kalanDk": "{{dk}} m",
+    "sonDk": "LAST {{dk}} MIN",
+    "acilis": "opens at {{saat}}",
+    "yarinAcilis": "opens tomorrow at {{saat}}",
+    "tukendi": "SOLD OUT",
+    "degerBandi": "worth {{band}}",
+    "kat": "{{kat}} value",
+    "stok": "{{adet}} left",
+    "stokAlarm": "{{adet}} LEFT",
+    "sureSaat": "{{saat}} hours {{dk}} minutes",
+    "sureSaatTam": "{{saat}} hours",
+    "sureDk": "{{dk}} minutes",
+    "erisim": "{{dukkan}}. {{paket}}. {{fiyat}} lira, worth {{degerMin}} to {{degerMax}} lira, {{kat}} times the value. {{adet}} left. Pickup {{pencere}}, closes in {{kalan}}. {{mesafe}}, {{yurume}} minutes on foot.",
+    "erisimAcilmadi": "{{dukkan}}. {{paket}}. {{fiyat}} lira, worth {{degerMin}} to {{degerMax}} lira, {{kat}} times the value. {{adet}} left. Pickup {{pencere}}, {{acilis}}. {{mesafe}}, {{yurume}} minutes on foot.",
+    "erisimTukendi": "{{dukkan}}. {{paket}}. Sold out. {{acilis}}."
+  },
+  "vitrinInceleme": {
+    "baslik": "OFFER CARD — REVIEW",
+    "altBaslik": "Four real offers · six times · three palettes",
+    "parcalar": "PARTS",
+    "tenteler": "AWNING — the shop's permanent mark",
+    "hapler": "TIME PILL",
+    "stoklar": "STOCK CHIP",
+    "cubuklar": "VALUE BAR",
+    "fazGece": "NIGHT",
+    "fazAlacakaranlik": "TWILIGHT",
+    "fazGunduz": "DAY",
+    "zaman3sa": "3 HOURS LEFT · shutter 0.08",
+    "zaman90dk": "90 MINUTES LEFT · shutter 0.50",
+    "zaman56dk": "56 MINUTES LEFT · shutter 0.69",
+    "zaman20dk": "20 MINUTES LEFT · shutter 0.78",
+    "zamanAcilmadi": "NOT OPEN YET · shutter 0.78",
+    "zamanTukendi": "SOLD OUT · shutter 1.00"
   }
 }

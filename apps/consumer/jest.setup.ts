@@ -56,6 +56,13 @@ jest.mock("expo-notifications", () => ({
 }));
 
 jest.mock("expo-device", () => ({ isDevice: false }));
+jest.mock("expo-haptics", () => ({
+  notificationAsync: jest.fn(() => Promise.resolve()),
+  impactAsync: jest.fn(() => Promise.resolve()),
+  NotificationFeedbackType: { Success: "success", Warning: "warning", Error: "error" },
+  ImpactFeedbackStyle: { Light: "light", Medium: "medium", Heavy: "heavy" },
+}));
+
 
 // The real package resolves to its NATIVE implementation under Jest's
 // node/haste environment (expecting a real native bridge that doesn't
