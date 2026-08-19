@@ -39,8 +39,20 @@ export function TeslimSeli({
   const { t } = useTranslation();
   const parlaklik = useRef(new Animated.Value(0)).current;
 
+  // The callback is held in a ref and kept OUT of the effect's deps. It is
+  // the one prop a caller is most likely to pass as an inline arrow, and
+  // this component is mounted on a screen that re-renders once a second
+  // (redeem's live clock). With `onBitti` in the deps the effect tore the
+  // sequence down and restarted it every second: the flood never reached
+  // its fade, `finished` never came back true, and the overlay never
+  // unmounted — leaving the customer on a full-bleed lamp, at brightness
+  // 1.0 with auto-lock off, with the ticket and both buttons sealed behind
+  // it and no way out but force-quitting.
+  const bittiRef = useRef(onBitti);
+  bittiRef.current = onBitti;
+
   useEffect(() => {
-    const sonra = () => onBitti?.();
+    const sonra = () => bittiRef.current?.();
     if (azaltHareket === true) {
       parlaklik.setValue(1);
       const zamanlayici = setTimeout(() => {
@@ -68,7 +80,7 @@ export function TeslimSeli({
       if (finished) sonra();
     });
     return () => dizi.stop();
-  }, [azaltHareket, onBitti, parlaklik]);
+  }, [azaltHareket, parlaklik]);
 
   return (
     <Animated.View
