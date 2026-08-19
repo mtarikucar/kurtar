@@ -32,7 +32,7 @@ export function Kod({ kod, palet }: { kod: string; palet: Palet }) {
       importantForAccessibility="no-hide-descendants"
     >
       <Text
-        style={[yazi.label, styles.etiket, { color: palet.yaziSis }]}
+        style={[yazi.label, styles.etiket, { color: palet.yaziSisCukur }]}
         maxFontSizeMultiplier={1.3}
       >
         {t("kepenk.kodEtiketi")}
@@ -42,7 +42,7 @@ export function Kod({ kod, palet }: { kod: string; palet: Palet }) {
           <Text
             key={`${hane}-${i}`}
             testID="kepenk-kod-hanesi"
-            style={[yazi.code, styles.hane, { color: palet.yaziAna }]}
+            style={[yazi.code, styles.hane, { color: palet.yaziAnaCukur }]}
             maxFontSizeMultiplier={yazi.code.maxFontSizeMultiplier}
           >
             {hane}

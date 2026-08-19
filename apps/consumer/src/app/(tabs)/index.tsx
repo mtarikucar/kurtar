@@ -232,7 +232,7 @@ export default function KesifEkrani() {
 
       {konumReddedildi ? (
         <View style={[styles.konumBanner, { borderColor: palet.cizgiKil }]}>
-          <Text style={[yazi.data, styles.konumMetni, { color: palet.yaziSis }]}>
+          <Text style={[yazi.data, styles.konumMetni, { color: palet.yaziSisZemin }]}>
             {t("kesif.konumKapali", { bolge: KADIKOY_ADI })}
           </Text>
           <Pressable
@@ -241,13 +241,13 @@ export default function KesifEkrani() {
             accessibilityLabel={t("kesif.konumAc")}
             hitSlop={8}
           >
-            <Text style={[yazi.label, { color: palet.sodyumYazi }]}>{t("kesif.konumAc")}</Text>
+            <Text style={[yazi.label, { color: palet.sodyumYaziZemin }]}>{t("kesif.konumAc")}</Text>
           </Pressable>
         </View>
       ) : null}
 
       <View style={styles.ustBilgi}>
-        <Text style={[yazi.data, { color: palet.yaziSis }]} maxFontSizeMultiplier={1.3}>
+        <Text style={[yazi.data, { color: palet.yaziSisZemin }]} maxFontSizeMultiplier={1.3}>
           {basaligMetni}
         </Text>
       </View>

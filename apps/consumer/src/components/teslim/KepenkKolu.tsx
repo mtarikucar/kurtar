@@ -209,7 +209,7 @@ export function KepenkKolu({
         {etiket}
       </Text>
       <Text
-        style={[yazi.data, { color: palet.yaziSis }]}
+        style={[yazi.data, { color: palet.hapYaziSis }]}
         numberOfLines={1}
         maxFontSizeMultiplier={1.3}
       >

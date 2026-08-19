@@ -202,6 +202,7 @@ export default function TeklifDetayiEkrani() {
           etiket={t("common.back")}
           onPress={() => router.back()}
           palet={palet}
+          zemin="sokak"
           testID="teklif-geri"
         />
         <View style={styles.esnek} />
@@ -213,6 +214,7 @@ export default function TeklifDetayiEkrani() {
             favoriDegistir.mutate({ storeId: dukkan.id, isFavorite: favori })
           }
           palet={palet}
+          zemin="sokak"
           testID="teklif-favori"
         />
         <IkonDugmesi
@@ -220,6 +222,7 @@ export default function TeklifDetayiEkrani() {
           etiket={t("teklif.paylas")}
           onPress={paylas}
           palet={palet}
+          zemin="sokak"
           testID="teklif-paylas"
         />
       </View>
@@ -262,14 +265,14 @@ export default function TeklifDetayiEkrani() {
         <View style={styles.bolum}>
           <BolumBasligi etiket={t("teklif.vitrinBaslik")} palet={palet} />
           <Text
-            style={[yazi.paket, { color: palet.yaziAna }]}
+            style={[yazi.paket, { color: palet.yaziAnaZemin }]}
             maxFontSizeMultiplier={1.5}
           >
             {teklif.template.title}
           </Text>
           {etiketler.length > 0 ? (
             <Text
-              style={[yazi.body, styles.aralikli, { color: palet.yaziSis }]}
+              style={[yazi.body, styles.aralikli, { color: palet.yaziSisZemin }]}
               maxFontSizeMultiplier={1.5}
             >
               {etiketler.join(" · ")}
@@ -278,7 +281,7 @@ export default function TeklifDetayiEkrani() {
           {/* The one place the app explains its own constraint, in plain
               Turkish, once. */}
           <Text
-            style={[yazi.body, styles.aralikli, { color: palet.yaziSis }]}
+            style={[yazi.body, styles.aralikli, { color: palet.yaziSisZemin }]}
             maxFontSizeMultiplier={1.5}
           >
             {t("teklif.vitrinAciklama")}
@@ -288,7 +291,7 @@ export default function TeklifDetayiEkrani() {
         <View style={styles.bolum}>
           <View style={styles.fiyatSatiri}>
             <Text
-              style={[yazi.priceXl, { color: palet.sodyumYazi }]}
+              style={[yazi.priceXl, { color: palet.sodyumYaziZemin }]}
               maxFontSizeMultiplier={1.3}
             >
               {fiyatMetni(teklif.template.priceCents)}
@@ -297,14 +300,14 @@ export default function TeklifDetayiEkrani() {
               <DegerCubugu oran={oran} palet={palet} etiket={false} />
             </View>
             <Text
-              style={[yazi.micro, { color: palet.sodyumYazi }]}
+              style={[yazi.micro, { color: palet.sodyumYaziZemin }]}
               maxFontSizeMultiplier={1.3}
             >
               {t("vitrin.kat", { kat: katMetni(oran) })}
             </Text>
           </View>
           <Text
-            style={[yazi.data, { color: palet.yaziSis }]}
+            style={[yazi.data, { color: palet.yaziSisZemin }]}
             maxFontSizeMultiplier={1.3}
           >
             {t("vitrin.degerBandi", {
@@ -357,7 +360,7 @@ export default function TeklifDetayiEkrani() {
             }
           />
           <Text
-            style={[yazi.body, { color: palet.yaziAna }]}
+            style={[yazi.body, { color: palet.yaziAnaZemin }]}
             maxFontSizeMultiplier={1.5}
           >
             {dukkan.address}
@@ -369,6 +372,7 @@ export default function TeklifDetayiEkrani() {
                 onPress={haritayaGit}
                 palet={palet}
                 ikincil
+                zemin="sokak"
                 testID="teklif-harita"
               />
             </View>
@@ -378,6 +382,7 @@ export default function TeklifDetayiEkrani() {
                 onPress={yolTarifi}
                 palet={palet}
                 ikincil
+                zemin="sokak"
                 testID="teklif-yol"
               />
             </View>
@@ -404,7 +409,7 @@ export default function TeklifDetayiEkrani() {
         <View style={styles.bolum}>
           <BolumBasligi etiket={t("teklif.iade")} palet={palet} />
           <Text
-            style={[yazi.body, { color: palet.yaziSis }]}
+            style={[yazi.body, { color: palet.yaziSisZemin }]}
             maxFontSizeMultiplier={1.5}
           >
             {t("offerDetail.noRefundBody", { hours: IPTAL_SAATI })}

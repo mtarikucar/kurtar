@@ -8,7 +8,7 @@
  * session, and the question this script exists to answer is whether those
  * screens look like one app.
  *
- *   node scripts/tam-gezinti.mjs /tmp/gezinti [gece|gunduz]
+ *   node scripts/tam-gezinti.mjs /tmp/gezinti [gece|alacakaranlik|gunduz]
  *
  * Login is real (the OTP is read off the backend's dev log), so every
  * screen shows real seeded data rather than a mock. The clock is faked
@@ -26,10 +26,16 @@ const BACKEND_LOG = process.env.BACKEND_LOG ?? "/tmp/kurtar-backend-e2e.log";
 const PHONE = "5551110004";
 fs.mkdirSync(CIKTI, { recursive: true });
 
-// Both instants are on the seeded offers' own calendar day, inside the
-// seeded 19:00-21:00 pickup window for gece and before it for gunduz.
+// Every instant is on the seeded offers' own calendar day, inside the
+// seeded 19:00-21:00 pickup window for gece and alacakaranlik, before it
+// for gunduz. Sunset in Istanbul that day is 20:00, so alacakaranlik
+// (sunset-45min .. sunset+25min) is 19:15-20:25 and 19:45 sits squarely
+// inside it AND inside the pickup window — which is the whole point of
+// the phase: it is the hour the shutters come down while the shops are
+// still open.
 const ZAMAN = {
   gece: new Date("2026-08-19T17:35:00.000Z"), // 20:35 Istanbul
+  alacakaranlik: new Date("2026-08-19T16:45:00.000Z"), // 19:45 Istanbul
   gunduz: new Date("2026-08-19T09:30:00.000Z"), // 12:30 Istanbul
 }[FAZ];
 if (!ZAMAN) throw new Error(`unknown phase: ${FAZ}`);
@@ -171,6 +177,69 @@ await sekmeye("Keşfet");
 await page.getByText("Pastane Sürpriz Kutusu", { exact: false }).first().click();
 await page.waitForTimeout(1800);
 await cek("teklif-detay");
+
+// ---- The money loop, all the way to an open shutter. Everything past
+// this point paints `bg.derin` rather than the street, so it is the only
+// part of the walk that photographs the recess: buy -> pay -> the
+// confirmation's lit interior -> the redeem screen, closed and open. ----
+await page.getByTestId("offer-buy-cta").click();
+await page.waitForTimeout(1500);
+await cek("satin-alma");
+
+await page.getByTestId("purchase-consent-checkbox").click();
+await page.waitForTimeout(300);
+await page.getByTestId("purchase-confirm").click();
+await page.waitForTimeout(2500);
+await cek("odeme");
+
+// The mock provider confirms on its own; the screen polls for it.
+await page
+  .getByTestId("satin-alma-onayi")
+  .waitFor({ timeout: 30000 })
+  .catch(() => console.log("confirmation did not arrive"));
+await page.waitForTimeout(3200); // let the shutter finish rolling up
+await cek("onay");
+
+await page.getByTestId("onay-kepengi-ac").click();
+await page.waitForTimeout(2000);
+await cek("kepenk-kapali");
+
+// The shutter is raised by dragging its handle ≥140pt up. Two short
+// drags reveal the app's own text fallback, which is the documented way
+// out for anyone the gesture fails — including this script.
+const kol = page.getByTestId("kepenk-kol-suruklenir");
+if (await kol.count()) {
+  const kutu = await kol.boundingBox();
+  if (kutu) {
+    const x = kutu.x + kutu.width / 2;
+    const y = kutu.y + kutu.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let adim = 1; adim <= 12; adim += 1) {
+      await page.mouse.move(x, y - (200 * adim) / 12, { steps: 2 });
+      await page.waitForTimeout(20);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(1600);
+  }
+}
+if (!(await page.getByTestId("kepenk-acik").count())) {
+  for (let deneme = 0; deneme < 2; deneme += 1) {
+    const kutu = await kol.boundingBox();
+    if (!kutu) break;
+    await page.mouse.move(kutu.x + kutu.width / 2, kutu.y + kutu.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(kutu.x + kutu.width / 2, kutu.y + kutu.height / 2 - 20, { steps: 4 });
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+  }
+  const yardim = page.getByTestId("kepenk-yardim");
+  if (await yardim.count()) {
+    await yardim.click();
+    await page.waitForTimeout(1600);
+  }
+}
+await cek("kepenk-acik");
 
 // ---- Signed-out surfaces, on their own page so the login above never
 // had to run against a frozen clock. ----

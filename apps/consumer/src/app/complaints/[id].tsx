@@ -76,16 +76,17 @@ export default function ComplaintDetailScreen() {
         >
           <ScrollView contentContainerStyle={styles.icerik}>
             <View style={styles.ozetSatiri}>
-              <Text style={[yazi.title, styles.kategori, { color: palet.yaziAna }]}>
+              <Text style={[yazi.title, styles.kategori, { color: palet.yaziAnaZemin }]}>
                 {t(`complaint.categories.${data.category}`)}
               </Text>
               <PanelPill
                 label={t(`complaints.status.${data.status}`)}
                 ton={DURUM_TONU[data.status] ?? "notr"}
+                zemin="sokak"
               />
             </View>
-            <Text style={[yazi.body, { color: palet.yaziAna }]}>{data.description}</Text>
-            <Text style={[yazi.data, { color: palet.yaziSis }]}>
+            <Text style={[yazi.body, { color: palet.yaziAnaZemin }]}>{data.description}</Text>
+            <Text style={[yazi.data, { color: palet.yaziSisZemin }]}>
               {data.status === "RESOLVED" && data.resolvedAt
                 ? t("complaints.resolvedAt", { date: formatShortDate(data.resolvedAt) })
                 : t("complaints.slaDeadline", { date: formatShortDate(data.slaDeadlineAt) })}
@@ -93,7 +94,7 @@ export default function ComplaintDetailScreen() {
 
             <View style={styles.dizi}>
               {data.messages.length === 0 ? (
-                <Text style={[yazi.body, styles.bosDizi, { color: palet.yaziSis }]}>
+                <Text style={[yazi.body, styles.bosDizi, { color: palet.yaziSisZemin }]}>
                   {t("complaints.threadEmpty")}
                 </Text>
               ) : (

@@ -72,7 +72,7 @@ export default function OrderDetailScreen() {
             />
           </View>
           {data.storeDistrict ? (
-            <Text style={[yazi.data, styles.ilce, { color: palet.yaziSis }]}>
+            <Text style={[yazi.data, styles.ilce, { color: palet.yaziSisZemin }]}>
               {data.storeDistrict}
             </Text>
           ) : null}

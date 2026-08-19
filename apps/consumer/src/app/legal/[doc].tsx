@@ -46,13 +46,13 @@ export default function LegalDocScreen() {
       </ScrollView>
 
       <ScrollView contentContainerStyle={styles.icerik}>
-        <Text style={[yazi.title, { color: palet.yaziAna }]}>{active.title.tr}</Text>
-        <Text style={[yazi.data, styles.versiyon, { color: palet.yaziSis }]}>
+        <Text style={[yazi.title, { color: palet.yaziAnaZemin }]}>{active.title.tr}</Text>
+        <Text style={[yazi.data, styles.versiyon, { color: palet.yaziSisZemin }]}>
           {active.versionLabel.tr}
         </Text>
 
         {active.intro.tr.map((paragraph, i) => (
-          <Text key={`intro-${i}`} style={[yazi.body, styles.govde, { color: palet.yaziSis }]}>
+          <Text key={`intro-${i}`} style={[yazi.body, styles.govde, { color: palet.yaziSisZemin }]}>
             {paragraph}
           </Text>
         ))}
@@ -60,14 +60,14 @@ export default function LegalDocScreen() {
         {active.blocks.tr.map((block, i) => (
           <View key={`block-${i}`} style={styles.blok}>
             {block.heading ? (
-              <Text style={[yazi.bodyStrong, styles.blokBasligi, { color: palet.yaziAna }]}>
+              <Text style={[yazi.bodyStrong, styles.blokBasligi, { color: palet.yaziAnaZemin }]}>
                 {block.heading}
               </Text>
             ) : null}
             {block.paragraphs.map((paragraph, j) => (
               <Text
                 key={`block-${i}-${j}`}
-                style={[yazi.body, styles.govde, { color: palet.yaziSis }]}
+                style={[yazi.body, styles.govde, { color: palet.yaziSisZemin }]}
               >
                 {paragraph}
               </Text>

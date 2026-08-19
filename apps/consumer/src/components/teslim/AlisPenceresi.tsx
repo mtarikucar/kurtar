@@ -11,6 +11,9 @@ import { kis } from "../kepenk/olcum";
  * plus "now" carry their literal numbers in a fixed place. The marker is
  * the only thing on the block that moves, and it moves on the app's 60s
  * bucket like every other clock-driven thing — it never creeps.
+ *
+ * It is only ever rendered inside a `<Blok vurgu/>`, which paints
+ * `yuzeyKaldirim`, so every ink here is card type.
  */
 export function AlisPenceresi({
   simdiMs,

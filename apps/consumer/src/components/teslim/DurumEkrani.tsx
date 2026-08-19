@@ -58,7 +58,7 @@ export function DurumEkrani({
         <KapaliCephe tur={tur} palet={palet} baslik={baslik} />
         {govde ? (
           <Text
-            style={[yazi.body, styles.govde, { color: palet.yaziSis }]}
+            style={[yazi.body, styles.govde, { color: palet.yaziSisZemin }]}
             maxFontSizeMultiplier={1.5}
           >
             {govde}
@@ -66,7 +66,13 @@ export function DurumEkrani({
         ) : null}
         {eylemEtiketi && onEylem ? (
           <View style={styles.eylem}>
-            <Dugme etiket={eylemEtiketi} onPress={onEylem} palet={palet} testID="durum-eylem" />
+            <Dugme
+              etiket={eylemEtiketi}
+              onPress={onEylem}
+              palet={palet}
+              zemin="sokak"
+              testID="durum-eylem"
+            />
           </View>
         ) : null}
         {ikinciEtiket && onIkinci ? (
@@ -76,6 +82,7 @@ export function DurumEkrani({
               onPress={onIkinci}
               palet={palet}
               ikincil
+              zemin="sokak"
               testID="durum-ikinci"
             />
           </View>
@@ -155,7 +162,7 @@ function KapaliCephe({
         </View>
       ) : (
         <Text
-          style={[yazi.title, styles.baslik, { color: palet.yaziAna }]}
+          style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}
           maxFontSizeMultiplier={1.5}
         >
           {baslik}

@@ -9,7 +9,7 @@ export function PanelLoadingState({ label }: { label?: string }) {
   return (
     <View style={styles.kap} accessibilityRole="progressbar">
       <ActivityIndicator color={palet.sodyumDolgu} size="large" />
-      <Text style={[yazi.body, { color: palet.yaziSis }]}>{label ?? t("common.loading")}</Text>
+      <Text style={[yazi.body, { color: palet.yaziSisZemin }]}>{label ?? t("common.loading")}</Text>
     </View>
   );
 }

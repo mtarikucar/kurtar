@@ -1,6 +1,7 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text } from "react-native";
 import { usePalet } from "../../design/theme";
 import { m, r, s, yazi } from "../../design/tokens";
+import { anaYazi, type YaziZemini } from "../../design/zemin";
 
 type Varyant = "birincil" | "hayalet" | "tehlike";
 
@@ -18,6 +19,7 @@ export function PanelButton({
   disabled,
   loading,
   testID,
+  zemin = "kart",
 }: {
   label: string;
   onPress: () => void;
@@ -25,6 +27,11 @@ export function PanelButton({
   disabled?: boolean;
   loading?: boolean;
   testID?: string;
+  /** Only the `hayalet` variant reads this — the other two ink from their
+   * own fill. The ghost button is the one that borrows the surface it
+   * stands on, and it stands on both: the street under an empty state,
+   * the ticket card under an order's cancel action. */
+  zemin?: YaziZemini;
 }) {
   const palet = usePalet();
   const kapali = disabled || loading;
@@ -40,7 +47,7 @@ export function PanelButton({
       ? palet.sodyumMurekkep
       : varyant === "tehlike"
         ? palet.tenteMurekkep
-        : palet.yaziAna;
+        : anaYazi(palet, zemin);
 
   return (
     <Pressable

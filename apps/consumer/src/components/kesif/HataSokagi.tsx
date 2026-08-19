@@ -69,7 +69,7 @@ export function HataSokagi({
           />
         </Svg>
         <Text
-          style={[yazi.data, styles.metin, { color: palet.yaziAna }]}
+          style={[yazi.data, styles.metin, { color: palet.plakaYazi }]}
           maxFontSizeMultiplier={1.3}
         >
           {t("kesif.hata")}

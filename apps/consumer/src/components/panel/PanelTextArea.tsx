@@ -2,6 +2,9 @@ import { StyleSheet, Text, TextInput, View, type TextInputProps } from "react-na
 import { usePalet } from "../../design/theme";
 import { r, s, yazi } from "../../design/tokens";
 
+/** The label sits on the screen's ground; the field paints its own
+ * `yuzeyKaldirim`, so the placeholder and the entered text are card type.
+ * One component, two surfaces — this is the split the palette exists for. */
 export function PanelTextArea({
   label,
   style,
@@ -10,7 +13,7 @@ export function PanelTextArea({
   const palet = usePalet();
   return (
     <View style={styles.kap}>
-      <Text style={[yazi.label, { color: palet.yaziSis }]}>{label}</Text>
+      <Text style={[yazi.label, { color: palet.yaziSisZemin }]}>{label}</Text>
       <TextInput
         {...girisOzellikleri}
         accessibilityLabel={label}

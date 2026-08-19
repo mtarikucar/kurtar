@@ -18,6 +18,9 @@ import type { MapPaneProps } from "./MapPane.types";
  * every other surface (not the old generic empty-state icon). Callers
  * that also show a results list below the map (the dedicated Harita tab)
  * still show real data on web — only the literal map tile is unavailable.
+ *
+ * It paints `bgDerin` — this pane IS the map's own ground, not a card laid
+ * over it — so every word on it is recess type.
  */
 export function MapPane({ onSwitchToList }: MapPaneProps) {
   const { t } = useTranslation();
@@ -25,11 +28,11 @@ export function MapPane({ onSwitchToList }: MapPaneProps) {
 
   return (
     <View style={[styles.kap, { backgroundColor: palet.bgDerin }]}>
-      <Ionicons name="map-outline" size={28} color={palet.yaziSis} />
-      <Text style={[yazi.bodyStrong, styles.baslik, { color: palet.yaziAna }]}>
+      <Ionicons name="map-outline" size={28} color={palet.yaziSisCukur} />
+      <Text style={[yazi.bodyStrong, styles.baslik, { color: palet.yaziAnaCukur }]}>
         {t("discover.viewMap")}
       </Text>
-      <Text style={[yazi.body, styles.govde, { color: palet.yaziSis }]}>
+      <Text style={[yazi.body, styles.govde, { color: palet.yaziSisCukur }]}>
         {t("discover.mapUnavailableWeb")}
       </Text>
       <Pressable
@@ -42,7 +45,7 @@ export function MapPane({ onSwitchToList }: MapPaneProps) {
           pressed ? { opacity: 0.85 } : null,
         ]}
       >
-        <Text style={[yazi.label, { color: palet.yaziAna }]}>{t("discover.viewList")}</Text>
+        <Text style={[yazi.label, { color: palet.yaziAnaCukur }]}>{t("discover.viewList")}</Text>
       </Pressable>
     </View>
   );

@@ -2,6 +2,9 @@ import { Pressable, StyleSheet, Text } from "react-native";
 import { usePalet } from "../../design/theme";
 import { r, s, yazi } from "../../design/tokens";
 
+/** A filter chip. Unselected it is transparent, so its label is on
+ * whatever is behind it — and both callers (complaint/new, legal/[doc])
+ * put it straight on the `<PanelScreen/>` ground. */
 export function PanelChip({
   label,
   secili,
@@ -31,7 +34,7 @@ export function PanelChip({
       <Text
         style={[
           yazi.data,
-          { color: secili ? palet.sodyumMurekkep : palet.yaziSis },
+          { color: secili ? palet.sodyumMurekkep : palet.yaziSisZemin },
         ]}
         numberOfLines={1}
       >

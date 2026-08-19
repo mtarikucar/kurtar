@@ -175,9 +175,10 @@ export default function SatinAlmaEkrani() {
           etiket={t("common.back")}
           onPress={() => router.back()}
           palet={palet}
+          zemin="sokak"
           testID="alim-geri"
         />
-        <Text style={[yazi.title, { color: palet.yaziAna }]} numberOfLines={1}>
+        <Text style={[yazi.title, { color: palet.yaziAnaZemin }]} numberOfLines={1}>
           {t("purchase.title")}
         </Text>
         <View style={styles.ikonBosluk} />
@@ -186,16 +187,16 @@ export default function SatinAlmaEkrani() {
       <ScrollView contentContainerStyle={styles.icerik} showsVerticalScrollIndicator={false}>
         <View style={styles.bolum}>
           <Text
-            style={[yazi.tabelaLg, { color: palet.yaziAna }]}
+            style={[yazi.tabelaLg, { color: palet.yaziAnaZemin }]}
             numberOfLines={2}
             maxFontSizeMultiplier={1.4}
           >
             {trUpper(dukkanSorgusu.data?.store.name ?? "")}
           </Text>
-          <Text style={[yazi.paket, { color: palet.yaziSis }]} numberOfLines={2}>
+          <Text style={[yazi.paket, { color: palet.yaziSisZemin }]} numberOfLines={2}>
             {teklif.template.title}
           </Text>
-          <Text style={[yazi.data, { color: palet.yaziSis }]} numberOfLines={1}>
+          <Text style={[yazi.data, { color: palet.yaziSisZemin }]} numberOfLines={1}>
             {formatPickupWindow(teklif.pickupStartAt, teklif.pickupEndAt)}
           </Text>
         </View>

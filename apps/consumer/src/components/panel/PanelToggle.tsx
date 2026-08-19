@@ -44,7 +44,7 @@ export function PanelToggle({
         style={[
           styles.top,
           {
-            backgroundColor: value ? palet.sodyumMurekkep : palet.yaziAna,
+            backgroundColor: value ? palet.sodyumMurekkep : palet.yaziAnaZemin,
             transform: [{ translateX: value ? GENISLIK - TOP_CAPI - KENAR_BOSLUK * 2 : 0 }],
           },
         ]}

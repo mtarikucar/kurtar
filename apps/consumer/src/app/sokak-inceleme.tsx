@@ -99,15 +99,15 @@ export default function SokakIncelemeEkrani() {
   return (
     <SafeAreaView style={[styles.kok, { backgroundColor: gece.bgAsfalt }]} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.icerik}>
-        <Text style={[yazi.tabelaLg, { color: gece.yaziAna }]}>SENİN SOKAĞIN — İNCELEME</Text>
-        <Text style={[yazi.data, styles.altBaslik, { color: gece.yaziSis }]}>
+        <Text style={[yazi.tabelaLg, { color: gece.yaziAnaZemin }]}>SENİN SOKAĞIN — İNCELEME</Text>
+        <Text style={[yazi.data, styles.altBaslik, { color: gece.yaziSisZemin }]}>
           17 kurtarma · 6 dükkân · 4 ay · üç palet — gerçek şikayet
           verisinin veremediği çeşitlilik
         </Text>
 
         {FAZLAR.map((faz) => (
           <View key={faz} style={styles.fazBlok}>
-            <Text style={[yazi.label, { color: gece.yaziSis }]}>{FAZ_ADI[faz]}</Text>
+            <Text style={[yazi.label, { color: gece.yaziSisZemin }]}>{FAZ_ADI[faz]}</Text>
             <ClockProvider sabitZaman={new Date("2026-08-19T18:00:00.000Z")}>
               <ThemeProvider fazZorla={faz}>
                 <View
@@ -126,17 +126,17 @@ export default function SokakIncelemeEkrani() {
           </View>
         ))}
 
-        <Text style={[yazi.tabelaLg, styles.altBaslik, { color: gece.yaziAna, marginTop: s.s8 }]}>
+        <Text style={[yazi.tabelaLg, styles.altBaslik, { color: gece.yaziAnaZemin, marginTop: s.s8 }]}>
           DÜŞÜK SAYIM — 0 / 1 / 2 / 3 KURTARMA
         </Text>
-        <Text style={[yazi.data, styles.altBaslik, { color: gece.yaziSis }]}>
+        <Text style={[yazi.data, styles.altBaslik, { color: gece.yaziSisZemin }]}>
           Her kullanıcının fiilen geçtiği durum, gece ve gündüz — review
           bulgusu: tek kurtarma tek başına bir 26pt kutuydu, sokak değildi.
         </Text>
 
         {DUSUK_FAZLAR.map((faz) => (
           <View key={faz} style={styles.fazBlok}>
-            <Text style={[yazi.label, { color: gece.yaziSis }]}>{FAZ_ADI[faz]}</Text>
+            <Text style={[yazi.label, { color: gece.yaziSisZemin }]}>{FAZ_ADI[faz]}</Text>
             {DUSUK_SAYIMLAR.map((adet) => (
               <ClockProvider key={adet} sabitZaman={new Date("2026-08-19T18:00:00.000Z")}>
                 <ThemeProvider fazZorla={faz}>
@@ -146,7 +146,7 @@ export default function SokakIncelemeEkrani() {
                       { backgroundColor: PALETLER[faz].bgAsfalt, borderColor: PALETLER[faz].cizgiKil },
                     ]}
                   >
-                    <Text style={[yazi.data, styles.dusukSayimEtiket, { color: PALETLER[faz].yaziSis }]}>
+                    <Text style={[yazi.data, styles.dusukSayimEtiket, { color: PALETLER[faz].yaziSisZemin }]}>
                       {adet} KURTARMA
                     </Text>
                     <SeninSokagin

@@ -46,18 +46,72 @@ export interface Palet {
   readonly metalKoyu: string;
   readonly metalDudak: string;
 
-  /** All primary type. */
+  /**
+   * Type on a CARD or PANEL surface (`yuzeyKaldirim` / `yuzeyYukselti`) —
+   * the painted sign, the ticket block, an input field, an order row.
+   *
+   * This is deliberately NOT "all primary type" any more. A palette whose
+   * card is pale ivory and whose ground is a dark street cannot ink both
+   * with the same pair, and the phase where that bites is exactly the
+   * phase the app is used in most (see `yaziAnaZemin` below).
+   */
   readonly yaziAna: string;
-  /** All secondary type. */
+  /** Secondary type on a card/panel surface. */
   readonly yaziSis: string;
+
+  /**
+   * Type on the STREET ground (`bgAsfalt`) — everything outside a card:
+   * screen titles, section labels, the discovery header, empty and error
+   * states, the distance spine, every `Screen`/`PanelScreen` child that
+   * isn't inside a painted block.
+   *
+   * The twilight street is a mid-slate (`#7A868C`). Its ENTIRE contrast
+   * range is 5.62:1 (pure black) — no light ink reaches even 3.8:1 there —
+   * so the twilight ground ink is the deepest zinc in the palette and its
+   * second level is only 0.18 of a ratio point behind it. On that ground
+   * the hierarchy is carried by the type scale (Chivo Mono 12 `data`
+   * against Archivo 15/17), not by tone. That is a measured property of
+   * `#7A868C`, not a preference: see design-contrast.test.ts, which pins
+   * the ceiling as well as the floor.
+   */
+  readonly yaziAnaZemin: string;
+  /** Secondary type on the street ground. */
+  readonly yaziSisZemin: string;
+
+  /**
+   * Type on the RECESS (`bgDerin`) — map water, the price pin, the web
+   * map pane, and the two screens you spend standing inside a shop with
+   * its light on (redeem, purchase confirmation).
+   *
+   * A third family rather than a second, because the recess inverts one
+   * phase EARLIER than the street does, which is what dusk physically
+   * is: the interiors have already gone to night while the road still
+   * holds the sky. At `alacakaranlik` the street takes dark ink and the
+   * recess takes lit ivory, and no single ink can do both — the street
+   * admits nothing lighter than 3.74:1 and the recess nothing darker
+   * than 1.39:1.
+   */
+  readonly yaziAnaCukur: string;
+  /** Secondary type on the recess. */
+  readonly yaziSisCukur: string;
 
   /** Sodium as a FILL (CTA, value bar, lit dots) — the same #FFB23F in
    * every phase, because a lit sodium lamp is the same colour at noon. */
   readonly sodyumDolgu: string;
-  /** Sodium as TYPE. On light grounds #FFB23F fails contrast, so the day
-   * phases use the darker amber (spec §1.1: "#FFB23F survives only as a
-   * fill with dark ink"). */
+  /** Sodium as TYPE on a CARD. On light surfaces #FFB23F fails contrast,
+   * so the day phases use the darker amber (spec §1.1: "#FFB23F survives
+   * only as a fill with dark ink"). */
   readonly sodyumYazi: string;
+  /** Sodium as TYPE on the street ground. Money is the one thing this app
+   * says in colour, and it has to survive the same three grounds the type
+   * does: at dusk the street's ceiling is 5.62:1, so the lamp is cooked
+   * down to a burnt amber that separates from the zinc type by TEMPERATURE
+   * rather than by luminance, because luminance is the one thing `#7A868C`
+   * has none of to give. */
+  readonly sodyumYaziZemin: string;
+  /** Sodium as TYPE on the recess — where the lamp is actually on, so it
+   * is the lamp's own colour rather than a cooked-down one. */
+  readonly sodyumYaziCukur: string;
   /** Ink ON a sodium fill. */
   readonly sodyumMurekkep: string;
 
@@ -121,6 +175,12 @@ export interface Palet {
   readonly hapZemin: string;
   readonly hapCizgi: string;
   readonly hapYazi: string;
+  /** Secondary type on the same dark plate — the sub-label under the
+   * redeem handle. The plate is `#12181F` in every phase (it rides the
+   * zinc shutter), so this is the night's own slate in every phase too;
+   * taking `yaziSis` here put a 2.47:1 line under the app's single most
+   * important affordance in both light phases. */
+  readonly hapYaziSis: string;
 
   /** Shutter detail: the vertical seam and the specular line above the lip. */
   readonly kepenkDikey: string;
@@ -146,8 +206,18 @@ const GECE: Palet = Object.freeze({
   metalDudak: "#2A3330",
   yaziAna: "#F2E6CE",
   yaziSis: "#9FB0AC",
+  // At night the card, the street and the recess are all dark, so one
+  // pair serves all three surfaces and the three families collapse onto
+  // the same two hexes. Splitting them costs nothing here and is what
+  // lets the two light phases differ without a fork in any component.
+  yaziAnaZemin: "#F2E6CE",
+  yaziSisZemin: "#9FB0AC",
+  yaziAnaCukur: "#F2E6CE",
+  yaziSisCukur: "#9FB0AC",
   sodyumDolgu: "#FFB23F",
   sodyumYazi: "#FFB23F",
+  sodyumYaziZemin: "#FFB23F",
+  sodyumYaziCukur: "#FFB23F",
   sodyumMurekkep: "#12181F",
   tenteDolgu: "#E4593F",
   tenteYazi: "#E4593F",
@@ -173,6 +243,7 @@ const GECE: Palet = Object.freeze({
   hapZemin: "#0E141A",
   hapCizgi: "#5E6A67",
   hapYazi: "#F2E6CE",
+  hapYaziSis: "#9FB0AC",
   kepenkDikey: "rgba(242,230,206,0.10)",
   kepenkDudakIsik: "rgba(242,230,206,0.15)",
   cubukRay: "rgba(242,230,206,0.14)",
@@ -198,8 +269,21 @@ const GUNDUZ: Palet = Object.freeze({
   metalDudak: "#2A3330",
   yaziAna: "#12181F",
   yaziSis: "#4B5A58",
+  // The pale slate street is light enough that the card pair carries
+  // straight over onto it (11.38:1 / 4.61:1), so daylight's street
+  // rendering is unchanged by the split.
+  yaziAnaZemin: "#12181F",
+  yaziSisZemin: "#4B5A58",
+  // The recess is a step darker than the street and that step is exactly
+  // what `#4B5A58` could not afford: 3.82:1 on `#B4BEC1`. The recess
+  // secondary is therefore one shade deeper — 5.10:1 — and it is the same
+  // zinc, not a new hue.
+  yaziAnaCukur: "#12181F",
+  yaziSisCukur: "#3B4745",
   sodyumDolgu: "#FFB23F",
   sodyumYazi: "#8A4A05",
+  sodyumYaziZemin: "#7A4104",
+  sodyumYaziCukur: "#6E3A04",
   sodyumMurekkep: "#12181F",
   tenteDolgu: "#E4593F",
   tenteYazi: "#A8321F",
@@ -230,6 +314,7 @@ const GUNDUZ: Palet = Object.freeze({
   hapZemin: "#12181F",
   hapCizgi: "#4E5A57",
   hapYazi: "#F2E6CE",
+  hapYaziSis: "#9FB0AC",
   kepenkDikey: "rgba(242,230,206,0.10)",
   kepenkDudakIsik: "rgba(242,230,206,0.15)",
   cubukRay: "rgba(18,24,31,0.14)",
@@ -237,17 +322,37 @@ const GUNDUZ: Palet = Object.freeze({
 } as const);
 
 /**
- * Twilight — sunset−45min .. sunset+25min. The spec gives this palette as
- * a parenthetical pair (bg #6E7A80, card #E3DAC8) and never measures it.
- * The ground is lightened to #7A868C: at #6E7A80 NOTHING clears 4.5:1 for
- * ground-level type (near-black tops out at 4.76:1 and pure black is not
- * in this palette), which would have broken the contrast floor the rest
- * of the spec holds. See design-contrast.test.ts.
+ * Twilight — sunset−45min .. sunset+25min, which is to say the hour the
+ * shutters actually come down: this is the app's most-seen palette, not
+ * its least. The spec gives it as a parenthetical pair (bg #6E7A80, card
+ * #E3DAC8) and never measures it. The ground is lightened to #7A868C: at
+ * #6E7A80 NOTHING clears 4.5:1 for ground-level type (near-black tops out
+ * at 4.76:1 and pure black is not in this palette).
+ *
+ * It is the only phase where the card and the ground fall on opposite
+ * sides of mid-lightness — pale ivory sign, dark street — and so the only
+ * phase where the three type families genuinely differ from one another.
+ * Every one of those differences is a measured consequence rather than a
+ * taste: see design-contrast.test.ts, which asserts the ceilings that
+ * force them as well as the floors they clear.
  */
 const ALACAKARANLIK: Palet = Object.freeze({
   faz: "alacakaranlik",
   bgAsfalt: "#7A868C",
-  bgDerin: "#5F6B72",
+  // The recess is NOT the street one shade down at this hour. At #5F6B72
+  // nothing could be written on it at all: the deepest zinc reaches
+  // 3.26:1, pure black 3.83:1, and the sign ivory 4.43:1 unlit and only
+  // 3.42:1 once the shop's own lamp lands on it — so every ink in and out
+  // of this palette failed on the redeem ground, the confirmation, the
+  // map water and the price pin. Dusk is the hour interiors go dark
+  // first: the sky is still on the road and already off behind the glass.
+  // The recess therefore drops to the night side, which is both what it
+  // looks like and what makes lit ivory legible on it (11.79:1, and
+  // 7.32:1 under the lamp). It is not night either — 3.90:1 against the
+  // street it recedes from, 1.27:1 against gece's own #0E141A — so dusk
+  // still reads as its own hour. `bgAsfalt` is untouched: the sunset
+  // #C7D0D2 -> #7A868C -> #12181F is the palette's spine.
+  bgDerin: "#212A31",
   yuzeyKaldirim: "#E3DAC8",
   yuzeyYukselti: "#EDE4D2",
   cizgiKil: "#96A2A6",
@@ -255,10 +360,32 @@ const ALACAKARANLIK: Palet = Object.freeze({
   metalAcik: "#6A7673",
   metalKoyu: "#4E5A57",
   metalDudak: "#2A3330",
+  // On the ivory card the day ink is right and stays: 12.86:1 / 5.21:1.
   yaziAna: "#12181F",
   yaziSis: "#4B5A58",
+  // On the street it is not. `#7A868C` tops out at 5.62:1 against pure
+  // black, so the primary takes the deepest zinc in the palette (4.95:1)
+  // and the second level is the next one up (4.78:1) — 0.18 of a ratio
+  // point apart, because that is the whole width of the room. The tonal
+  // hierarchy the night street gets for free (14.44 vs 7.89) does not
+  // exist at this luminance and is not faked here; the type scale carries
+  // it instead.
+  yaziAnaZemin: "#0E141A",
+  yaziSisZemin: "#12181F",
+  // The recess has already gone to night — see `bgDerin` below — so it
+  // takes the lit pair, warm ivory over a cool pale zinc.
+  yaziAnaCukur: "#F2E6CE",
+  yaziSisCukur: "#B4C2BE",
   sodyumDolgu: "#FFB23F",
   sodyumYazi: "#8A4A05",
+  // Money on the dusk street: the same lamp burnt down to what a mid-slate
+  // will hold (4.69:1). It reads as warm against the cool zinc beside it,
+  // which is the only axis left once luminance is spent.
+  sodyumYaziZemin: "#281501",
+  // Money inside the lit shop: the lamp's own colour, the same #FFB23F
+  // the night uses — with the recess this dark it survives its own wash
+  // on the counter (5.04:1 at the worst depth type actually lands at).
+  sodyumYaziCukur: "#FFB23F",
   sodyumMurekkep: "#12181F",
   tenteDolgu: "#E4593F",
   tenteYazi: "#A8321F",
@@ -285,6 +412,7 @@ const ALACAKARANLIK: Palet = Object.freeze({
   hapZemin: "#12181F",
   hapCizgi: "#4E5A57",
   hapYazi: "#F2E6CE",
+  hapYaziSis: "#9FB0AC",
   kepenkDikey: "rgba(242,230,206,0.10)",
   kepenkDudakIsik: "rgba(242,230,206,0.15)",
   cubukRay: "rgba(18,24,31,0.14)",

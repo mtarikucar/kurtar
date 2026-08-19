@@ -147,7 +147,7 @@ export function OnayEkrani({
             ]}
           >
             <Text
-              style={[yazi.paket, styles.satir, { color: palet.yaziAna }]}
+              style={[yazi.paket, styles.satir, { color: palet.yaziAnaCukur }]}
               maxFontSizeMultiplier={1.4}
             >
               {[paketAdi, t("payment.adet", { adet })]
@@ -155,19 +155,19 @@ export function OnayEkrani({
                 .join(" \u00b7 ")}
             </Text>
             <Text
-              style={[yazi.dataLg, styles.satir, { color: palet.sodyumYazi }]}
+              style={[yazi.dataLg, styles.satir, { color: palet.sodyumYaziCukur }]}
               maxFontSizeMultiplier={1.3}
             >
               {t("payment.odendi", { fiyat: fiyatMetni(toplamKurus), kod })}
             </Text>
             <Text
-              style={[yazi.body, styles.satir, styles.bosluk, { color: palet.yaziAna }]}
+              style={[yazi.body, styles.satir, styles.bosluk, { color: palet.yaziAnaCukur }]}
               maxFontSizeMultiplier={1.4}
             >
               {t("payment.arasindaAl", { pencere })}
             </Text>
             <Text
-              style={[yazi.body, styles.satir, { color: palet.yaziSis }]}
+              style={[yazi.body, styles.satir, { color: palet.yaziSisCukur }]}
               maxFontSizeMultiplier={1.4}
             >
               {t("payment.canta")}
@@ -181,6 +181,7 @@ export function OnayEkrani({
             altEtiket={t("payment.siparislerimde")}
             onPress={onKepengiAc}
             palet={palet}
+            zemin="cukur"
             testID="onay-kepengi-ac"
           />
           <View style={styles.ikincil}>
@@ -189,6 +190,7 @@ export function OnayEkrani({
               onPress={onSiparisler}
               palet={palet}
               ikincil
+              zemin="cukur"
               testID="onay-siparis"
             />
           </View>

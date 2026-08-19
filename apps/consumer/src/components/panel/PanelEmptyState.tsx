@@ -21,14 +21,14 @@ export function PanelEmptyState({
   const palet = usePalet();
   return (
     <View style={styles.kap}>
-      <Ionicons name={icon} size={36} color={palet.yaziSis} />
-      <Text style={[yazi.title, styles.baslik, { color: palet.yaziAna }]}>{title}</Text>
+      <Ionicons name={icon} size={36} color={palet.yaziSisZemin} />
+      <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>{title}</Text>
       {body ? (
-        <Text style={[yazi.body, styles.govde, { color: palet.yaziSis }]}>{body}</Text>
+        <Text style={[yazi.body, styles.govde, { color: palet.yaziSisZemin }]}>{body}</Text>
       ) : null}
       {ctaLabel && onPressCta ? (
         <View style={styles.cta}>
-          <PanelButton label={ctaLabel} onPress={onPressCta} varyant="hayalet" />
+          <PanelButton label={ctaLabel} onPress={onPressCta} varyant="hayalet" zemin="sokak" />
         </View>
       ) : null}
     </View>

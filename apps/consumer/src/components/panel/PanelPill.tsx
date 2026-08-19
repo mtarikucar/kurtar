@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { usePalet } from "../../design/theme";
 import { r, s, yazi } from "../../design/tokens";
+import { sisYazi, type YaziZemini } from "../../design/zemin";
 
 type Ton = "notr" | "sodyum" | "tente";
 
@@ -9,7 +10,18 @@ type Ton = "notr" | "sodyum" | "tente";
  * this reuses directly where the semantics genuinely match — see
  * OrderRow.tsx) and from `PanelMuhur` (the rotated KURTARILDI stamp, a
  * celebration rather than a status). */
-export function PanelPill({ label, ton = "notr" }: { label: string; ton?: Ton }) {
+export function PanelPill({
+  label,
+  ton = "notr",
+  zemin = "kart",
+}: {
+  label: string;
+  ton?: Ton;
+  /** Read only by the `notr` variant, which is transparent and therefore
+   * borrows the surface behind it. Every filled variant inks from its own
+   * fill and is surface-independent. */
+  zemin?: YaziZemini;
+}) {
   const palet = usePalet();
   const dolgu =
     ton === "sodyum"
@@ -18,7 +30,11 @@ export function PanelPill({ label, ton = "notr" }: { label: string; ton?: Ton })
         ? { backgroundColor: palet.tenteDolgu, borderColor: palet.tenteDolgu }
         : { backgroundColor: "transparent", borderColor: palet.cizgiKil };
   const yaziRengi =
-    ton === "sodyum" ? palet.sodyumMurekkep : ton === "tente" ? palet.tenteMurekkep : palet.yaziSis;
+    ton === "sodyum"
+      ? palet.sodyumMurekkep
+      : ton === "tente"
+        ? palet.tenteMurekkep
+        : sisYazi(palet, zemin);
 
   return (
     <View style={[styles.hap, dolgu]}>

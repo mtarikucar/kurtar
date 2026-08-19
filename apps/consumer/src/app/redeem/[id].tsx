@@ -304,7 +304,7 @@ export default function KepenkEkrani() {
               genislik={width - 2 * s.s4}
             />
             <Text
-              style={[yazi.dataLg, styles.ortali, { color: palet.sodyumYazi }]}
+              style={[yazi.dataLg, styles.ortali, { color: palet.sodyumYaziCukur }]}
               maxFontSizeMultiplier={1.3}
             >
               {t("kepenk.odendi", {
@@ -313,7 +313,7 @@ export default function KepenkEkrani() {
               })}
             </Text>
             <Text
-              style={[yazi.body, styles.ortali, { color: palet.yaziAna }]}
+              style={[yazi.body, styles.ortali, { color: palet.yaziAnaCukur }]}
               maxFontSizeMultiplier={1.4}
             >
               {t("kepenk.adetPaket", {
@@ -322,14 +322,14 @@ export default function KepenkEkrani() {
               })}
             </Text>
             <Text
-              style={[yazi.dataLg, styles.ortali, { color: palet.yaziAna }]}
+              style={[yazi.dataLg, styles.ortali, { color: palet.yaziAnaCukur }]}
               maxFontSizeMultiplier={1.3}
             >
               {saat}
             </Text>
             {etki.data && data.storeDistrict ? (
               <Text
-                style={[yazi.dataLg, styles.ortali, { color: palet.sodyumYazi }]}
+                style={[yazi.dataLg, styles.ortali, { color: palet.sodyumYaziCukur }]}
                 testID="kepenk-etki"
                 maxFontSizeMultiplier={1.3}
               >
@@ -348,6 +348,7 @@ export default function KepenkEkrani() {
                 router.replace({ pathname: "/rate/[id]", params: { id } })
               }
               palet={palet}
+              zemin="cukur"
               testID="kepenk-degerlendir"
             />
             <View style={styles.ikincil}>
@@ -356,6 +357,7 @@ export default function KepenkEkrani() {
                 onPress={() => router.replace("/(tabs)/orders")}
                 palet={palet}
                 ikincil
+                zemin="cukur"
                 testID="kepenk-bitti"
               />
             </View>
@@ -399,6 +401,7 @@ export default function KepenkEkrani() {
             etiket={t("common.back")}
             onPress={() => router.back()}
             palet={palet}
+            zemin="cukur"
             testID="kepenk-geri"
           />
           {uyariMetni ? (
@@ -431,7 +434,7 @@ export default function KepenkEkrani() {
         />
         {data.storeDistrict ? (
           <Text
-            style={[yazi.data, styles.ortali, { color: palet.yaziSis }]}
+            style={[yazi.data, styles.ortali, { color: palet.yaziSisCukur }]}
             numberOfLines={1}
             maxFontSizeMultiplier={1.3}
           >
@@ -468,7 +471,7 @@ export default function KepenkEkrani() {
                 azaltHareket={azaltHareket}
               />
               <Text
-                style={[yazi.data, styles.ortali, { color: palet.yaziSis }]}
+                style={[yazi.data, styles.ortali, { color: palet.yaziSisCukur }]}
                 maxFontSizeMultiplier={1.3}
               >
                 {new Date(simdiMs).toLocaleDateString("tr-TR", {
@@ -492,7 +495,7 @@ export default function KepenkEkrani() {
               <View style={[styles.ayrac, { backgroundColor: palet.cizgiKil }]} />
 
               <Text
-                style={[yazi.body, styles.ortali, { color: palet.yaziAna }]}
+                style={[yazi.body, styles.ortali, { color: palet.yaziAnaCukur }]}
                 maxFontSizeMultiplier={1.4}
               >
                 {t("kepenk.adetPaket", {
@@ -501,7 +504,7 @@ export default function KepenkEkrani() {
                 })}
               </Text>
               <Text
-                style={[yazi.dataLg, styles.ortali, { color: palet.sodyumYazi }]}
+                style={[yazi.dataLg, styles.ortali, { color: palet.sodyumYaziCukur }]}
                 maxFontSizeMultiplier={1.3}
               >
                 {t("kepenk.odendi", {
@@ -511,7 +514,7 @@ export default function KepenkEkrani() {
               </Text>
               <Text
                 testID="kepenk-sayac"
-                style={[yazi.data, styles.ortali, { color: palet.yaziSis }]}
+                style={[yazi.data, styles.ortali, { color: palet.yaziSisCukur }]}
                 maxFontSizeMultiplier={1.3}
               >
                 {t("kepenk.kapanisSayaci", { sn: kalanSn })}
@@ -531,7 +534,7 @@ export default function KepenkEkrani() {
                 </Text>
               ) : bekliyor ? (
                 <Text
-                  style={[yazi.body, styles.ortali, { color: palet.yaziSis }]}
+                  style={[yazi.body, styles.ortali, { color: palet.yaziSisCukur }]}
                   maxFontSizeMultiplier={1.4}
                 >
                   {t("redeem.waitingForStaff")}
@@ -558,6 +561,7 @@ export default function KepenkEkrani() {
                   onPress={teslimAldim}
                   pasif={redeeming || queued !== null}
                   palet={palet}
+                  zemin="cukur"
                   testID="kepenk-teslim-aldim"
                 />
                 {/* A thumb slips in a queue. Putting the shutter back down
@@ -572,7 +576,7 @@ export default function KepenkEkrani() {
                     pressed ? { opacity: m.pressOpacity } : null,
                   ]}
                 >
-                  <Text style={[yazi.body, { color: palet.yaziSis }]}>
+                  <Text style={[yazi.body, { color: palet.yaziSisCukur }]}>
                     {t("kepenk.yanlislikla")}
                   </Text>
                 </Pressable>
@@ -581,7 +585,7 @@ export default function KepenkEkrani() {
           ) : (
             <View style={styles.kapaliBilgi} pointerEvents="none">
               <Text
-                style={[yazi.data, styles.ortali, { color: palet.yaziSis }]}
+                style={[yazi.data, styles.ortali, { color: palet.yaziSisCukur }]}
                 maxFontSizeMultiplier={1.3}
               >
                 {formatPickupWindow(data.pickupStartAt, data.pickupEndAt)}

@@ -12,6 +12,9 @@ const HEDEF_GENISLIK = 44;
  * marks `title` as sentence case, unlike `tabela`/`label`, so this never
  * runs the title through `trUpper()`), and an optional right-hand slot so
  * a screen can hang one more control there without re-deriving the row.
+ *
+ * It is a direct child of `<PanelScreen/>` on every one of its six routes
+ * and is never inside a card, so it inks from the street family.
  */
 export function PanelHeader({
   title,
@@ -36,10 +39,10 @@ export function PanelHeader({
         hitSlop={8}
         style={({ pressed }) => [styles.hedef, pressed && { opacity: 0.6 }]}
       >
-        <Ionicons name={backIcon} size={22} color={palet.yaziAna} />
+        <Ionicons name={backIcon} size={22} color={palet.yaziAnaZemin} />
       </Pressable>
       <Text
-        style={[yazi.title, styles.baslik, { color: palet.yaziAna }]}
+        style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}
         numberOfLines={1}
         maxFontSizeMultiplier={1.4}
       >
