@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 
 // Auto-mock (no factory) — see otp-screen.test.tsx's comment for why a
 // hand-written factory closing over an outer `mockClient` const isn't
@@ -12,8 +12,7 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ offerId: "offer-1", storeId: "store-1" }),
 }));
 
-import { QueryClientProvider } from "@tanstack/react-query";
-import { createTestQueryClient } from "../test-utils/render";
+import { ekraniCiz } from "../test-utils/ekran";
 import { client } from "../lib/api-client";
 import PurchaseScreen from "../app/purchase/[offerId]";
 import i18n from "../i18n";
@@ -45,8 +44,8 @@ const STORE_PROFILE = {
         originalValueCentsMin: 15000,
         originalValueCentsMax: 20000,
       },
-      pickupStartAt: new Date(Date.now() + 3600_000).toISOString(),
-      pickupEndAt: new Date(Date.now() + 7200_000).toISOString(),
+      pickupStartAt: "2026-08-19T14:30:00.000Z",
+      pickupEndAt: "2026-08-19T17:00:00.000Z",
       qtyLeft: 3,
     },
   ],
@@ -54,12 +53,9 @@ const STORE_PROFILE = {
 };
 
 function renderPurchaseScreen() {
-  const queryClient = createTestQueryClient();
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <PurchaseScreen />
-    </QueryClientProvider>,
-  );
+  return ekraniCiz(<PurchaseScreen />, {
+    sabitZaman: new Date("2026-08-19T15:00:00.000Z"),
+  });
 }
 
 describe("Purchase screen — losing the race at drop time (OFFER_UNAVAILABLE)", () => {
@@ -85,9 +81,11 @@ describe("Purchase screen — losing the race at drop time (OFFER_UNAVAILABLE)",
     await fireEvent.press(screen.getByTestId("purchase-confirm"));
 
     await waitFor(() =>
-      expect(screen.getByText("Bu paket artık alınamıyor")).toBeTruthy(),
+      expect(screen.getByTestId("satin-alma-kapandi")).toBeTruthy(),
     );
-    expect(screen.getByText(/Yakınındaki diğer paketlere göz atabilirsin/)).toBeTruthy();
+    expect(screen.getByText("AZ ÖNCE KAPANDI")).toBeTruthy();
+    // Never a dead end: there is always a way back onto a live offer.
+    expect(screen.getByTestId("kapandi-kesfet")).toBeTruthy();
     expect(mockCreate).toHaveBeenCalledWith({
       offerId: "offer-1",
       qty: 1,

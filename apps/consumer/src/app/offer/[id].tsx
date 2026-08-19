@@ -1,328 +1,455 @@
-import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMemo } from "react";
+import {
+  Linking,
+  Platform,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { Ionicons } from "@expo/vector-icons";
-import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
-import { Screen } from "../../components/Screen";
-import { Button } from "../../components/Button";
-import { IconButton } from "../../components/IconButton";
-import { LoadingState } from "../../components/LoadingState";
-import { EmptyState } from "../../components/EmptyState";
-import { useStoreProfile } from "../../hooks/use-discovery";
+import { DegerCubugu } from "../../components/kepenk/DegerCubugu";
 import {
-  formatDistance,
-  formatPickupWindow,
-  formatPriceCents,
-  formatValueBand,
-} from "../../lib/format";
+  degerBandiMetni,
+  degerOrani,
+  fiyatMetni,
+  isikGucu,
+  kalanDakika,
+  katMetni,
+  kepenkP,
+  mesafeMetni,
+  sureMetni,
+  teklifDurumu,
+  yurumeDakikasi,
+  YURUME_UST_SINIRI_M,
+} from "../../components/kepenk/olcum";
+import { saatBulunma } from "../../components/kepenk/tr-saat";
+import {
+  AlisPenceresi,
+  Blok,
+  BolumBasligi,
+  DetayBasligi,
+  Dugme,
+  DurumEkrani,
+  IKON,
+  IkonDugmesi,
+  YapiskanCubuk,
+} from "../../components/teslim";
+import { useReduceMotion } from "../../design/reduce-motion";
+import { useSimdi } from "../../design/saat";
+import { usePalet } from "../../design/theme";
+import { s, yazi } from "../../design/tokens";
+import { useStoreProfile } from "../../hooks/use-discovery";
+import { useFavorites, useToggleFavorite } from "../../hooks/use-favorites";
 import { CANCEL_DEADLINE_BEFORE_PICKUP_MS } from "../../lib/constants";
+import { formatClockTime } from "../../lib/format";
 
-const CANCEL_DEADLINE_HOURS = CANCEL_DEADLINE_BEFORE_PICKUP_MS / (60 * 60 * 1000);
+const IPTAL_SAATI = CANCEL_DEADLINE_BEFORE_PICKUP_MS / (60 * 60 * 1000);
 
-export default function OfferDetailScreen() {
+/** The landing app's own default origin (landing/lib/site-config.ts), so
+ * a shared link lands on the universal-link bridge page rather than
+ * nowhere. */
+const SITE = process.env.EXPO_PUBLIC_SITE_URL ?? "https://kurtar.app";
+
+/**
+ * TEKLİF DETAYI — spec §4.3.
+ *
+ * The same storefront as the list card, at the size a shop is when you
+ * have stopped walking: an 8pt awning, a 128pt kepenk band, the sign at
+ * `tabela.xl`. Then the honest answer to "what's in it?" — the shop's own
+ * categories and the one sentence where this app explains its own
+ * constraint — then the money, the window, the walk, and a sticky
+ * `KUTUYU AYIR`.
+ *
+ * There is no photograph and no logo, here or anywhere: the hashed awning
+ * and the category glyph ARE the identity system, and the moment one
+ * offer has an image the whole system reads as broken (§5.15). The cover
+ * image this screen used to render is gone for exactly that reason.
+ */
+export default function TeklifDetayiEkrani() {
   const { t } = useTranslation();
   const router = useRouter();
+  const palet = usePalet();
+  const simdi = useSimdi();
+  const azaltHareket = useReduceMotion();
+  const { width } = useWindowDimensions();
   const { id, storeId, distanceM } = useLocalSearchParams<{
     id: string;
     storeId: string;
     distanceM?: string;
   }>();
 
-  const storeProfileQuery = useStoreProfile(storeId ?? null);
-  const offer = storeProfileQuery.data?.todaysOffers.find((o) => o.offerId === id);
+  const dukkanSorgusu = useStoreProfile(storeId ?? null);
+  const teklif = dukkanSorgusu.data?.todaysOffers.find((o) => o.offerId === id);
+
+  const favoriler = useFavorites();
+  const favoriDegistir = useToggleFavorite();
+  const favori =
+    favoriler.data?.items.some((f) => f.store.id === storeId) ?? false;
+
+  const govdeGenisligi = Math.min(width, 430) - 2 * s.s4;
+
+  const olcum = useMemo(() => {
+    if (!teklif) return null;
+    const baslangic = new Date(teklif.pickupStartAt);
+    const bitis = new Date(teklif.pickupEndAt);
+    const durum = teklifDurumu(teklif.qtyLeft, baslangic, bitis, simdi);
+    const kalanDk = kalanDakika(simdi, bitis);
+    const p = kepenkP(kalanDk, durum);
+    return {
+      baslangic,
+      bitis,
+      durum,
+      kalanDk,
+      p,
+      guc: isikGucu(p, durum),
+      oran: degerOrani(
+        teklif.template.originalValueCentsMin,
+        teklif.template.originalValueCentsMax,
+        teklif.template.priceCents,
+      ),
+    };
+  }, [simdi, teklif]);
+
+  if (dukkanSorgusu.isLoading) {
+    return <DurumEkrani tur="yukleniyor" baslik={t("common.loading")} />;
+  }
+
+  if (!teklif || !dukkanSorgusu.data || !olcum) {
+    return (
+      <DurumEkrani
+        tur="hata"
+        baslik={t("offerDetail.loadError")}
+        eylemEtiketi={t("dugme.kesfet")}
+        onEylem={() => router.replace("/(tabs)")}
+      />
+    );
+  }
+
+  const dukkan = dukkanSorgusu.data.store;
+  const puan = dukkanSorgusu.data.rating;
+  const { baslangic, bitis, durum, kalanDk, p, guc, oran } = olcum;
+  const acilisSaati = saatBulunma(formatClockTime(baslangic));
+  const mesafe = distanceM ? Number(distanceM) : null;
+  const tukendi = durum === "tukendi";
+  const acilmadi = durum === "acilmadi";
+
+  const { saat, dakika } = sureMetni(kalanDk);
+  // The compact form the time pill uses ("1 sa 39 dk"), not the spelled
+  // out one the screen reader gets.
+  const kalanMetni =
+    saat === 0
+      ? t("vitrin.kalanDk", { dk: dakika })
+      : dakika === 0
+        ? t("vitrin.kalanSaatTam", { saat })
+        : t("vitrin.kalanSaat", { saat, dk: dakika });
+
+  // The API's own enums, spoken: `categoryTags` and `dietFlags` are
+  // BagCategory/DietFlag values, and printing "PRODUCE" inside a Turkish
+  // sentence is the tell of a screen that never read its own data.
+  const etiketler = [
+    ...new Set([
+      ...(dukkan.categoryTags ?? []).map((etiket) =>
+        t(`discover.categories.${etiket}`, { defaultValue: etiket }),
+      ),
+      ...(teklif.template.dietFlags ?? []).map((bayrak) =>
+        t(`discover.diet.${bayrak}`, { defaultValue: bayrak }),
+      ),
+    ]),
+  ];
+
+  const cta = tukendi
+    ? t("dugme.tukendi")
+    : acilmadi
+      ? t("dugme.acilmadi")
+      : t("dugme.kutuyuAyir", { fiyat: fiyatMetni(teklif.template.priceCents) });
+
+  const paylas = () => {
+    void Share.share({
+      message: t("teklif.paylasMetni", {
+        dukkan: dukkan.name,
+        baglanti: `${SITE}/tr/o/${teklif.offerId}`,
+      }),
+    }).catch(() => undefined);
+  };
+
+  const haritayaGit = () =>
+    router.push({ pathname: "/store/[id]", params: { id: dukkan.id } });
+
+  const yolTarifi = () => {
+    const hedef = encodeURIComponent(
+      [dukkan.name, dukkan.address, dukkan.district].filter(Boolean).join(", "),
+    );
+    void Linking.openURL(
+      Platform.OS === "ios"
+        ? `http://maps.apple.com/?q=${hedef}`
+        : `geo:0,0?q=${hedef}`,
+    ).catch(() => undefined);
+  };
 
   return (
-    <Screen padded={false}>
-      <View style={styles.header}>
-        <IconButton
-          name="close"
-          accessibilityLabel={t("common.close")}
+    <SafeAreaView
+      style={[styles.kok, { backgroundColor: palet.bgAsfalt }]}
+      edges={["top", "left", "right"]}
+    >
+      <View style={styles.ustCubuk}>
+        <IkonDugmesi
+          yol={IKON.geri}
+          etiket={t("common.back")}
           onPress={() => router.back()}
+          palet={palet}
+          testID="teklif-geri"
         />
-        <Text style={styles.headerTitle}>{t("offerDetail.title")}</Text>
-        <IconButton
-          name="flag-outline"
-          accessibilityLabel={t("report.title.OFFER")}
-          testID="offer-report-cta"
+        <View style={styles.esnek} />
+        <IkonDugmesi
+          yol={IKON.kalp}
+          etiket={favori ? t("storeProfile.unfavoriteCta") : t("storeProfile.favoriteCta")}
+          doldur={favori}
+          onPress={() =>
+            favoriDegistir.mutate({ storeId: dukkan.id, isFavorite: favori })
+          }
+          palet={palet}
+          testID="teklif-favori"
+        />
+        <IkonDugmesi
+          yol={IKON.paylas}
+          etiket={t("teklif.paylas")}
+          onPress={paylas}
+          palet={palet}
+          testID="teklif-paylas"
+        />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.icerik}
+        showsVerticalScrollIndicator={false}
+      >
+        <DetayBasligi
+          genislik={govdeGenisligi}
+          dukkanId={dukkan.id}
+          dukkanAdi={dukkan.name}
+          kategori={teklif.template.category}
+          p={p}
+          guc={guc}
+          durum={durum}
+          kalanDk={kalanDk}
+          acilisSaati={acilisSaati}
+          kalanAdet={teklif.qtyLeft}
+          meta={[t(`discover.categories.${teklif.template.category}`, {
+            defaultValue: teklif.template.category,
+          }), [dukkan.district, dukkan.city].filter(Boolean).join(", ")]
+            .filter(Boolean)
+            .join(" · ")}
+          puan={
+            puan.count > 0
+              ? t("teklif.puan", {
+                  puan: puan.average.toLocaleString("tr-TR", {
+                    maximumFractionDigits: 1,
+                    minimumFractionDigits: 1,
+                  }),
+                  adet: puan.count,
+                })
+              : null
+          }
+          palet={palet}
+          azaltHareket={azaltHareket}
+        />
+
+        <View style={styles.bolum}>
+          <BolumBasligi etiket={t("teklif.vitrinBaslik")} palet={palet} />
+          <Text
+            style={[yazi.paket, { color: palet.yaziAna }]}
+            maxFontSizeMultiplier={1.5}
+          >
+            {teklif.template.title}
+          </Text>
+          {etiketler.length > 0 ? (
+            <Text
+              style={[yazi.body, styles.aralikli, { color: palet.yaziSis }]}
+              maxFontSizeMultiplier={1.5}
+            >
+              {etiketler.join(" · ")}
+            </Text>
+          ) : null}
+          {/* The one place the app explains its own constraint, in plain
+              Turkish, once. */}
+          <Text
+            style={[yazi.body, styles.aralikli, { color: palet.yaziSis }]}
+            maxFontSizeMultiplier={1.5}
+          >
+            {t("teklif.vitrinAciklama")}
+          </Text>
+        </View>
+
+        <View style={styles.bolum}>
+          <View style={styles.fiyatSatiri}>
+            <Text
+              style={[yazi.priceXl, { color: palet.sodyumYazi }]}
+              maxFontSizeMultiplier={1.3}
+            >
+              {fiyatMetni(teklif.template.priceCents)}
+            </Text>
+            <View style={styles.cubukYuvasi}>
+              <DegerCubugu oran={oran} palet={palet} etiket={false} />
+            </View>
+            <Text
+              style={[yazi.micro, { color: palet.sodyumYazi }]}
+              maxFontSizeMultiplier={1.3}
+            >
+              {t("vitrin.kat", { kat: katMetni(oran) })}
+            </Text>
+          </View>
+          <Text
+            style={[yazi.data, { color: palet.yaziSis }]}
+            maxFontSizeMultiplier={1.3}
+          >
+            {t("vitrin.degerBandi", {
+              band: degerBandiMetni(
+                teklif.template.originalValueCentsMin,
+                teklif.template.originalValueCentsMax,
+              ),
+            })}
+          </Text>
+        </View>
+
+        <View style={styles.bolum}>
+          <BolumBasligi etiket={t("teklif.alisPenceresi")} palet={palet} />
+          <Blok palet={palet} vurgu>
+            <AlisPenceresi
+              simdiMs={simdi.getTime()}
+              baslangicMs={baslangic.getTime()}
+              bitisMs={bitis.getTime()}
+              baslangic={formatClockTime(baslangic)}
+              bitis={formatClockTime(bitis)}
+              simdi={t("teklif.simdi", { saat: formatClockTime(simdi) })}
+              gun={t("teklif.bugun")}
+              cumle={
+                tukendi
+                  ? t("teklif.kepenkIndi")
+                  : acilmadi
+                    ? t("teklif.kepenkKalkiyor", { saat: acilisSaati })
+                    : t("teklif.kepenkIniyor", { sure: kalanMetni })
+              }
+              palet={palet}
+            />
+          </Blok>
+        </View>
+
+        <View style={styles.bolum}>
+          <BolumBasligi
+            etiket={t("teklif.yuruyus")}
+            palet={palet}
+            sag={
+              mesafe !== null
+                ? [
+                    mesafe <= YURUME_UST_SINIRI_M
+                      ? t("vitrin.kalanDk", { dk: yurumeDakikasi(mesafe) })
+                      : null,
+                    mesafeMetni(mesafe),
+                  ]
+                    .filter((parca): parca is string => parca !== null)
+                    .join(" · ")
+                : undefined
+            }
+          />
+          <Text
+            style={[yazi.body, { color: palet.yaziAna }]}
+            maxFontSizeMultiplier={1.5}
+          >
+            {dukkan.address}
+          </Text>
+          <View style={styles.ikiDugme}>
+            <View style={styles.esnek}>
+              <Dugme
+                etiket={t("dugme.haritadaGoster")}
+                onPress={haritayaGit}
+                palet={palet}
+                ikincil
+                testID="teklif-harita"
+              />
+            </View>
+            <View style={styles.esnek}>
+              <Dugme
+                etiket={t("dugme.yolTarifi")}
+                onPress={yolTarifi}
+                palet={palet}
+                ikincil
+                testID="teklif-yol"
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Legally mandatory and therefore never dropped for layout: the
+            merchant's OWN allergen text, collected at submit, and the
+            cancellation rule. */}
+        <View style={styles.bolum}>
+          <BolumBasligi etiket={t("teklif.alerjen")} palet={palet} />
+          <Blok palet={palet}>
+            <Text
+              style={[yazi.body, { color: palet.yaziAna }]}
+              maxFontSizeMultiplier={1.5}
+            >
+              {teklif.template.allergenDisclaimer.trim().length > 0
+                ? teklif.template.allergenDisclaimer
+                : t("offerDetail.allergenBody")}
+            </Text>
+          </Blok>
+        </View>
+
+        <View style={styles.bolum}>
+          <BolumBasligi etiket={t("teklif.iade")} palet={palet} />
+          <Text
+            style={[yazi.body, { color: palet.yaziSis }]}
+            maxFontSizeMultiplier={1.5}
+          >
+            {t("offerDetail.noRefundBody", { hours: IPTAL_SAATI })}
+          </Text>
+        </View>
+      </ScrollView>
+
+      <YapiskanCubuk palet={palet}>
+        <Dugme
+          etiket={cta}
+          altEtiket={
+            tukendi
+              ? undefined
+              : acilmadi
+                ? t("vitrin.acilis", { saat: acilisSaati })
+                : t("teklif.kalanPaket", { adet: teklif.qtyLeft })
+          }
+          pasif={tukendi || acilmadi}
           onPress={() =>
             router.push({
-              pathname: "/report/new",
-              params: { targetType: "OFFER", targetId: id },
+              pathname: "/purchase/[offerId]",
+              params: { offerId: teklif.offerId, storeId: dukkan.id },
             })
           }
+          palet={palet}
+          testID="offer-buy-cta"
         />
-      </View>
-
-      {storeProfileQuery.isLoading ? (
-        <LoadingState />
-      ) : !offer || !storeProfileQuery.data ? (
-        <EmptyState
-          icon="alert-circle-outline"
-          title={t("offerDetail.loadError")}
-          ctaLabel={t("offerDetail.backToDiscover")}
-          onPressCta={() => router.replace("/(tabs)")}
-        />
-      ) : (
-        <>
-          <ScrollView contentContainerStyle={styles.content}>
-            {storeProfileQuery.data.store.coverImageUrl ? (
-              <Image
-                source={{ uri: storeProfileQuery.data.store.coverImageUrl }}
-                style={styles.cover}
-              />
-            ) : (
-              <View style={[styles.cover, styles.coverFallback]}>
-                <Text style={styles.coverFallbackText}>🥡</Text>
-              </View>
-            )}
-
-            <Text style={styles.storeName}>{storeProfileQuery.data.store.name}</Text>
-            <View style={styles.metaRow}>
-              <Ionicons name="star" size={14} color={colors.primary[500]} />
-              <Text style={styles.metaText}>
-                {storeProfileQuery.data.rating.count > 0
-                  ? `${storeProfileQuery.data.rating.average.toFixed(1)} (${storeProfileQuery.data.rating.count})`
-                  : t("offerDetail.noRatingYet")}
-              </Text>
-              <Text style={styles.metaDot}>·</Text>
-              <Text style={styles.metaText}>{storeProfileQuery.data.store.district}</Text>
-              {distanceM ? (
-                <>
-                  <Text style={styles.metaDot}>·</Text>
-                  <Text style={styles.metaText}>{formatDistance(Number(distanceM))}</Text>
-                </>
-              ) : null}
-            </View>
-
-            <Text style={styles.bagTitle}>{offer.template.title}</Text>
-
-            <View style={styles.priceRow}>
-              <Text style={styles.price}>{formatPriceCents(offer.template.priceCents)}</Text>
-              <Text style={styles.valueBand}>
-                {formatValueBand(
-                  offer.template.originalValueCentsMin,
-                  offer.template.originalValueCentsMax,
-                )}
-              </Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Ionicons name="time-outline" size={18} color={colors.neutral[600]} />
-              <Text style={styles.infoText}>
-                {formatPickupWindow(offer.pickupStartAt, offer.pickupEndAt)}
-              </Text>
-            </View>
-
-            <Section
-              icon="gift-outline"
-              title={t("offerDetail.surpriseTitle")}
-              body={t("offerDetail.surpriseBody")}
-            />
-            <Section
-              icon="warning-outline"
-              title={t("offerDetail.allergenTitle")}
-              // [I12 fix] The merchant's OWN allergen text (mandatory at
-              // submit — CreateBagTemplateDto.allergenDisclaimer) shown
-              // pre-purchase, not the generic "coming soon" placeholder —
-              // falls back to it only when a template genuinely has no
-              // text (shouldn't happen given it's required at submit, but
-              // never silently blank).
-              body={
-                offer.template.allergenDisclaimer.trim().length > 0
-                  ? offer.template.allergenDisclaimer
-                  : t("offerDetail.allergenBody")
-              }
-              tone="warning"
-            />
-            <Section
-              icon="return-down-back-outline"
-              title={t("offerDetail.noRefundTitle")}
-              body={t("offerDetail.noRefundBody", { hours: CANCEL_DEADLINE_HOURS })}
-              tone="danger"
-            />
-
-            <Button
-              label={t("offerDetail.viewStoreCta")}
-              variant="ghost"
-              onPress={() => router.push({ pathname: "/store/[id]", params: { id: storeId } })}
-            />
-          </ScrollView>
-
-          <View style={styles.footer}>
-            <Button
-              label={
-                offer.qtyLeft > 0
-                  ? t("offerDetail.buyCta", {
-                      price: formatPriceCents(offer.template.priceCents),
-                    })
-                  : t("offerDetail.soldOutCta")
-              }
-              disabled={offer.qtyLeft <= 0}
-              onPress={() =>
-                router.push({
-                  pathname: "/purchase/[offerId]",
-                  params: { offerId: id, storeId },
-                })
-              }
-              testID="offer-buy-cta"
-            />
-          </View>
-        </>
-      )}
-    </Screen>
+      </YapiskanCubuk>
+    </SafeAreaView>
   );
 }
-
-function Section({
-  icon,
-  title,
-  body,
-  tone = "neutral",
-}: {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  body: string;
-  tone?: "neutral" | "warning" | "danger";
-}) {
-  return (
-    <View style={[styles.section, sectionTone[tone]]}>
-      <View style={styles.sectionHeader}>
-        <Ionicons
-          name={icon}
-          size={18}
-          color={
-            tone === "warning"
-              ? colors.semantic.warning[700]
-              : tone === "danger"
-                ? colors.semantic.danger[700]
-                : colors.neutral[700]
-          }
-        />
-        <Text
-          style={[
-            styles.sectionTitle,
-            tone === "warning" && { color: colors.semantic.warning[700] },
-            tone === "danger" && { color: colors.semantic.danger[700] },
-          ]}
-        >
-          {title}
-        </Text>
-      </View>
-      <Text style={styles.sectionBody}>{body}</Text>
-    </View>
-  );
-}
-
-const sectionTone = StyleSheet.create({
-  neutral: { backgroundColor: colors.neutral[50] },
-  warning: { backgroundColor: colors.semantic.warning[50] },
-  danger: { backgroundColor: colors.semantic.danger[50] },
-});
 
 const styles = StyleSheet.create({
-  header: {
+  kok: { flex: 1 },
+  ustCubuk: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: s.s2,
+    paddingVertical: s.s1,
   },
-  headerTitle: {
-    fontSize: typeScale.h3.size,
-    fontWeight: typeScale.h3.weight,
-    color: colors.neutral[900],
-  },
-  content: {
-    paddingHorizontal: 20,
-    paddingBottom: spacing["4xl"],
-    gap: spacing.sm,
-  },
-  cover: {
-    width: "100%",
-    height: 180,
-    borderRadius: radii.lg,
-    marginBottom: spacing.sm,
-  },
-  coverFallback: {
-    backgroundColor: colors.primary[50],
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  coverFallbackText: {
-    fontSize: 48,
-  },
-  storeName: {
-    fontSize: typeScale.h2.size,
-    fontWeight: typeScale.h2.weight,
-    color: colors.neutral[900],
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-  },
-  metaText: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[600],
-  },
-  metaDot: {
-    color: colors.neutral[400],
-  },
-  bagTitle: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.neutral[900],
-    marginTop: spacing.sm,
-  },
-  priceRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: spacing.sm,
-  },
-  price: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.primary[600],
-  },
-  valueBand: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[400],
-    textDecorationLine: "line-through",
-  },
-  infoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  infoText: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[700],
-  },
-  section: {
-    borderRadius: radii.md,
-    padding: spacing.md,
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.xs,
-  },
-  sectionTitle: {
-    fontSize: typeScale.bodyStrong.size,
-    fontWeight: typeScale.bodyStrong.weight,
-    color: colors.neutral[900],
-  },
-  sectionBody: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[700],
-    lineHeight: 20,
-  },
-  footer: {
-    padding: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.neutral[100],
-    backgroundColor: colors.neutral[0],
-  },
+  esnek: { flex: 1 },
+  icerik: { paddingHorizontal: s.s4, paddingBottom: s.s10, gap: s.s6 },
+  bolum: { gap: s.s2 },
+  aralikli: { marginTop: s.s1 },
+  fiyatSatiri: { flexDirection: "row", alignItems: "center", gap: s.s3 },
+  cubukYuvasi: { flex: 1 },
+  ikiDugme: { flexDirection: "row", gap: s.s3, marginTop: s.s2 },
 });

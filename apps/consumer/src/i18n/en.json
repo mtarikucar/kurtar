@@ -174,7 +174,10 @@
     "preContractTitle": "Before you confirm",
     "preContractObf": "Read the Pre-Contract Information Form",
     "preContractMss": "Read the Distance Selling Agreement",
-    "consentLabel": "I have read the Pre-Contract Information Form and the Distance Selling Agreement; I understand the contents are a surprise, the allergen warning, the pickup window rules, and that the right of withdrawal does not apply to this kind of food product."
+    "consentLabel": "I have read the Pre-Contract Information Form and the Distance Selling Agreement; I understand the contents are a surprise, the allergen warning, the pickup window rules, and that the right of withdrawal does not apply to this kind of food product.",
+    "kapandiBaslik": "IT JUST CLOSED",
+    "kapandiGovde": "Somebody took this bag seconds before you. The shutter below is still open.",
+    "enYakinAlternatif": "NEAREST ALTERNATIVE"
   },
   "payment": {
     "title": "Payment",
@@ -187,7 +190,12 @@
     "failedBody": "Your reservation wasn't completed: the payment wasn't confirmed, or the bag is no longer available. You can browse other bags.",
     "loadError": "The payment page couldn't be opened.",
     "closeConfirmTitle": "Give up on this payment?",
-    "closeConfirmBody": "If you don't finish paying, your reservation won't be confirmed."
+    "closeConfirmBody": "If you don't finish paying, your reservation won't be confirmed.",
+    "adet": "{{adet}} pcs",
+    "odendi": "{{fiyat}} paid · #{{kod}}",
+    "arasindaAl": "Pick up TODAY between {{pencere}}",
+    "canta": "Bring your own bag",
+    "siparislerimde": "It is in My Orders too"
   },
   "redeem": {
     "title": "Pick up",
@@ -402,5 +410,61 @@
     "zaman20dk": "20 MINUTES LEFT · shutter 0.78",
     "zamanAcilmadi": "NOT OPEN YET · shutter 0.78",
     "zamanTukendi": "SOLD OUT · shutter 1.00"
+  },
+  "dugme": {
+    "kutuyuAyir": "RESERVE THE BOX · {{fiyat}}",
+    "tukendi": "SOLD OUT",
+    "acilmadi": "NOT OPEN YET",
+    "haritadaGoster": "SHOW ON MAP",
+    "yolTarifi": "DIRECTIONS",
+    "odemeyeGec": "CONTINUE TO PAYMENT · {{fiyat}}",
+    "olusturuluyor": "CREATING RESERVATION…",
+    "kepengiAc": "OPEN THE SHUTTER",
+    "teslimAldim": "I PICKED IT UP",
+    "siparisiGor": "VIEW ORDER",
+    "siparislerim": "BACK TO MY ORDERS",
+    "degerlendir": "RATE IT NOW",
+    "kesfet": "FIND ANOTHER BAG",
+    "geriDon": "GO BACK"
+  },
+  "teklif": {
+    "vitrinBaslik": "THE WINDOW — WHAT COULD BE IN THIS BOX?",
+    "vitrinAciklama": "The box holds whatever the shop has left over that day. That is why it is a surprise — nobody photographed it.",
+    "alisPenceresi": "PICKUP WINDOW",
+    "bugun": "TODAY",
+    "simdi": "now {{saat}}",
+    "kepenkIniyor": "The shutter comes down in {{sure}}",
+    "kepenkKalkiyor": "The shutter goes up at {{saat}}",
+    "kepenkIndi": "The shutter is down",
+    "yuruyus": "WALK",
+    "alerjen": "ALLERGENS",
+    "iade": "CANCELLATION AND REFUND",
+    "kalanPaket": "{{adet}} left",
+    "puan": "★ {{puan}} · {{adet}}",
+    "paylas": "Share",
+    "paylasMetni": "{{dukkan}} — there is a surprise bag on kurtar: {{baglanti}}"
+  },
+  "kepenk": {
+    "kolEtiket": "LIFT THE SHUTTER",
+    "kolAltEtiket": "swipe up",
+    "kolBasiliTut": "press and hold",
+    "kolKilitli": "SHUTTER LOCKED",
+    "kolErisim": "Lift the shutter — show the code",
+    "yardim": "Can't lift it?",
+    "kodEtiketi": "KURTAR",
+    "saatErisim": "Time {{saat}}",
+    "acikDuyuru": "{{dukkan}}. Code: {{kod}}. {{paket}}.",
+    "paketBilinmiyor": "Surprise bag",
+    "kapanisSayaci": "closes in {{sn}} s",
+    "yanlislikla": "I opened it by mistake",
+    "iniyor": "shutter comes down in {{dk}} min",
+    "acilir": "opens at {{saat}}",
+    "kapandi": "closed at {{saat}}",
+    "odendi": "Paid {{fiyat}} · #{{kod}}",
+    "adetPaket": "{{adet}} × {{paket}}",
+    "teslimAlindi": "PICKED UP",
+    "selErisim": "Picked up. {{dukkan}}, {{saat}}.",
+    "etkiSatiri": "shutter no. {{sira}} in {{yer}}",
+    "kolKilitliAlt": "opens at pickup time"
   }
 }

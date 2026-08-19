@@ -36,7 +36,7 @@ const POLL_INTERVAL_MS = 4000;
  *        reservation's status flips to REDEEMED — by staff acting on
  *        their side (a manual redeem from the merchant-web pickup list).
  *        There is deliberately no automatic retry of the direct call from
- *        here: once queued, this screen never re-renders `SwipeToConfirm`
+ *        here: once queued, this screen never re-offers the shutter handle
  *        (see redeem/[id].tsx) and neither this hook nor
  *        useGlobalRedeemSync ever calls `client.reservations.redeem()`
  *        again — both only ever poll the read. A queued-and-still-offline
