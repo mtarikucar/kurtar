@@ -21,7 +21,21 @@ const KADIKOY: LatLng = { lat: 40.9903, lng: 29.03 };
  * (index.tsx), for the same reason: the real seeded data spans both. */
 const ARAMA_YARICAPI_M = 12_000;
 const YAKINDAKI_ADET = 3;
-const ALT_SAYFA_YUKSEKLIGI = 180;
+/** `HaritaSatiri`'s own fixed row height (spec §4.2: "72pt compact rows").
+ * Mirrored rather than imported — a route file exports its screen and
+ * nothing else. `qa-c-dokunma-guvenli-alan.test.tsx` renders a real row
+ * and recomputes the arithmetic below, so the two cannot drift apart
+ * unnoticed. */
+const HARITA_SATIRI_YUKSEKLIGI = 72;
+/**
+ * DERIVED, never a guess: the sheet is exactly its own chrome (1pt contact
+ * edge + `s2` top padding + the label's absolute line height + `s1` under
+ * it) plus the rows it is asked to hold. It was a flat 180, so the third
+ * 72pt row overflowed by 65pt into the tab bar — visible to nobody,
+ * tappable by nobody, with nothing on screen saying it was there.
+ */
+const ALT_SAYFA_YUKSEKLIGI =
+  1 + s.s2 + yazi.label.lineHeight + s.s1 + YAKINDAKI_ADET * HARITA_SATIRI_YUKSEKLIGI;
 
 /**
  * HARİTA — the dedicated full-screen map tab (spec §4.2).
@@ -108,6 +122,7 @@ export default function HaritaEkrani() {
           and the empty line inside it are card type, and the three rows
           below them are too. */}
       <View
+        testID="harita-alt-sayfa"
         style={[
           styles.altSayfa,
           { backgroundColor: palet.yuzeyYukselti, borderTopColor: palet.bgDerin },
@@ -153,7 +168,9 @@ export default function HaritaEkrani() {
 const styles = StyleSheet.create({
   harita: { flex: 1 },
   altSayfa: {
-    height: ALT_SAYFA_YUKSEKLIGI,
+    // minHeight, not height: the empty state still centres inside the
+    // resolved box, and three rows are never clipped out of it.
+    minHeight: ALT_SAYFA_YUKSEKLIGI,
     borderTopWidth: 1,
     paddingTop: s.s2,
     paddingHorizontal: s.s2,

@@ -56,8 +56,15 @@ export default function PhoneScreen() {
   return (
     <Screen>
       <ScrollView
+        testID="phone-kaydirma"
         contentContainerStyle={styles.icerik}
         keyboardShouldPersistTaps="handled"
+        // Same trap as otp.tsx, same one-prop way out: a centred
+        // flexGrow:1 content container cannot scroll, iOS does not resize
+        // for the keyboard, and 'phone-pad' has no return key — so the
+        // 'Kod gönder' button ends up behind the keyboard. See the note
+        // there.
+        automaticallyAdjustKeyboardInsets
         showsVerticalScrollIndicator={false}
       >
         <GirisCephesi />
@@ -71,7 +78,10 @@ export default function PhoneScreen() {
 
         <View style={styles.form}>
           <TextField
-            label={t("auth.phone.placeholder")}
+            // The field's accessible NAME, never the format mask — a
+            // screen reader on the app's first screen used to announce
+            // "5xx xxx xx xx" instead of what the field is for.
+            label={t("auth.phone.label")}
             placeholder={t("auth.phone.placeholder")}
             etiketGizli
             value={phone}

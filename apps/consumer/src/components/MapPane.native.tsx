@@ -1,9 +1,15 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import MapView, { Marker, PROVIDER_GOOGLE, type Region } from "react-native-maps";
+import MapView, {
+  Marker,
+  PROVIDER_GOOGLE,
+  type MapMarker,
+  type Region,
+} from "react-native-maps";
 import Supercluster, { type PointFeature } from "supercluster";
+import { useReduceMotion } from "../design/reduce-motion";
 import { usePalet } from "../design/theme";
-import { r, yazi, type Palet } from "../design/tokens";
+import { m, r, yazi, type Palet } from "../design/tokens";
 import { fiyatMetni } from "./kepenk";
 import type { DiscoveryMapPin } from "../lib/api-types";
 import type { MapPaneProps, MapRegion } from "./MapPane.types";
@@ -66,14 +72,28 @@ function haritaStili(palet: Palet) {
  * flicker. Selection is therefore a discrete re-snapshot (one extra
  * `onLayout` when `secili` flips), never a continuous animation.
  *
+ * `setIzle(false)` is idempotent, though, so nothing ever turned the
+ * snapshotting back ON — and a colour/ink/lift change does not move the
+ * child, so `onLayout` never fired a second time either. The bitmap froze
+ * at first layout: tapping a pin produced no visible selection on Android,
+ * and the pins kept the daylight fill for the rest of the session after
+ * the palette crossed into gece. `redraw()` is the library's own escape
+ * hatch for exactly this — one frame, `tracksViewChanges` stays false, no
+ * flicker.
+ *
  * The chip is FILLED with `bg.derin`, so its numeral is recess type — which
  * is how §4.2's "data 12 ivory" survives into the two light phases, where
  * the app's other primary ink is near-black.
  */
 function FiyatPini({ pin, secili, palet, onPress }: { pin: DiscoveryMapPin; secili: boolean; palet: Palet; onPress: () => void }) {
   const [izle, setIzle] = useState(true);
+  const pinRef = useRef<MapMarker | null>(null);
+  useEffect(() => {
+    pinRef.current?.redraw();
+  }, [secili, palet]);
   return (
     <Marker
+      ref={pinRef}
       coordinate={{ latitude: pin.lat, longitude: pin.lng }}
       onPress={onPress}
       tracksViewChanges={izle}
@@ -122,8 +142,15 @@ function KumePini({
   onPress: () => void;
 }) {
   const [izle, setIzle] = useState(true);
+  const kumeRef = useRef<MapMarker | null>(null);
+  // Cluster chips take no selection, but they freeze at the phase change
+  // for the same reason a price chip does.
+  useEffect(() => {
+    kumeRef.current?.redraw();
+  }, [palet]);
   return (
     <Marker
+      ref={kumeRef}
       key={`cluster-${clusterId}`}
       coordinate={{ latitude: lat, longitude: lng }}
       onPress={onPress}
@@ -159,6 +186,7 @@ export function MapPane({
   selectedStoreId = null,
 }: MapPaneProps) {
   const palet = usePalet();
+  const azaltHareket = useReduceMotion();
   const mapRef = useRef<MapView | null>(null);
   const regionRef = useRef<MapRegion>(initialRegion);
   const stil = useMemo(() => haritaStili(palet), [palet]);
@@ -202,7 +230,13 @@ export function MapPane({
         latitudeDelta: nextDelta,
         longitudeDelta: nextDelta,
       },
-      300,
+      // A self-driving full-screen camera move is the strongest vestibular
+      // trigger left in this app, and it was the one thing on the map that
+      // never asked. `null` (answer not yet known) counts as "no
+      // movement", as everywhere else. Both natives treat 0 as an instant
+      // jump, so the recentre still happens — it is discrete, not slow.
+      // The duration is §1.3's own map token now, not an inline 300.
+      azaltHareket === false ? m.fast : 0,
     );
   };
 
