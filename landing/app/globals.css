@@ -346,23 +346,37 @@ button {
   padding: var(--space-2xl) var(--space-2xl) calc(var(--space-2xl) + 6px);
   box-shadow: 0 12px 24px -16px rgba(22, 20, 16, 0.35);
   max-width: 380px;
-  /* Scalloped bottom edge, like a torn register receipt. */
-  mask-image: radial-gradient(
-    circle at var(--receipt-notch) 0,
-    transparent calc(var(--receipt-notch) - 0.5px),
-    black calc(var(--receipt-notch) - 0.5px)
-  );
-  mask-repeat: repeat-x;
-  mask-position: bottom left;
-  mask-size: calc(var(--receipt-notch) * 2) var(--receipt-notch);
-  -webkit-mask-image: radial-gradient(
-    circle at var(--receipt-notch) 0,
-    transparent calc(var(--receipt-notch) - 0.5px),
-    black calc(var(--receipt-notch) - 0.5px)
-  );
-  -webkit-mask-repeat: repeat-x;
-  -webkit-mask-position: bottom left;
-  -webkit-mask-size: calc(var(--receipt-notch) * 2) var(--receipt-notch);
+  /* Scalloped bottom edge, like a torn register receipt.
+     TWO mask layers, and the first one is not optional: a mask covers only
+     what its layers paint, so a lone scallop sized to the bottom notch
+     strip masked the whole card ABOVE that strip out of existence — the
+     home page's signature device rendered as an empty box with a pretty
+     torn edge and nothing above it. Layer 1 keeps everything down to the
+     notch line; layer 2 tears the strip. */
+  mask-image:
+    linear-gradient(black, black),
+    radial-gradient(
+      circle at var(--receipt-notch) 0,
+      transparent calc(var(--receipt-notch) - 0.5px),
+      black calc(var(--receipt-notch) - 0.5px)
+    );
+  mask-repeat: no-repeat, repeat-x;
+  mask-position: top left, bottom left;
+  mask-size:
+    100% calc(100% - var(--receipt-notch)),
+    calc(var(--receipt-notch) * 2) var(--receipt-notch);
+  -webkit-mask-image:
+    linear-gradient(black, black),
+    radial-gradient(
+      circle at var(--receipt-notch) 0,
+      transparent calc(var(--receipt-notch) - 0.5px),
+      black calc(var(--receipt-notch) - 0.5px)
+    );
+  -webkit-mask-repeat: no-repeat, repeat-x;
+  -webkit-mask-position: top left, bottom left;
+  -webkit-mask-size:
+    100% calc(100% - var(--receipt-notch)),
+    calc(var(--receipt-notch) * 2) var(--receipt-notch);
   transition: transform 0.2s ease;
 }
 
