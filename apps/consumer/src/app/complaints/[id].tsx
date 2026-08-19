@@ -58,7 +58,14 @@ export default function ComplaintDetailScreen() {
   };
 
   return (
-    <PanelScreen padded={false}>
+    // The reply composer is docked to the bottom of this screen, so the
+    // screen has to own the bottom inset too — without it the 48pt Send
+    // button sits under the Android navigation bar (tapping it presses
+    // Back/Home) and inside the iOS home-indicator strip. iOS gains no
+    // double gap when the keyboard opens: KeyboardAvoidingView measures
+    // from its own frame bottom to the screen bottom, so a safe-area pad
+    // is absorbed, not added.
+    <PanelScreen padded={false} edges={["top", "left", "right", "bottom"]}>
       <PanelHeader
         title={t("complaints.title")}
         onBack={() => router.back()}

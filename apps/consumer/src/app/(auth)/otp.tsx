@@ -125,8 +125,18 @@ export default function OtpScreen() {
   return (
     <Screen>
       <ScrollView
+        testID="otp-kaydirma"
         contentContainerStyle={styles.icerik}
         keyboardShouldPersistTaps="handled"
+        // `icerik` is flexGrow:1 + centred, so on a tall phone the content
+        // size EQUALS the frame and this ScrollView cannot scroll at all.
+        // On iOS the window does not resize for the keyboard either, and
+        // 'number-pad' has no return key — so without this the verify and
+        // resend buttons sit behind the keyboard with no way to reach
+        // them, and sign-in dead-ends. This adds the keyboard height as a
+        // bottom content inset, which creates the scroll range; no-op on
+        // Android and web.
+        automaticallyAdjustKeyboardInsets
         showsVerticalScrollIndicator={false}
       >
         <GirisCephesi />

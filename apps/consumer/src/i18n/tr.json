@@ -26,6 +26,7 @@
     "phone": {
       "title": "Telefon numaranla devam et",
       "subtitle": "Sana 6 haneli bir doğrulama kodu göndereceğiz.",
+      "label": "Telefon numarası",
       "placeholder": "5xx xxx xx xx",
       "cta": "Kod gönder",
       "invalid": "Geçerli bir telefon numarası girmelisin.",
