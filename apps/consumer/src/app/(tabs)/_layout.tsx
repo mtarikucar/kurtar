@@ -5,7 +5,8 @@ import { useAuth } from "../../lib/auth-context";
 import { LoadingState } from "../../components/LoadingState";
 import { Screen } from "../../components/Screen";
 import { usePalet } from "../../design/theme";
-import { yazi } from "../../design/tokens";
+import { s, yazi } from "../../design/tokens";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /**
  * The tab bar is the one piece of chrome on every screen in the app, so
@@ -24,10 +25,14 @@ import { yazi } from "../../design/tokens";
  * card's mist ink. One tab is on; the rest are shut. That is the same
  * sentence the rest of the app speaks.
  */
+/** Icon + label line box + the padding above and below them. */
+const SEKME_YUKSEKLIGI = 70;
+
 export default function TabsLayout() {
   const { t } = useTranslation();
   const { status } = useAuth();
   const palet = usePalet();
+  const altBosluk = useSafeAreaInsets().bottom;
 
   if (status === "loading") {
     return (
@@ -49,11 +54,21 @@ export default function TabsLayout() {
         // The scene keeps the street's ground, so a tab swap never flashes
         // a white frame between two dark screens.
         sceneStyle: { backgroundColor: palet.bgAsfalt },
+        // The bar reserves its own height instead of letting the label's
+        // line box decide it. Left to itself the bar sat flush with the
+        // bottom of the screen and the cedilla of "Keşfet"/"Siparişler"
+        // fell outside it — the tabs read "Kesfet"/"Siparisler", losing
+        // Turkish. The device's bottom inset is ADDED to that height (and
+        // paid out as padding) rather than eaten by it, so a phone with a
+        // gesture bar and one with hardware keys both keep the descender.
         tabBarStyle: {
           backgroundColor: palet.yuzeyYukselti,
           borderTopWidth: 1,
           borderTopColor: palet.bgDerin,
           elevation: 0,
+          height: SEKME_YUKSEKLIGI + altBosluk,
+          paddingTop: s.s2,
+          paddingBottom: altBosluk + s.s2,
         },
         // Font only — no height, no padding, no item margin: the bar
         // computes its own height (plus the device's bottom inset) around
