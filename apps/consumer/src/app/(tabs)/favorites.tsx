@@ -1,84 +1,126 @@
-import { FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
 import { Screen } from "../../components/Screen";
+import { Badge } from "../../components/Badge";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { LoadingState } from "../../components/LoadingState";
-import { Badge } from "../../components/Badge";
+import { tenteDeseni } from "../../components/kepenk/tente-desen";
+import { usePalet } from "../../design/theme";
+import { m, r, s, yazi } from "../../design/tokens";
+import { sayi } from "../../components/kepenk/olcum";
 import { useFavorites } from "../../hooks/use-favorites";
 import type { FavoriteListItem } from "../../lib/api-types";
 
-function FavoriteRow({
-  item,
-  onPress,
-}: {
-  item: FavoriteListItem;
-  onPress: () => void;
-}) {
+const SERIT_GENISLIGI = 4;
+
+/**
+ * One favourited shop.
+ *
+ * The avatar was a fetched cover photo with a 🏬 emoji behind it, which
+ * §5.15 forbids outright: "the hashed tente and the category glyph ARE
+ * the identity system, and the moment one card has an image the whole
+ * system reads as broken." So the row wears the shop's own awning stripe
+ * down its left edge — the same 4pt strip, hashed from the same shop id,
+ * that identifies it on the street and in Siparişler (§4.6). Moda Fırın
+ * is the red-and-white one everywhere, and this list becomes scannable by
+ * colour rather than by a logo nobody uploaded.
+ */
+function FavoriSatiri({ item, onPress }: { item: FavoriteListItem; onPress: () => void }) {
   const { t } = useTranslation();
+  const palet = usePalet();
+  const desen = tenteDeseni(item.storeId);
+  const puanli = item.store.ratingCount > 0;
+
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={item.store.name}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      style={({ pressed }) => [
+        styles.satir,
+        {
+          backgroundColor: palet.yuzeyKaldirim,
+          borderColor: palet.kartCizgi,
+          borderWidth: palet.kartCizgiKalinlik,
+          borderTopWidth: 1,
+          borderBottomWidth: 1,
+          borderTopColor: palet.kartUstIsik,
+          borderBottomColor: palet.kartAltTemas,
+        },
+        pressed ? { opacity: m.pressOpacity } : null,
+      ]}
     >
-      {item.store.coverImageUrl ? (
-        <Image source={{ uri: item.store.coverImageUrl }} style={styles.avatar} />
-      ) : (
-        <View style={[styles.avatar, styles.avatarFallback]}>
-          <Text style={styles.avatarFallbackText}>🏬</Text>
-        </View>
-      )}
-      <View style={styles.rowBody}>
-        <Text style={styles.storeName} numberOfLines={1}>
+      <View style={[styles.serit, { backgroundColor: desen.bir }]} />
+      <View style={styles.govde}>
+        <Text
+          style={[yazi.title, { color: palet.yaziAna }]}
+          numberOfLines={1}
+          maxFontSizeMultiplier={1.3}
+        >
           {item.store.name}
         </Text>
-        <Text style={styles.storeMeta}>
-          {item.store.district} · ★ {item.store.avgStars.toFixed(1)} (
-          {item.store.ratingCount})
+        <Text
+          style={[yazi.data, { color: palet.yaziSis }]}
+          numberOfLines={1}
+          maxFontSizeMultiplier={1.3}
+        >
+          {puanli
+            ? `${item.store.district} · ★ ${sayi(item.store.avgStars, 1)} · ${t("storeProfile.ratingCount", { count: item.store.ratingCount })}`
+            : item.store.district}
         </Text>
+        {/* Under the name rather than beside it: "Bugün paketi var" is
+            four words, and squeezed into the right-hand column it took
+            the shop's own name down to an ellipsis. */}
+        <View style={styles.durum}>
+          <Badge
+            label={
+              item.hasLiveOfferToday
+                ? t("favorites.hasOfferToday")
+                : t("favorites.noOfferToday")
+            }
+            ton={item.hasLiveOfferToday ? "sodyum" : "notr"}
+          />
+        </View>
       </View>
-      <Badge
-        label={
-          item.hasLiveOfferToday
-            ? t("favorites.hasOfferToday")
-            : t("favorites.noOfferToday")
-        }
-        tone={item.hasLiveOfferToday ? "success" : "neutral"}
-      />
     </Pressable>
   );
 }
 
-export default function FavoritesScreen() {
+export default function FavorilerEkrani() {
   const { t } = useTranslation();
   const router = useRouter();
-  const favoritesQuery = useFavorites();
+  const palet = usePalet();
+  const favorilerSorgusu = useFavorites();
 
   return (
     <Screen>
-      <Text style={styles.title}>{t("favorites.title")}</Text>
+      <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>
+        {t("favorites.title")}
+      </Text>
 
-      {favoritesQuery.isLoading ? (
+      {favorilerSorgusu.isLoading ? (
         <LoadingState />
-      ) : favoritesQuery.isError ? (
-        <ErrorState onRetry={() => favoritesQuery.refetch()} />
-      ) : (favoritesQuery.data?.items.length ?? 0) === 0 ? (
+      ) : favorilerSorgusu.isError ? (
+        <ErrorState onRetry={() => favorilerSorgusu.refetch()} />
+      ) : (favorilerSorgusu.data?.items.length ?? 0) === 0 ? (
+        // An empty screen is an invitation to act: this one used to
+        // explain and then stop.
         <EmptyState
           icon="heart-outline"
           title={t("favorites.emptyTitle")}
           body={t("favorites.emptyBody")}
+          ctaLabel={t("favorites.emptyCta")}
+          onPressCta={() => router.push("/(tabs)")}
         />
       ) : (
         <FlatList
-          data={favoritesQuery.data?.items ?? []}
+          data={favorilerSorgusu.data?.items ?? []}
           keyExtractor={(item) => item.storeId}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={styles.listeIcerik}
           renderItem={({ item }) => (
-            <FavoriteRow
+            <FavoriSatiri
               item={item}
               onPress={() =>
                 router.push({ pathname: "/store/[id]", params: { id: item.storeId } })
@@ -92,53 +134,18 @@ export default function FavoritesScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.neutral[900],
-    marginBottom: spacing.md,
-  },
-  listContent: {
-    gap: spacing.sm,
-    paddingBottom: spacing["3xl"],
-  },
-  row: {
+  baslik: { marginBottom: s.s3 },
+  listeIcerik: { gap: s.s2, paddingBottom: s.s10 },
+  satir: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    backgroundColor: colors.neutral[0],
-    borderWidth: 1,
-    borderColor: colors.neutral[100],
+    alignItems: "stretch",
+    borderRadius: r.card,
+    overflow: "hidden",
+    minHeight: 72,
+    paddingRight: s.s3,
+    elevation: 0,
   },
-  rowPressed: {
-    opacity: 0.85,
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.md,
-  },
-  avatarFallback: {
-    backgroundColor: colors.primary[50],
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarFallbackText: {
-    fontSize: 22,
-  },
-  rowBody: {
-    flex: 1,
-    gap: 2,
-  },
-  storeName: {
-    fontSize: typeScale.bodyStrong.size,
-    fontWeight: typeScale.bodyStrong.weight,
-    color: colors.neutral[900],
-  },
-  storeMeta: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[600],
-  },
+  serit: { width: SERIT_GENISLIGI, alignSelf: "stretch" },
+  govde: { flex: 1, gap: 2, paddingVertical: s.s3, paddingLeft: s.s3, paddingRight: s.s2 },
+  durum: { marginTop: s.s1 },
 });

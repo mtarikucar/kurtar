@@ -1,102 +1,159 @@
-import { useState } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { FlatList, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { colors, spacing, typeScale } from "@kurtar/ui-tokens";
 import { Screen } from "../../components/Screen";
 import { TextField } from "../../components/TextField";
-import { Chip } from "../../components/Chip";
-import { OfferCard } from "../../components/OfferCard";
+import { Button } from "../../components/Button";
+import { DistrictPicker } from "../../components/DistrictPicker";
 import { EmptyState } from "../../components/EmptyState";
 import { ErrorState } from "../../components/ErrorState";
 import { LoadingState } from "../../components/LoadingState";
+import { VitrinKarti } from "../../components/kepenk";
+import { CiplerBar } from "../../components/kesif/CiplerBar";
+import { usePalet } from "../../design/theme";
+import { kart, s, yazi } from "../../design/tokens";
 import { useDiscoveryOffers } from "../../hooks/use-discovery";
 import { useEffectiveLocation } from "../../hooks/use-effective-location";
-import { DistrictPicker } from "../../components/DistrictPicker";
-import type { CategoryFilter } from "../../components/FilterSheet";
+import {
+  eslesiyorMu,
+  kategoriSorgusu,
+  teklifeCevir,
+  type KesifKategorisi,
+} from "../../lib/kesif";
 
-const CATEGORIES: CategoryFilter[] = ["MEAL", "BAKERY", "GROCERY", "PRODUCE", "OTHER"];
+/** Wide enough to reach the other side of the Bosphorus: Ara is the one
+ * screen where a user is looking for a NAME rather than for whatever is
+ * nearest, so it must not silently drop a shop they can name. */
+const ARAMA_YARICAPI_M = 20_000;
 
-export default function SearchScreen() {
+/** The same floor `kesif/duzen.ts` holds the street's cards to, so a very
+ * narrow device never crushes the tabela below its own type floor. */
+const EN_DAR_KART = 280;
+
+/**
+ * ARA — search.
+ *
+ * The chips here are the discovery screen's chips, the same component
+ * with the same six categories and the same `kategoriSorgusu` /
+ * `eslesiyorMu` query mapping — not a second category vocabulary. The
+ * screen used to carry its own row naming the API's five raw
+ * `BagCategory` values (Yemek / Fırın / Market / Manav / Diğer), so a
+ * user tapping "Fırın" on Keşfet and "Fırın" on Ara was choosing from two
+ * different sets on two adjacent tabs.
+ *
+ * Results are the same storefront card the street shows, so a shop found
+ * by name looks like the shop found by walking.
+ */
+export default function AramaEkrani() {
   const { t } = useTranslation();
   const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<CategoryFilter | null>(null);
-  const [districtPickerOpen, setDistrictPickerOpen] = useState(false);
+  const palet = usePalet();
+  const { width } = useWindowDimensions();
+
+  const [sorgu, setSorgu] = useState("");
+  const [kategori, setKategori] = useState<KesifKategorisi>("TUMU");
+  const [bolgePickerAcik, setBolgePickerAcik] = useState(false);
   const { coords, denied, setManualLocation } = useEffectiveLocation();
 
-  const hasSearch = query.trim().length > 0 || category !== null;
+  const aramaVar = sorgu.trim().length > 0 || kategori !== "TUMU";
+  const apiKategorisi = kategoriSorgusu(kategori);
 
-  const offersQuery = useDiscoveryOffers(
-    coords && hasSearch
+  const teklifSorgusu = useDiscoveryOffers(
+    coords && aramaVar
       ? {
           lat: coords.lat,
           lng: coords.lng,
-          radiusM: 20000,
-          category: category ?? undefined,
-          q: query.trim().length > 0 ? query.trim() : undefined,
+          radiusM: ARAMA_YARICAPI_M,
+          category: apiKategorisi ?? undefined,
+          q: sorgu.trim().length > 0 ? sorgu.trim() : undefined,
           pageSize: 30,
         }
       : null,
   );
 
+  // The fırın/pastane split is client-side by construction — the backend
+  // calls both BAKERY (see lib/kesif.ts) — so it is applied here exactly
+  // as the street applies it.
+  const sonuclar = useMemo(
+    () => (teklifSorgusu.data?.items ?? []).filter((teklif) => eslesiyorMu(kategori, teklif)),
+    [teklifSorgusu.data, kategori],
+  );
+
+  // Floored, not just capped: on a cold web load the window reports 0 on
+  // the first paint, and a card built from `width - gutters` would hand
+  // its SVG children a negative width, which RNSVG rejects outright.
+  const kartGenisligi = Math.max(
+    EN_DAR_KART,
+    Math.min(kart.genislik, Math.round(width - 2 * s.s5)),
+  );
+
   return (
-    <Screen>
-      <Text style={styles.title}>{t("tabs.search")}</Text>
+    <Screen padded={false}>
+      <View style={styles.ustBolum}>
+        <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>
+          {t("tabs.search")}
+        </Text>
 
-      <TextField
-        label={t("search.placeholder")}
-        placeholder={t("search.placeholder")}
-        value={query}
-        onChangeText={setQuery}
-        returnKeyType="search"
-      />
+        {/* One string, one job: the placeholder says what to type, so the
+            label is carried for the screen reader alone. */}
+        <TextField
+          label={t("search.placeholder")}
+          etiketGizli
+          placeholder={t("search.placeholder")}
+          value={sorgu}
+          onChangeText={setSorgu}
+          returnKeyType="search"
+          testID="arama-girisi"
+        />
+      </View>
 
-      <View style={styles.chipRow}>
-        {CATEGORIES.map((c) => (
-          <Chip
-            key={c}
-            label={t(`discover.categories.${c}`)}
-            selected={category === c}
-            onPress={() => setCategory(category === c ? null : c)}
-          />
-        ))}
+      <View style={styles.cipler}>
+        <CiplerBar secili={kategori} onSec={setKategori} />
       </View>
 
       {denied ? (
-        <Chip
-          label={t("discover.chooseDistrict")}
-          onPress={() => setDistrictPickerOpen(true)}
-        />
+        <View style={styles.bolgeSecici}>
+          <Button
+            label={t("discover.chooseDistrict")}
+            varyant="ikincil"
+            onPress={() => setBolgePickerAcik(true)}
+          />
+        </View>
       ) : null}
 
-      <View style={styles.results}>
-        {!hasSearch ? (
+      <View style={styles.sonuclar}>
+        {!aramaVar ? (
           <EmptyState
             icon="search-outline"
             title={t("search.prompt")}
             body={t("search.promptBody")}
           />
-        ) : !coords ? (
+        ) : !coords || teklifSorgusu.isLoading ? (
           <LoadingState />
-        ) : offersQuery.isLoading ? (
-          <LoadingState />
-        ) : offersQuery.isError ? (
-          <ErrorState onRetry={() => offersQuery.refetch()} />
-        ) : (offersQuery.data?.items.length ?? 0) === 0 ? (
+        ) : teklifSorgusu.isError ? (
+          <ErrorState onRetry={() => teklifSorgusu.refetch()} />
+        ) : sonuclar.length === 0 ? (
           <EmptyState
             icon="sad-outline"
             title={t("search.emptyTitle")}
-            body={t("search.emptyBody", { query: query || category })}
+            body={
+              sorgu.trim().length > 0
+                ? t("search.emptyBody", { query: sorgu.trim() })
+                : t("search.emptyKategoriBody")
+            }
+            ctaLabel={t("search.emptyCta")}
+            onPressCta={() => router.push("/(tabs)")}
           />
         ) : (
           <FlatList
-            data={offersQuery.data?.items ?? []}
+            data={sonuclar}
             keyExtractor={(item) => item.offerId}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={styles.listeIcerik}
             renderItem={({ item }) => (
-              <OfferCard
-                offer={item}
+              <VitrinKarti
+                teklif={teklifeCevir(item)}
+                genislik={kartGenisligi}
                 onPress={() =>
                   router.push({
                     pathname: "/offer/[id]",
@@ -114,36 +171,26 @@ export default function SearchScreen() {
       </View>
 
       <DistrictPicker
-        visible={districtPickerOpen}
-        onSelect={(coordsValue) => {
-          setManualLocation(coordsValue);
-          setDistrictPickerOpen(false);
+        visible={bolgePickerAcik}
+        onSelect={(secilen) => {
+          setManualLocation(secilen);
+          setBolgePickerAcik(false);
         }}
-        onClose={() => setDistrictPickerOpen(false)}
+        onClose={() => setBolgePickerAcik(false)}
       />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  title: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.neutral[900],
-    marginBottom: spacing.md,
-  },
-  chipRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  results: {
-    flex: 1,
-    marginTop: spacing.md,
-  },
-  listContent: {
-    gap: spacing.md,
-    paddingBottom: spacing["3xl"],
+  ustBolum: { paddingHorizontal: s.s5, gap: s.s3 },
+  baslik: { marginBottom: s.s1 },
+  cipler: { marginTop: s.s4 },
+  bolgeSecici: { paddingHorizontal: s.s5, marginTop: s.s3 },
+  sonuclar: { flex: 1, marginTop: s.s4 },
+  listeIcerik: {
+    paddingHorizontal: s.s5,
+    gap: kart.aralik,
+    paddingBottom: s.s10,
   },
 });

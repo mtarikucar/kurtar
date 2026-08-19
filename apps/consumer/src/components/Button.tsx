@@ -6,14 +6,23 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
+import { usePalet } from "../design/theme";
+import { m, r, s, yazi } from "../design/tokens";
 
-type Variant = "primary" | "secondary" | "danger" | "ghost";
+/**
+ * `birincil` — the sodium fill with `#12181F` ink (spec §3: "CTA ink is
+ * bg.asfalt on it"). `ikincil` — a hairline outline on the ground, for a
+ * second action that must be reachable without competing with the first.
+ * `hayalet` — type only, in the ground's secondary ink, so it reads as
+ * the quieter of two ways out. `tehlike` — the awning-red fill with dark
+ * ink, because red is a FILL in this app, never type on a surface (§1.1).
+ */
+type Varyant = "birincil" | "ikincil" | "hayalet" | "tehlike";
 
 interface ButtonProps {
   label: string;
   onPress: () => void;
-  variant?: Variant;
+  varyant?: Varyant;
   disabled?: boolean;
   loading?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -21,41 +30,73 @@ interface ButtonProps {
   testID?: string;
 }
 
-/** Primary CTA primitive — 48pt min height (comfortably above the 44pt a11y
- * target), disabled+loading both block onPress, loading swaps the label
- * for a spinner without changing the button's height (avoids layout jump
- * on the purchase/redeem flows where this matters most). */
+/**
+ * The CTA primitive for every screen outside the money path (which has
+ * `teslim/ortak`'s 56pt `Dugme`) and outside the Track C panels (which
+ * have `PanelButton`). Same doctrine as both: 48pt minimum, `r.cta`
+ * radius — never the pill or the rounded tile — elevation 0, and the
+ * entire press budget is one opacity, no scale and no glow (§1.3/§5.10).
+ *
+ * `ikincil` outlines in `yaziSisZemin` rather than `cizgiKil`: this
+ * button is usually the only affordance on an otherwise empty ground,
+ * and a hairline sits at ~1.4:1 against the asphalt in every phase —
+ * fine as a chip's edge in a row of chips, invisible as a lone control.
+ */
 export function Button({
   label,
   onPress,
-  variant = "primary",
+  varyant = "birincil",
   disabled,
   loading,
   style,
   accessibilityHint,
   testID,
 }: ButtonProps) {
-  const isDisabled = disabled || loading;
+  const palet = usePalet();
+  const kapali = disabled || loading;
+
+  const dolgu: ViewStyle =
+    varyant === "birincil"
+      ? { backgroundColor: palet.sodyumDolgu }
+      : varyant === "tehlike"
+        ? { backgroundColor: palet.tenteDolgu }
+        : varyant === "ikincil"
+          ? { borderWidth: 1, borderColor: palet.yaziSisZemin }
+          : {};
+
+  const yaziRengi =
+    varyant === "birincil"
+      ? palet.sodyumMurekkep
+      : varyant === "tehlike"
+        ? palet.tenteMurekkep
+        : varyant === "ikincil"
+          ? palet.yaziAnaZemin
+          : palet.yaziSisZemin;
+
   return (
     <Pressable
       onPress={onPress}
-      disabled={isDisabled}
+      disabled={kapali}
       accessibilityRole="button"
-      accessibilityState={{ disabled: isDisabled, busy: loading }}
+      accessibilityState={{ disabled: kapali, busy: loading }}
       accessibilityHint={accessibilityHint}
       testID={testID}
       style={({ pressed }) => [
-        styles.base,
-        variantStyles[variant],
-        isDisabled && styles.disabled,
-        pressed && !isDisabled && styles.pressed,
+        styles.taban,
+        dolgu,
+        kapali ? styles.kapali : null,
+        pressed && !kapali ? { opacity: m.pressOpacity } : null,
         style,
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={textColorFor(variant)} />
+        <ActivityIndicator color={yaziRengi} />
       ) : (
-        <Text style={[styles.label, { color: textColorFor(variant) }]}>
+        <Text
+          style={[yazi.body, styles.etiket, { color: yaziRengi }]}
+          numberOfLines={1}
+          maxFontSizeMultiplier={1.4}
+        >
           {label}
         </Text>
       )}
@@ -63,36 +104,16 @@ export function Button({
   );
 }
 
-function textColorFor(variant: Variant): string {
-  if (variant === "ghost") return colors.primary[500];
-  if (variant === "secondary") return colors.neutral[900];
-  return colors.neutral[0];
-}
-
 const styles = StyleSheet.create({
-  base: {
+  taban: {
     minHeight: 48,
-    borderRadius: radii.md,
+    borderRadius: r.cta,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: s.s6,
     flexDirection: "row",
+    elevation: 0,
   },
-  label: {
-    fontSize: typeScale.bodyStrong.size,
-    fontWeight: typeScale.bodyStrong.weight,
-  },
-  disabled: {
-    opacity: 0.5,
-  },
-  pressed: {
-    opacity: 0.85,
-  },
+  etiket: { fontFamily: "Archivo_600SemiBold" },
+  kapali: { opacity: 0.45 },
 });
-
-const variantStyles: Record<Variant, ViewStyle> = {
-  primary: { backgroundColor: colors.primary[500] },
-  secondary: { backgroundColor: colors.neutral[100] },
-  danger: { backgroundColor: colors.semantic.danger[500] },
-  ghost: { backgroundColor: "transparent" },
-};
