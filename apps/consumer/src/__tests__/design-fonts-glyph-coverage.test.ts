@@ -3,6 +3,10 @@ import path from "node:path";
 import { TextDecoder as NodeTextDecoder } from "node:util";
 import type { Font, FontCollection } from "fontkit";
 import { UYGULAMA_FONTLARI } from "../design/fonts";
+import {
+  TABELA_HARF_GENISLIKLERI,
+  TABELA_VARSAYILAN_HARF,
+} from "../components/kepenk/tabela-olcu";
 
 /**
  * fontkit builds a `new TextDecoder('ascii')` at module load, and the
@@ -132,5 +136,27 @@ describe("Turkish glyph coverage over the shipped TTFs (§1.2)", () => {
       const cjk = 0x4e2d; // 中
       expect(font.hasGlyphForCodePoint(cjk)).toBe(false);
     });
+  });
+});
+
+/**
+ * The tabela fits a shop name by measuring it (tabela-olcu.ts), which is
+ * only honest as long as its width table IS Archivo Black's. A font
+ * update that changed a single advance would otherwise silently start
+ * truncating names again.
+ */
+describe("the tabela's width table is Archivo Black's own metrics", () => {
+  const font = tekFont(`${ARCHIVO_BLACK}/400Regular/ArchivoBlack_400Regular.ttf`);
+
+  it.each(Object.entries(TABELA_HARF_GENISLIKLERI))("%s", (harf, genislik) => {
+    const glyph = font.glyphForCodePoint(harf.codePointAt(0) ?? 0);
+    expect(Math.round((glyph.advanceWidth / font.unitsPerEm) * 1000)).toBe(genislik);
+  });
+
+  it("assumes an unknown character is wider than any known one", () => {
+    // So a name with a character nobody anticipated shrinks rather than
+    // overflowing the sign.
+    const enGenis = Math.max(...Object.values(TABELA_HARF_GENISLIKLERI));
+    expect(TABELA_VARSAYILAN_HARF).toBeGreaterThanOrEqual(enGenis);
   });
 });

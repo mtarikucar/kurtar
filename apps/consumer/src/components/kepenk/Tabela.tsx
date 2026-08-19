@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { r, s, yazi, type Palet } from "../../design/tokens";
 import { trUpper } from "../../design/tr-upper";
+import { tabelaOlcusu } from "./tabela-olcu";
 
 /**
  * TABELA — the painted sign, at a FIXED Y below the shutter band
@@ -11,8 +12,10 @@ import { trUpper } from "../../design/tr-upper";
  * which Android resolves through its own Typeface lookup and silently
  * falls back to Roboto, taking the drawn ğ and İ with it (§5.5).
  *
- * Long names truncate; they do not wrap, because a fixed Y is worth more
- * than a second line.
+ * The name never truncates and never wraps: a fixed Y is worth more than
+ * a second line, and a shop sign that cannot fit the shop's name is a
+ * broken sign — so the type gives way instead, down to a 14pt floor
+ * (see tabela-olcu.ts).
  */
 export function Tabela({
   genislik,
@@ -29,6 +32,10 @@ export function Tabela({
   sonuk?: boolean;
 }) {
   const plakaYuksekligi = yukseklik - 6;
+  const yazit = trUpper(ad);
+  // The plaque's inner width: its own 6pt padding, the two 3pt bolts and
+  // the 6pt gap each side of the type.
+  const olcu = tabelaOlcusu(yazit, genislik - 2 * s.s3 - 12 - 6 - 12);
 
   return (
     <View
@@ -52,13 +59,17 @@ export function Tabela({
           style={[
             yazi.tabelaLg,
             styles.ad,
-            { color: sonuk ? palet.plakaYaziSonuk : palet.plakaYazi },
+            {
+              fontSize: olcu.boyut,
+              lineHeight: olcu.satirYuksekligi,
+              color: sonuk ? palet.plakaYaziSonuk : palet.plakaYazi,
+            },
           ]}
           numberOfLines={1}
           ellipsizeMode="tail"
           maxFontSizeMultiplier={yazi.tabelaLg.maxFontSizeMultiplier}
         >
-          {trUpper(ad)}
+          {yazit}
         </Text>
         <View style={[styles.civata, { backgroundColor: palet.plakaBoltu }]} />
       </View>

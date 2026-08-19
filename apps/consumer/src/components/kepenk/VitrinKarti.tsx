@@ -1,4 +1,5 @@
 import { PixelRatio, Pressable, StyleSheet, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Path } from "react-native-svg";
 import { useTranslation } from "react-i18next";
 import { useReduceMotion } from "../../design/reduce-motion";
@@ -17,6 +18,7 @@ import {
   degerBandiMetni,
   degerOrani,
   fiyatMetni,
+  isikGucu,
   kalanDakika,
   katMetni,
   kepenkP,
@@ -87,6 +89,7 @@ export function VitrinKarti({
   const tukendi = durum === "tukendi";
 
   const p = kepenkP(kalanDk, durum);
+  const guc = isikGucu(p, durum);
   const oran = degerOrani(teklif.degerMinKurus, teklif.degerMaxKurus, teklif.fiyatKurus);
   const desen = tenteDeseni(teklif.dukkanId);
   const acilisSaati = saatBulunma(formatClockTime(baslangic));
@@ -139,10 +142,11 @@ export function VitrinKarti({
         genislik={genislik - 2}
         band={band}
         p={p}
+        guc={guc}
         glyph={glyphSec(teklif.kategori, teklif.dukkanAdi)}
         palet={palet}
         azaltHareket={azaltHareket}
-        isikVar={!tukendi}
+        kalanAdet={teklif.kalanAdet}
         girisYap={girisYap}
         hap={
           tukendi ? null : (
@@ -156,6 +160,21 @@ export function VitrinKarti({
           )
         }
       />
+
+      {/* The shop's light washes the top of its own sign — the card body
+          below the opening is lit by the opening, which is what makes the
+          whole object read as one lit thing rather than a bright strip
+          pasted onto a dark card. */}
+      {guc > 0 ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[
+            `rgba(${palet.isikRgb},${(0.22 * guc * palet.isikSiddeti).toFixed(3)})`,
+            `rgba(${palet.isikRgb},0)`,
+          ]}
+          style={[styles.altParlama, { top: kart.tente + band, width: genislik - 2 }]}
+        />
+      ) : null}
 
       <Tabela
         genislik={genislik - 2}
@@ -323,6 +342,7 @@ export function yirtikYol(genislik: number, yukseklik: number): string {
 
 const styles = StyleSheet.create({
   tamKaplama: { position: "absolute", left: 0, top: 0, right: 0, bottom: 0 },
+  altParlama: { position: "absolute", left: 0, height: 22 },
   kart: {
     borderRadius: r.card,
     overflow: "hidden",

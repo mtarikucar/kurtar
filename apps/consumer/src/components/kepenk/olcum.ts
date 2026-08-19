@@ -58,6 +58,25 @@ export function teklifDurumu(
 export const ACIL_DK = 30;
 
 /**
+ * How hard the shop burns, 0..1 — the other half of the gauge.
+ *
+ * The shutter tells you how little time is left by MOVING; the light
+ * tells you by BURNING, and it burns hotter as the gap narrows. A shop
+ * with twenty minutes to run is the most alive thing in the list: a
+ * nearly-shut front with sodium knifing out of a 15pt slit. A shop with
+ * three hours is wide open and merely warm.
+ *
+ * Two states emit nothing at all, and that is what separates the two
+ * frames that would otherwise be the same picture: a shop that has NOT
+ * OPENED YET is shut and dark, and a SOLD OUT shop is shut and dark. Only
+ * a closing shop is shut and blazing.
+ */
+export function isikGucu(p: number, durum: KepenkDurumu): number {
+  if (durum !== "acik") return 0;
+  return kis(0.34 + 0.85 * p, 0.34, 1);
+}
+
+/**
  * Value comparator (spec §3). Fuller = BETTER deal — the direction every
  * progress bar the user has ever met runs, and the direction D3 had
  * backwards.

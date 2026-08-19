@@ -10,6 +10,7 @@ import {
   ALIS_BASLANGIC,
   GERCEK_TEKLIFLER,
   INCELEME_ANLARI,
+  UZUN_BASLANGIC,
   type IncelemeAni,
 } from "../components/kepenk/gercek-teklifler";
 import { degerOrani } from "../components/kepenk/olcum";
@@ -58,6 +59,8 @@ export default function VitrinIncelemeEkrani() {
         </View>
 
         <ParcaSeridi />
+
+        <IsikKarsilastirmasi />
 
         {FAZLAR.map((faz) => (
           <FazBolumu key={faz} faz={faz} />
@@ -138,6 +141,55 @@ function ParcaSeridi() {
   );
 }
 
+/**
+ * The check the light has to pass: one shop, four states, side by side.
+ * Cover the pills and the picture still has to say which is which — a
+ * closing shop is the brightest thing here, and the two shut-and-not-
+ * closing states are dark.
+ */
+function IsikKarsilastirmasi() {
+  const { t } = useTranslation();
+  const palet = PALETLER.gece;
+  const teklif = GERCEK_TEKLIFLER[1] ?? GERCEK_TEKLIFLER[0]!;
+  const bitis = new Date(teklif.alisBitis).getTime();
+  const durumlar = [
+    {
+      anahtar: "isikAcikUzak",
+      simdi: new Date(bitis - 180 * 60_000),
+      teklif: { ...teklif, alisBaslangic: UZUN_BASLANGIC },
+    },
+    { anahtar: "isikAcikYakin", simdi: new Date(bitis - 20 * 60_000), teklif },
+    {
+      anahtar: "isikAcilmadi",
+      simdi: new Date(new Date(teklif.alisBaslangic).getTime() - 45 * 60_000),
+      teklif,
+    },
+    {
+      anahtar: "isikTukendi",
+      simdi: new Date(bitis - 90 * 60_000),
+      teklif: { ...teklif, kalanAdet: 0 },
+    },
+  ];
+
+  return (
+    <View style={[styles.bolum, { backgroundColor: palet.bgAsfalt }]}>
+      <Etiket metin={t("vitrinInceleme.isik")} palet={palet} />
+      <View style={styles.kartlar}>
+        {durumlar.map((durum) => (
+          <View key={durum.anahtar} style={styles.isikSutunu}>
+            <AltEtiket metin={t(`vitrinInceleme.${durum.anahtar}`)} palet={palet} />
+            <ClockProvider sabitZaman={durum.simdi}>
+              <ThemeProvider fazZorla="gece">
+                <VitrinKarti teklif={durum.teklif} />
+              </ThemeProvider>
+            </ClockProvider>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 function FazBolumu({ faz }: { faz: Faz }) {
   const { t } = useTranslation();
   const palet = PALETLER[faz];
@@ -196,4 +248,5 @@ const styles = StyleSheet.create({
   sira: { flexDirection: "row", flexWrap: "wrap", gap: s.s3, alignItems: "center", marginBottom: s.s5 },
   tenteOrnek: { gap: s.s1 },
   cubukAlani: { maxWidth: 320, gap: s.s3 },
+  isikSutunu: { gap: s.s1 },
 });

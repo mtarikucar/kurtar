@@ -13,9 +13,17 @@ import {
   teklifDurumu,
   yurumeDakikasi,
 } from "../components/kepenk/olcum";
+import { isikGucu } from "../components/kepenk/olcum";
 import { glyphSec } from "../components/kepenk/glyphs";
+import {
+  TABELA_EN_BUYUK,
+  TABELA_EN_KUCUK,
+  tabelaGenisligi,
+  tabelaOlcusu,
+} from "../components/kepenk/tabela-olcu";
 import { tenteDeseni, tenteHash, TENTE_DESENLERI } from "../components/kepenk/tente-desen";
 import { saatBulunma, saatEki } from "../components/kepenk/tr-saat";
+import { trUpper } from "../design/tr-upper";
 
 describe("kepenkP() — the gauge (§2)", () => {
   it.each([
@@ -196,5 +204,78 @@ describe("glyphSec() — we draw the shop's tools (§3)", () => {
     ["BILINMEYEN", "Bir Yer", "kafe"],
   ])("%s / %s -> %s", (kategori, ad, beklenen) => {
     expect(glyphSec(kategori, ad)).toBe(beklenen);
+  });
+});
+
+describe("isikGucu() — the other half of the gauge", () => {
+  it("burns HOTTER as the gap narrows, not dimmer", () => {
+    const ucSaat = isikGucu(kepenkP(180, "acik"), "acik");
+    const doksanDk = isikGucu(kepenkP(90, "acik"), "acik");
+    const yirmiDk = isikGucu(kepenkP(20, "acik"), "acik");
+    expect(ucSaat).toBeLessThan(doksanDk);
+    expect(doksanDk).toBeLessThan(yirmiDk);
+    expect(yirmiDk).toBeGreaterThan(0.9);
+    // …and the urgent one is the brightest thing in the list.
+    expect(yirmiDk / ucSaat).toBeGreaterThan(2);
+  });
+
+  it("goes dark for the two states that are shut and NOT closing", () => {
+    // This is what makes "hasn't opened yet" and "20 minutes left" two
+    // different pictures rather than two identical shutters: one is shut
+    // and dark, the other is shut and blazing.
+    expect(isikGucu(kepenkP(0, "acilmadi"), "acilmadi")).toBe(0);
+    expect(isikGucu(kepenkP(0, "tukendi"), "tukendi")).toBe(0);
+    expect(isikGucu(kepenkP(20, "acik"), "acik")).toBeGreaterThan(0);
+  });
+
+  it("never goes past full or below its floor", () => {
+    for (let dk = 0; dk <= 600; dk += 1) {
+      const guc = isikGucu(kepenkP(dk, "acik"), "acik");
+      expect(guc).toBeGreaterThanOrEqual(0.34);
+      expect(guc).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe("tabelaOlcusu() — the sign fits the shop's name (§3)", () => {
+  const PLAKA_ICI = 358 - 24 - 12 - 6 - 12;
+
+  it("leaves short names at full size", () => {
+    expect(tabelaOlcusu("MODA FIRIN", PLAKA_ICI).boyut).toBe(TABELA_EN_BUYUK);
+    expect(tabelaOlcusu("LEVENT FIRIN", PLAKA_ICI).boyut).toBe(TABELA_EN_BUYUK);
+  });
+
+  it("quietens the one real name that did not fit, rather than truncating it", () => {
+    // 309pt of type in 304pt of plaque at 20pt — this is the row that
+    // rendered as "BEŞİKTAŞ MANAV ALİ US…".
+    expect(tabelaGenisligi("BEŞİKTAŞ MANAV ALİ USTA", TABELA_EN_BUYUK)).toBeGreaterThan(
+      PLAKA_ICI,
+    );
+    const olcu = tabelaOlcusu("BEŞİKTAŞ MANAV ALİ USTA", PLAKA_ICI);
+    expect(olcu.boyut).toBeLessThan(TABELA_EN_BUYUK);
+    expect(tabelaGenisligi("BEŞİKTAŞ MANAV ALİ USTA", olcu.boyut)).toBeLessThanOrEqual(
+      PLAKA_ICI,
+    );
+  });
+
+  it.each([
+    "Yeldeğirmeni Pastanesi",
+    "Beşiktaş Manav Ali Usta",
+    "Moda Fırın",
+    "Levent Fırın",
+    "Kadıköy Çiğköfteci Ömer Usta & Oğulları",
+  ])("fits %s", (ad) => {
+    const yazit = trUpper(ad);
+    const olcu = tabelaOlcusu(yazit, PLAKA_ICI);
+    expect(olcu.boyut).toBeGreaterThanOrEqual(TABELA_EN_KUCUK);
+    if (olcu.boyut > TABELA_EN_KUCUK) {
+      expect(tabelaGenisligi(yazit, olcu.boyut)).toBeLessThanOrEqual(PLAKA_ICI);
+    }
+    expect(olcu.satirYuksekligi).toBeGreaterThan(olcu.boyut);
+  });
+
+  it("never goes below the floor, even for a name nobody should have", () => {
+    const olcu = tabelaOlcusu("A".repeat(120), PLAKA_ICI);
+    expect(olcu.boyut).toBe(TABELA_EN_KUCUK);
   });
 });

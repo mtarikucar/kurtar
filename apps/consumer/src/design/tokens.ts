@@ -82,15 +82,30 @@ export interface Palet {
   readonly kartUstIsik: string;
   readonly kartAltTemas: string;
 
-  /** The vitrin (shop opening) behind the shutter. */
+  /** The vitrin (shop opening) behind the shutter, UNLIT: the interior of
+   * a shop with the lights off. Everything that makes it read as lit is
+   * painted on top of it and scales with how far the shutter has come
+   * down. */
   readonly vitrinZemin: string;
-  /** Light-spill gradient over the vitrin. Both stops are explicit rgba —
-   * never `'transparent'`, which Android interpolates through #00000000
-   * and smudges grey (spec §1.3 / §5.7). */
-  readonly isikTasmasi: readonly [string, string];
+  /**
+   * The sodium the shop emits, as an "R,G,B" triple.
+   *
+   * A triple rather than finished colours because the light's ALPHA is a
+   * function of the gauge — the narrower the slit, the hotter it burns
+   * (see `isikGucu()`) — so the stops are composed per frame. Every one
+   * of them ends at `rgba(R,G,B,0)`, never `'transparent'` (§5.7).
+   */
+  readonly isikRgb: string;
+  /** The opaque core of the light, right under the lip: the bit that is
+   * brighter than any surface on the card. */
+  readonly isikCekirdek: string;
+  /** How hard this phase's shop burns. At noon the same lamp against a
+   * bright street is a fraction of what it is at midnight. */
+  readonly isikSiddeti: number;
   /** Flat fallback for `deviceYearClass < 2019` (spec §2 Degradation). */
   readonly isikTasmasiDuz: string;
-  /** 1.5pt line-art category glyph. */
+  /** 1.5pt line-art category glyph — a tool INSIDE the lit shop, so it
+   * reads as a silhouette against the light rather than a pale line. */
   readonly glyphCizgi: string;
 
   /** Tabela plaque. */
@@ -142,10 +157,14 @@ const GECE: Palet = Object.freeze({
   kartCizgiKalinlik: 0,
   kartUstIsik: "rgba(242,230,206,0.07)",
   kartAltTemas: "#0E141A",
-  vitrinZemin: "#0E141A",
-  isikTasmasi: ["rgba(255,178,63,0.16)", "rgba(255,178,63,0)"],
-  isikTasmasiDuz: "rgba(255,178,63,0.10)",
-  glyphCizgi: "rgba(242,230,206,0.14)",
+  // Warm, not black: this is the inside of a shop, and the only reason
+  // it is ever dark is that the lamp is off (sold out, or not open yet).
+  vitrinZemin: "#1A1207",
+  isikRgb: "255,178,63",
+  isikCekirdek: "#FFD79A",
+  isikSiddeti: 1,
+  isikTasmasiDuz: "rgba(255,178,63,0.35)",
+  glyphCizgi: "rgba(60,32,4,0.58)",
   plakaZemin: "#0E141A",
   plakaCizgi: "rgba(242,230,206,0.35)",
   plakaYazi: "#F2E6CE",
@@ -190,12 +209,17 @@ const GUNDUZ: Palet = Object.freeze({
   kartCizgiKalinlik: 1,
   kartUstIsik: "rgba(255,255,255,0.55)",
   kartAltTemas: "rgba(18,24,31,0.22)",
-  vitrinZemin: "#D3C4A4",
-  // In daylight the shop's opening is the DARK thing: the spill is a
-  // recess shade, not a lamp — the same gradient primitive, inverted.
-  isikTasmasi: ["rgba(18,24,31,0.16)", "rgba(18,24,31,0)"],
-  isikTasmasiDuz: "rgba(18,24,31,0.10)",
-  glyphCizgi: "rgba(18,24,31,0.16)",
+  // In daylight the opening is the DARK thing — a recess in a bright
+  // street — so the unlit interior is a NEUTRAL deep shade, which is what
+  // makes the lit state read as warm against it, and the lamp inside is a
+  // fraction of its night self. A lit shop is still visible through a
+  // narrow gap at noon, which is why the light does not go to zero.
+  vitrinZemin: "#4A4740",
+  isikRgb: "255,190,90",
+  isikCekirdek: "#FFD9A5",
+  isikSiddeti: 0.62,
+  isikTasmasiDuz: "rgba(255,190,90,0.22)",
+  glyphCizgi: "rgba(30,18,4,0.52)",
   plakaZemin: "#E6D6B4",
   plakaCizgi: "rgba(18,24,31,0.32)",
   plakaYazi: "#12181F",
@@ -244,12 +268,15 @@ const ALACAKARANLIK: Palet = Object.freeze({
   kartCizgiKalinlik: 1,
   kartUstIsik: "rgba(255,255,255,0.45)",
   kartAltTemas: "rgba(18,24,31,0.26)",
-  vitrinZemin: "#C6B79B",
-  // Dusk is the one moment both light sources are on: the lamp is lit but
-  // the sky still carries it, so the spill is warm and half-strength.
-  isikTasmasi: ["rgba(255,178,63,0.12)", "rgba(255,178,63,0)"],
-  isikTasmasiDuz: "rgba(255,178,63,0.08)",
-  glyphCizgi: "rgba(18,24,31,0.16)",
+  // Dusk is the one moment both light sources are on: the lamp is lit and
+  // the sky still carries the street, so the interior is a warm mid-shade
+  // and the lamp reads at four-fifths.
+  vitrinZemin: "#37342B",
+  isikRgb: "255,184,72",
+  isikCekirdek: "#FFDCA6",
+  isikSiddeti: 0.82,
+  isikTasmasiDuz: "rgba(255,184,72,0.28)",
+  glyphCizgi: "rgba(40,24,4,0.55)",
   plakaZemin: "#D8CCB4",
   plakaCizgi: "rgba(18,24,31,0.32)",
   plakaYazi: "#12181F",

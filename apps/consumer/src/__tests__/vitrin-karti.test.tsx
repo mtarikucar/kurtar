@@ -186,6 +186,57 @@ describe("accessibility — one composed label per card (§3)", () => {
   });
 });
 
+describe("the light is the other half of the gauge", () => {
+  it("emits when the shop is open, and burns harder the less time is left", async () => {
+    const uzak = await ciz(MODA, kapanmaya(146));
+    expect(screen.getByTestId("kepenk-isik", GORUNUR)).toBeTruthy();
+    await uzak.unmount();
+
+    const yakin = await ciz(MODA, kapanmaya(20));
+    expect(screen.getByTestId("kepenk-isik", GORUNUR)).toBeTruthy();
+    await yakin.unmount();
+  });
+
+  it("tells 'not open yet' apart from 'closing in 20 minutes' WITHOUT the pill", async () => {
+    // Both draw a nearly-closed shutter (0.78). The only thing that can
+    // separate them in the picture is the light: one shop is shut and
+    // dark, the other is shut and blazing.
+    const acilmadi = await ciz(MODA, new Date("2026-08-19T15:00:00.000Z"));
+    expect(screen.queryByTestId("kepenk-isik", GORUNUR)).toBeNull();
+    await acilmadi.unmount();
+
+    const kapanmak: VitrinTeklifi = { ...MODA };
+    const acik = await ciz(kapanmak, kapanmaya(20));
+    expect(screen.getByTestId("kepenk-isik", GORUNUR)).toBeTruthy();
+    await acik.unmount();
+  });
+
+  it("goes dark when the shop sells out", async () => {
+    const bitmis: VitrinTeklifi = { ...MODA, kalanAdet: 0 };
+    const gorunum = await ciz(bitmis, kapanmaya(90));
+    expect(screen.queryByTestId("kepenk-isik", GORUNUR)).toBeNull();
+    await gorunum.unmount();
+  });
+
+  it("stands the remaining packages in the lit window, bounded to four", async () => {
+    const bir = await ciz(YELDEGIRMENI, kapanmaya(56));
+    expect(screen.getByTestId("kepenk-stok-isigi", GORUNUR).props.children).toHaveLength(1);
+    await bir.unmount();
+
+    const uc: VitrinTeklifi = { ...MODA, kalanAdet: 3 };
+    const ucGorunum = await ciz(uc, kapanmaya(56));
+    expect(screen.getByTestId("kepenk-stok-isigi", GORUNUR).props.children).toHaveLength(3);
+    await ucGorunum.unmount();
+
+    // Six is past the subitizing limit, so there is nothing to count and
+    // the window carries no squares at all — the chip carries the number.
+    const alti = await ciz(MODA, kapanmaya(56));
+    expect(screen.queryByTestId("kepenk-stok-isigi", GORUNUR)).toBeNull();
+    expect(metin("son 6")).toBeTruthy();
+    await alti.unmount();
+  });
+});
+
 describe("reduced motion — the ritual survives, the movement doesn't (§2)", () => {
   it("runs no entry roll and no breathing loop when it is on", async () => {
     const geriAl = erisimAzaltmayiAyarla(true);

@@ -56,8 +56,8 @@ cd apps/consumer && npx expo export -p web && npx serve dist -l 8081
 
 ### Tests
 
-9 new suites, 287 new tests (87 → 374 total), all green alongside the
-existing suites; `tsc --noEmit` and `expo lint` clean.
+9 new suites, 350 new tests (87 → 437 total), all green alongside the
+existing suites; `tsc --noEmit` and `eslint` clean.
 
 - `design-fonts-glyph-coverage.test.ts` — fontkit over the seven shipped
   TTFs, asserting `ĞğŞşİıÇçÖöÜü` plus `×` (and `₺` on the money faces) are
@@ -79,10 +79,12 @@ existing suites; `tsc --noEmit` and `expo lint` clean.
   timestamps, frozen palettes, key-set parity, absolute line heights, and
   the subscribed reduce-motion hook.
 - `design-tr-upper.test.ts`, `kepenk-olcum.test.ts` (the gauge's worked
-  values, the clamp-outside proof, monotonicity, the value comparator's
-  direction, Turkish formatting and clock suffixes, the awning hash, the
-  glyph mapping), `vitrin-karti.test.tsx` (24 tests over the real offers,
-  including the composed accessibility label and the reduced-motion path).
+  values, the clamp-outside proof, monotonicity, the light's inverse ramp
+  and its two dark states, the value comparator's direction, Turkish
+  formatting and clock suffixes, the awning hash, the glyph mapping, and
+  the sign-fitting), `vitrin-karti.test.tsx` (28 tests over the real
+  offers, including the composed accessibility label, the light states and
+  the reduced-motion path).
 - `design-yasaklar.test.ts` — §5 "What NOT to do" as executable rules:
   no `textTransform` anywhere, `.toUpperCase()` only inside `trUpper`,
   radius 4, no shadows or elevation in the signature, one pattern-filled
@@ -264,6 +266,96 @@ prop with both fallbacks (flat zinc fill, flat spill) but nothing reads
 `Device.deviceYearClass` yet — that belongs with the Phase 3 slow-Android
 pass, where it can be measured. The 1Hz clock rail exists but is mounted by
 nothing until the redeem screen (Phase 2, Track B).
+
+---
+
+## 6. Second pass — the light, the stock, the two identical shutters, the clipped sign
+
+Four problems came back from review after the first pass. All four are
+fixed; the tests and screenshots below are the evidence.
+
+### 6.1 The light was not lighting
+
+**Before:** the slit under the shutter was a dim brown band. The light was
+one 16%-alpha gradient over a near-black interior, so light and shadow sat
+at the same value, and — worse — the card got DARKER as urgency rose,
+because a narrower gap showed less of the same weak wash. The gauge only
+worked because the metal moved. That inverts the premise: the shop with
+twenty minutes left should be the most alive thing in the list.
+
+**Now:** the opening emits. `isikGucu(p, durum)` is the second half of the
+gauge and runs the opposite way to the gap — 0.41 at three hours, 0.75 at
+ninety minutes, 0.97 at twenty. Four layers carry it, all hung off the lip
+and riding the same animated value as the shutter, so the whole picture
+moves as one object:
+
+1. a **core** — a 10pt opaque sodium band immediately under the lip, the
+   brightest thing on the card, so the narrower the gap the more of what
+   you see IS core;
+2. a **body** falling away downward to an ambient floor rather than to
+   zero, because a wide-open lit shop is lit all the way to the back;
+3. a **bloom on the metal** above the gap, stopping 4pt short of the lip so
+   the leading edge stays a crisp dark silhouette against the light behind
+   it (the lip is what the eye tracks — a bloom painted over it dissolves
+   the line that carries the gauge);
+4. a **wash on the card body** below the band, so the shop's own light
+   falls on the top of its own sign and the card reads as one lit object.
+
+The night interior was warmed from `#0E141A` to `#1A1207` (this is the
+inside of a shop; the only reason it is ever black is that the lamp is
+off), and the day/twilight interiors were made NEUTRAL shades so the lit
+state reads warm against them. A sill line was added at the bottom of the
+opening: without it a wide-open shop is a featureless warm rectangle.
+
+**After, in the screenshots:** at twenty minutes the card is a shut front
+with gold knifing out of a 15pt gap, lighting the zinc above it and the
+sign below it; at three hours the same shop is wide open and merely warm.
+Side by side, the urgent one is unmistakably the brighter, hotter card.
+
+### 6.2 Stock as light
+
+**Before:** nothing in the window. The lit squares existed only inside the
+stock chip, which shows them at four or fewer — so on a list of real
+offers (1, 5, 6, 7 packages) you saw one tiny square on one card.
+
+**Now:** the remaining packages stand lit on the sill of the window, inside
+the light: a white-warm 10pt square with a two-stage halo, one per bag,
+bounded to four because four is the subitizing limit (above four there is
+nothing to count and the window is simply lit — the chip carries the
+number). At two or fewer the last one breathes 0.55→1.0 over 2.4s, static
+under reduced motion. They are covered by the shutter only when it reaches
+the sill, which is the moment there is nothing left to sell.
+
+### 6.3 "Not open yet" and "closing in 20 minutes" were the same picture
+
+Both draw a shutter at 0.78, so only the pill could tell them apart —
+which breaks the promise that the image carries the urgency. This is now
+structural rather than cosmetic: `isikGucu()` returns **zero for every
+state that is shut and not closing**. A shop that has not opened is shut
+and dark; a sold-out shop is shut and dark; only a closing shop is shut and
+blazing.
+
+Verified two ways: a test asserts the light layer is absent for `acilmadi`
+and `tukendi` and present for a closing offer, and the review screen now
+carries a dedicated **IŞIK — aynı dükkân, dört durum** row that puts the
+four states side by side for one shop, so the "cover the pills" check is
+built into the review surface rather than done once by hand.
+
+### 6.4 The clipped shop sign
+
+"BEŞİKTAŞ MANAV ALİ USTA" is 309pt of type in 304pt of plaque at 20pt, so
+it truncated to "BEŞİKTAŞ MANAV ALİ US…". The name now wins and the type
+gives way: `tabelaOlcusu()` measures the name with Archivo Black's OWN
+advance widths and picks the largest whole point size that fits, down to a
+14pt floor. Short names are untouched at 20pt; only the names that need it
+quieten, which is what a signwriter would do.
+
+The width table is not an estimate and cannot drift: a test asserts every
+one of its 47 entries against the shipped TTF, and an unknown character is
+assumed wider than any known one so it shrinks the name rather than
+overflowing the sign. `adjustsFontSizeToFit` was the alternative and is
+iOS-only in practice — it would have left the truncation on Android and
+web, which is exactly where it would not get noticed.
 
 ---
 
