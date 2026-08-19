@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
-import { Screen } from "../../components/Screen";
-import { IconButton } from "../../components/IconButton";
-import { Button } from "../../components/Button";
-import { Chip } from "../../components/Chip";
+import { usePalet } from "../../design/theme";
+import { s, yazi } from "../../design/tokens";
+import { PanelScreen } from "../../components/panel/PanelScreen";
+import { PanelHeader } from "../../components/panel/PanelHeader";
+import { PanelButton } from "../../components/panel/PanelButton";
+import { PanelChip } from "../../components/panel/PanelChip";
+import { PanelTextArea } from "../../components/panel/PanelTextArea";
 import { useCreateComplaint } from "../../hooks/use-complaints";
 import { getErrorMessage } from "../../lib/errors";
 
@@ -25,6 +27,7 @@ const CATEGORIES = [
 export default function NewComplaintScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const palet = usePalet();
   const { reservationId } = useLocalSearchParams<{ reservationId?: string }>();
   const createComplaint = useCreateComplaint();
 
@@ -50,117 +53,80 @@ export default function NewComplaintScreen() {
 
   if (submitted) {
     return (
-      <Screen>
-        <View style={styles.centered}>
-          <Ionicons name="checkmark-circle" size={56} color={colors.secondary[500]} />
-          <Text style={styles.submittedText}>{t("complaint.submitted")}</Text>
-          <Button label={t("common.ok")} onPress={() => router.back()} />
+      <PanelScreen>
+        <View style={styles.ortali}>
+          <Ionicons name="checkmark-circle" size={56} color={palet.sodyumDolgu} />
+          <Text style={[yazi.body, styles.gonderildiMetni, { color: palet.yaziAna }]}>
+            {t("complaint.submitted")}
+          </Text>
+          <PanelButton label={t("common.ok")} onPress={() => router.back()} />
         </View>
-      </Screen>
+      </PanelScreen>
     );
   }
 
   return (
-    <Screen padded={false}>
-      <View style={styles.header}>
-        <IconButton
-          name="close"
-          accessibilityLabel={t("common.close")}
-          onPress={() => router.back()}
-        />
-        <Text style={styles.headerTitle}>{t("complaint.title")}</Text>
-        <View style={{ width: 44 }} />
-      </View>
+    <PanelScreen padded={false}>
+      <PanelHeader
+        title={t("complaint.title")}
+        onBack={() => router.back()}
+        backIcon="close"
+        backLabel={t("common.close")}
+      />
 
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionLabel}>{t("complaint.category")}</Text>
-        <View style={styles.chipRow}>
+      <ScrollView contentContainerStyle={styles.icerik}>
+        <Text style={[yazi.label, { color: palet.yaziSis }]}>{t("complaint.category")}</Text>
+        <View style={styles.cipSatiri}>
           {CATEGORIES.map((c) => (
-            <Chip
+            <PanelChip
               key={c}
               label={t(`complaint.categories.${c}`)}
-              selected={category === c}
+              secili={category === c}
               onPress={() => setCategory(c)}
             />
           ))}
         </View>
 
-        <Text style={styles.sectionLabel}>{t("complaint.description")}</Text>
-        <TextInput
-          style={styles.textInput}
+        <PanelTextArea
+          label={t("complaint.description")}
           placeholder={t("complaint.descriptionPlaceholder")}
-          placeholderTextColor={colors.neutral[400]}
           value={description}
           onChangeText={setDescription}
           multiline
-          accessibilityLabel={t("complaint.description")}
         />
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? (
+          <Text style={[yazi.data, styles.hata, { color: palet.tenteMurekkep }]}>{error}</Text>
+        ) : null}
 
-        <Button
+        <PanelButton
           label={t("complaint.submit")}
           onPress={handleSubmit}
           disabled={!category || description.trim().length === 0}
           loading={createComplaint.isPending}
         />
       </ScrollView>
-    </Screen>
+    </PanelScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+  icerik: {
+    paddingHorizontal: s.s4,
+    paddingBottom: s.s10,
+    gap: s.s4,
   },
-  headerTitle: {
-    fontSize: typeScale.h3.size,
-    fontWeight: typeScale.h3.weight,
-    color: colors.neutral[900],
-  },
-  content: {
-    paddingHorizontal: 20,
-    paddingBottom: spacing["3xl"],
-    gap: spacing.md,
-  },
-  sectionLabel: {
-    fontSize: typeScale.label.size,
-    fontWeight: typeScale.label.weight,
-    color: colors.neutral[600],
-  },
-  chipRow: {
+  cipSatiri: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm,
+    gap: s.s2,
   },
-  textInput: {
-    minHeight: 120,
-    borderWidth: 1,
-    borderColor: colors.neutral[200],
-    borderRadius: radii.md,
-    padding: spacing.md,
-    fontSize: typeScale.body.size,
-    color: colors.neutral[900],
-    textAlignVertical: "top",
-  },
-  error: {
-    fontSize: typeScale.caption.size,
-    color: colors.semantic.danger[500],
-    textAlign: "center",
-  },
-  centered: {
+  hata: { textAlign: "center" },
+  ortali: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.md,
+    gap: s.s4,
   },
-  submittedText: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[700],
-    textAlign: "center",
-  },
+  gonderildiMetni: { textAlign: "center" },
 });

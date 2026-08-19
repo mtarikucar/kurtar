@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 
 // Auto-mock (no factory) — see otp-screen.test.tsx's comment.
 jest.mock("../lib/api-client");
@@ -13,8 +13,7 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => mockSearchParams,
 }));
 
-import { QueryClientProvider } from "@tanstack/react-query";
-import { createTestQueryClient } from "../test-utils/render";
+import { renderWithPanelProviders } from "../test-utils/panel-render";
 import { client } from "../lib/api-client";
 import NewReportScreen from "../app/report/new";
 import "../i18n";
@@ -23,12 +22,7 @@ import { KurtarApiError } from "@kurtar/api-client";
 const mockCreateReport = client.complaints.createReport as jest.Mock;
 
 function renderReportScreen() {
-  const queryClient = createTestQueryClient();
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <NewReportScreen />
-    </QueryClientProvider>,
-  );
+  return renderWithPanelProviders(<NewReportScreen />);
 }
 
 // [I14 fix] Regression coverage: before this screen existed,

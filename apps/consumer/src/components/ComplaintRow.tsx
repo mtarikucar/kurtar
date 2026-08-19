@@ -1,7 +1,8 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
-import { Badge } from "./Badge";
+import { usePalet } from "../design/theme";
+import { r, s, yazi } from "../design/tokens";
+import { PanelPill } from "./panel/PanelPill";
 import { formatShortDate } from "../lib/format";
 
 export interface ComplaintListItem {
@@ -13,18 +14,14 @@ export interface ComplaintListItem {
   resolvedAt?: string | null;
 }
 
-const STATUS_TONE: Record<
-  ComplaintListItem["status"],
-  "brand" | "success" | "warning" | "neutral"
-> = {
-  OPEN: "warning",
-  MERCHANT_RESPONDED: "brand",
-  RESOLVED: "success",
-  ESCALATED: "warning",
+const DURUM_TONU: Record<ComplaintListItem["status"], "notr" | "sodyum" | "tente"> = {
+  OPEN: "tente",
+  MERCHANT_RESPONDED: "sodyum",
+  RESOLVED: "sodyum",
+  ESCALATED: "tente",
 };
 
-/** A single row on the "Şikayetlerim" list — mirrors OrderRow.tsx's shape
- * (Pressable card, Badge for status, one meta line). */
+/** A single row on "Şikayetlerim". */
 export function ComplaintRow({
   complaint,
   onPress,
@@ -33,6 +30,7 @@ export function ComplaintRow({
   onPress: () => void;
 }) {
   const { t } = useTranslation();
+  const palet = usePalet();
   const categoryLabel = t(`complaint.categories.${complaint.category}`);
 
   return (
@@ -40,16 +38,26 @@ export function ComplaintRow({
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={categoryLabel}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      style={({ pressed }) => [
+        styles.satir,
+        {
+          backgroundColor: palet.yuzeyKaldirim,
+          borderTopColor: palet.kartUstIsik,
+          borderBottomColor: palet.kartAltTemas,
+        },
+        pressed && { opacity: 0.85 },
+      ]}
     >
-      <View style={styles.header}>
-        <Text style={styles.category}>{categoryLabel}</Text>
-        <Badge label={t(`complaints.status.${complaint.status}`)} tone={STATUS_TONE[complaint.status]} />
+      <View style={styles.ustSatir}>
+        <Text style={[yazi.title, styles.kategori, { color: palet.yaziAna }]} numberOfLines={1}>
+          {categoryLabel}
+        </Text>
+        <PanelPill label={t(`complaints.status.${complaint.status}`)} ton={DURUM_TONU[complaint.status]} />
       </View>
-      <Text style={styles.description} numberOfLines={2}>
+      <Text style={[yazi.body, { color: palet.yaziSis }]} numberOfLines={2}>
         {complaint.description}
       </Text>
-      <Text style={styles.meta}>
+      <Text style={[yazi.data, { color: palet.yaziSis }]}>
         {complaint.status === "RESOLVED" && complaint.resolvedAt
           ? t("complaints.resolvedAt", { date: formatShortDate(complaint.resolvedAt) })
           : t("complaints.slaDeadline", { date: formatShortDate(complaint.slaDeadlineAt) })}
@@ -59,35 +67,18 @@ export function ComplaintRow({
 }
 
 const styles = StyleSheet.create({
-  row: {
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    backgroundColor: colors.neutral[0],
-    borderWidth: 1,
-    borderColor: colors.neutral[100],
-    gap: spacing.xs,
+  satir: {
+    padding: s.s4,
+    borderRadius: r.card,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    gap: s.s1,
   },
-  rowPressed: {
-    opacity: 0.85,
-  },
-  header: {
+  ustSatir: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: s.s2,
   },
-  category: {
-    flex: 1,
-    fontSize: typeScale.bodyStrong.size,
-    fontWeight: typeScale.bodyStrong.weight,
-    color: colors.neutral[900],
-  },
-  description: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[600],
-  },
-  meta: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[500],
-  },
+  kategori: { flex: 1 },
 });
