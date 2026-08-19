@@ -1,200 +1,241 @@
-import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
-import { Screen } from "../../components/Screen";
-import { IconButton } from "../../components/IconButton";
-import { Button } from "../../components/Button";
-import { Badge } from "../../components/Badge";
-import { LoadingState } from "../../components/LoadingState";
-import { EmptyState } from "../../components/EmptyState";
-import { PickupCountdown } from "../../components/PickupCountdown";
-import { useOrderDetails } from "../../hooks/use-order-details";
-import { formatPriceCents } from "../../lib/format";
-import type { ReservationItem } from "../../lib/api-types";
+import { usePalet } from "../../design/theme";
+import { useSimdi } from "../../design/saat";
+import { useReduceMotion } from "../../design/reduce-motion";
+import { r, s, yazi } from "../../design/tokens";
+import { PanelScreen } from "../../components/panel/PanelScreen";
+import { PanelHeader } from "../../components/panel/PanelHeader";
+import { PanelButton } from "../../components/panel/PanelButton";
+import { PanelPill } from "../../components/panel/PanelPill";
+import { PanelLoadingState } from "../../components/panel/PanelLoadingState";
+import { PanelEmptyState } from "../../components/panel/PanelEmptyState";
+import { Tente } from "../../components/kepenk/Tente";
+import { Tabela } from "../../components/kepenk/Tabela";
+import { ZamanHapi } from "../../components/kepenk/ZamanHapi";
+import { tenteDeseni } from "../../components/kepenk/tente-desen";
+import { fiyatMetni } from "../../components/kepenk/olcum";
+import { siparisKalanDakika, siparisPillDurumu } from "../../lib/order-durum";
+import { saatBulunma } from "../../components/kepenk/tr-saat";
+import { useOrderDetails, type OrderDetails } from "../../hooks/use-order-details";
+import { formatClockTime, formatClockWithSeconds, formatPickupWindow } from "../../lib/format";
 
-const STATUS_TONE: Record<ReservationItem["status"], "brand" | "success" | "warning" | "neutral"> = {
-  PENDING_PAYMENT: "warning",
-  CONFIRMED: "brand",
-  REDEEMED: "success",
-  CANCELLED_BY_USER: "neutral",
-  CANCELLED_BY_MERCHANT: "neutral",
-  NO_SHOW: "neutral",
-  EXPIRED: "neutral",
-};
+const TENTE_YUKSEKLIK = 6;
+const TABELA_YUKSEKLIK = 40;
 
+/**
+ * The order TICKET — spec §4.6: "Tapping a past row shows the ticket: kod
+ * 4729 · 69₺ · 18:34:11 in data.lg." Reuses the card's own tente hash and
+ * tabela plaque, so the shop is the same object here as it is everywhere
+ * else in the app — the spec's own instruction for this track ("reuses
+ * the tente hash and the ticket layout") rather than a second identity
+ * device.
+ */
 export default function OrderDetailScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const palet = usePalet();
+  const simdi = useSimdi();
+  const azaltHareket = useReduceMotion();
+  const { width } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data, isLoading } = useOrderDetails(id ?? "");
 
+  const genislik = Math.min(width - s.s4 * 2, 480);
+
   return (
-    <Screen padded={false}>
-      <View style={styles.header}>
-        <IconButton
-          name="chevron-back"
-          accessibilityLabel={t("common.back")}
-          onPress={() => router.back()}
-        />
-        <Text style={styles.headerTitle}>{t("orders.title")}</Text>
-        <View style={{ width: 44 }} />
-      </View>
+    <PanelScreen padded={false}>
+      <PanelHeader
+        title={t("orders.title")}
+        onBack={() => router.back()}
+        backLabel={t("common.back")}
+      />
 
       {isLoading ? (
-        <LoadingState />
+        <PanelLoadingState />
       ) : !data ? (
-        <EmptyState icon="alert-circle-outline" title={t("errors.RESERVATION_NOT_FOUND")} />
+        <PanelEmptyState icon="alert-circle-outline" title={t("errors.RESERVATION_NOT_FOUND")} />
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
-          {data.coverImageUrl ? (
-            <Image source={{ uri: data.coverImageUrl }} style={styles.cover} />
-          ) : null}
-
-          <View style={styles.titleRow}>
-            <Text style={styles.storeName}>{data.storeName}</Text>
-            <Badge
-              label={t(`orders.status.${data.reservation.status}`)}
-              tone={STATUS_TONE[data.reservation.status]}
+          <View style={styles.tabelaAlani}>
+            <Tente
+              genislik={genislik}
+              yukseklik={TENTE_YUKSEKLIK}
+              desen={tenteDeseni(data.reservation.storeId)}
+            />
+            <Tabela
+              genislik={genislik}
+              yukseklik={TABELA_YUKSEKLIK}
+              ad={data.storeName}
+              palet={palet}
             />
           </View>
-          {data.bagTitle ? <Text style={styles.bagTitle}>{data.bagTitle}</Text> : null}
-
-          <View style={styles.codeCard}>
-            <Text style={styles.codeLabel}>{t("orders.code")}</Text>
-            <Text style={styles.code}>{data.reservation.code}</Text>
-          </View>
-
-          {data.reservation.status === "CONFIRMED" ? (
-            <PickupCountdown pickupStartAt={data.pickupStartAt} />
+          {data.storeDistrict ? (
+            <Text style={[yazi.data, styles.ilce, { color: palet.yaziSis }]}>
+              {data.storeDistrict}
+            </Text>
           ) : null}
 
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>{t("redeem.qtyLabel")}</Text>
-            <Text style={styles.rowValue}>{data.reservation.qty}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>{t("purchase.total")}</Text>
-            <Text style={styles.rowValue}>{formatPriceCents(data.reservation.totalCents)}</Text>
-          </View>
-
-          <View style={styles.actions}>
-            {data.reservation.status === "CONFIRMED" ? (
-              <>
-                <Button
-                  label={t("orders.redeemCta")}
-                  onPress={() =>
-                    router.push({ pathname: "/redeem/[id]", params: { id: data.reservation.id } })
-                  }
-                />
-                {new Date(data.reservation.cancelDeadlineAt).getTime() > Date.now() ? (
-                  <Button
-                    label={t("orders.cancelCta")}
-                    variant="ghost"
-                    onPress={() =>
-                      router.push({ pathname: "/cancel/[id]", params: { id: data.reservation.id } })
-                    }
-                  />
-                ) : null}
-              </>
+          <View
+            style={[
+              styles.bilet,
+              {
+                backgroundColor: palet.yuzeyKaldirim,
+                borderTopColor: palet.kartUstIsik,
+                borderBottomColor: palet.kartAltTemas,
+              },
+            ]}
+          >
+            {data.bagTitle ? (
+              <Text style={[yazi.paket, { color: palet.yaziAna }]}>{data.bagTitle}</Text>
             ) : null}
 
-            {data.reservation.status === "REDEEMED" ? (
-              <Button
-                label={t("orders.rateCta")}
-                onPress={() =>
-                  router.push({ pathname: "/rate/[id]", params: { id: data.reservation.id } })
-                }
-              />
-            ) : null}
+            <View style={styles.satir}>
+              <Text style={[yazi.data, { color: palet.yaziSis }]}>
+                {t("redeem.qtyLabel")}: {data.reservation.qty}
+              </Text>
+              <Text style={[yazi.priceLg, { color: palet.sodyumYazi }]}>
+                {fiyatMetni(data.reservation.totalCents)}
+              </Text>
+            </View>
 
-            {data.reservation.status === "PENDING_PAYMENT" ? (
-              <Button
-                label={t("orders.cancelCta")}
-                variant="ghost"
-                onPress={() =>
-                  router.push({ pathname: "/cancel/[id]", params: { id: data.reservation.id } })
-                }
-              />
-            ) : null}
+            <SiparisDurumBolumu
+              reservation={data.reservation}
+              pickupStartAt={data.pickupStartAt}
+              pickupEndAt={data.pickupEndAt}
+              simdi={simdi}
+              azaltHareket={azaltHareket}
+            />
           </View>
         </ScrollView>
       )}
-    </Screen>
+    </PanelScreen>
+  );
+}
+
+function SiparisDurumBolumu({
+  reservation,
+  pickupStartAt,
+  pickupEndAt,
+  simdi,
+  azaltHareket,
+}: {
+  reservation: OrderDetails["reservation"];
+  pickupStartAt: string;
+  pickupEndAt: string;
+  simdi: Date;
+  azaltHareket: boolean | null;
+}) {
+  const { t } = useTranslation();
+  const router = useRouter();
+  const palet = usePalet();
+
+  const iptalEdilebilir = simdi.getTime() < new Date(reservation.cancelDeadlineAt).getTime();
+
+  if (reservation.status === "PENDING_PAYMENT") {
+    return (
+      <View style={styles.durumBlok}>
+        <PanelPill label={t("orders.status.PENDING_PAYMENT")} />
+        {iptalEdilebilir ? (
+          <PanelButton
+            varyant="hayalet"
+            label={t("orders.cancelCta")}
+            onPress={() => router.push({ pathname: "/cancel/[id]", params: { id: reservation.id } })}
+          />
+        ) : null}
+      </View>
+    );
+  }
+
+  if (reservation.status === "CONFIRMED") {
+    const durum = siparisPillDurumu(simdi, pickupStartAt);
+    const kalanDk = siparisKalanDakika(simdi, pickupEndAt);
+    const acilisSaati = saatBulunma(formatClockTime(pickupStartAt));
+    return (
+      <View style={styles.durumBlok}>
+        <Text style={[yazi.data, { color: palet.yaziSis }]}>
+          {t("orders.aliniyor", { pencere: formatPickupWindow(pickupStartAt, pickupEndAt) })}
+        </Text>
+        <ZamanHapi
+          durum={durum}
+          kalanDk={kalanDk}
+          acilisSaati={acilisSaati}
+          palet={palet}
+          azaltHareket={azaltHareket}
+        />
+        <PanelButton
+          label={t("orders.kepenkAc")}
+          onPress={() => router.push({ pathname: "/redeem/[id]", params: { id: reservation.id } })}
+        />
+        {iptalEdilebilir ? (
+          <PanelButton
+            varyant="hayalet"
+            label={t("orders.cancelCta")}
+            onPress={() => router.push({ pathname: "/cancel/[id]", params: { id: reservation.id } })}
+          />
+        ) : null}
+      </View>
+    );
+  }
+
+  if (reservation.status === "REDEEMED") {
+    const saat = reservation.redeemedAt
+      ? formatClockWithSeconds(new Date(reservation.redeemedAt))
+      : "—";
+    return (
+      <View style={styles.durumBlok}>
+        <Text style={[yazi.dataLg, { color: palet.sodyumYazi }]}>
+          {t("orders.ticketOzet", {
+            kod: reservation.code,
+            fiyat: fiyatMetni(reservation.totalCents),
+            saat,
+          })}
+        </Text>
+        <PanelButton
+          varyant="hayalet"
+          label={t("orders.rateCta")}
+          onPress={() => router.push({ pathname: "/rate/[id]", params: { id: reservation.id } })}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.durumBlok}>
+      <PanelPill label={t(`orders.status.${reservation.status}`)} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  headerTitle: {
-    fontSize: typeScale.h3.size,
-    fontWeight: typeScale.h3.weight,
-    color: colors.neutral[900],
-  },
   content: {
-    paddingHorizontal: 20,
-    paddingBottom: spacing["3xl"],
-    gap: spacing.sm,
+    paddingHorizontal: s.s4,
+    paddingBottom: s.s10,
+    gap: s.s3,
+    alignItems: "center",
   },
-  cover: {
+  tabelaAlani: {
     width: "100%",
-    height: 140,
-    borderRadius: radii.lg,
-    marginBottom: spacing.sm,
+    borderRadius: r.card,
+    overflow: "hidden",
   },
-  titleRow: {
+  ilce: { alignSelf: "flex-start" },
+  bilet: {
+    width: "100%",
+    borderRadius: r.card,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    padding: s.s4,
+    gap: s.s3,
+  },
+  satir: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "baseline",
   },
-  storeName: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.neutral[900],
-  },
-  bagTitle: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[600],
-  },
-  codeCard: {
-    marginTop: spacing.md,
-    alignItems: "center",
-    padding: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: colors.primary[50],
-  },
-  codeLabel: {
-    fontSize: typeScale.label.size,
-    color: colors.primary[700],
-  },
-  code: {
-    fontSize: typeScale.display.size,
-    fontWeight: typeScale.display.weight,
-    color: colors.primary[700],
-    letterSpacing: 2,
-  },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: spacing.xs,
-  },
-  rowLabel: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[600],
-  },
-  rowValue: {
-    fontSize: typeScale.bodyStrong.size,
-    fontWeight: typeScale.bodyStrong.weight,
-    color: colors.neutral[900],
-  },
-  actions: {
-    marginTop: spacing.lg,
-    gap: spacing.sm,
+  durumBlok: {
+    gap: s.s3,
+    marginTop: s.s2,
   },
 });

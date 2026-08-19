@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 
 // Auto-mock (no factory) — see otp-screen.test.tsx's comment.
 jest.mock("../lib/api-client");
@@ -11,9 +11,9 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => mockSearchParams,
 }));
 
-import { QueryClientProvider } from "@tanstack/react-query";
-import { createTestQueryClient } from "../test-utils/render";
+import { renderWithPanelProviders } from "../test-utils/panel-render";
 import { client } from "../lib/api-client";
+import { KurtarApiError } from "@kurtar/api-client";
 import MyComplaintsScreen from "../app/complaints/index";
 import ComplaintDetailScreen from "../app/complaints/[id]";
 import "../i18n";
@@ -23,21 +23,11 @@ const mockGet = client.complaints.get as jest.Mock;
 const mockAddMessage = client.complaints.addMessage as jest.Mock;
 
 function renderComplaintsList() {
-  const queryClient = createTestQueryClient();
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MyComplaintsScreen />
-    </QueryClientProvider>,
-  );
+  return renderWithPanelProviders(<MyComplaintsScreen />);
 }
 
 function renderComplaintDetail() {
-  const queryClient = createTestQueryClient();
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <ComplaintDetailScreen />
-    </QueryClientProvider>,
-  );
+  return renderWithPanelProviders(<ComplaintDetailScreen />);
 }
 
 const listItem = {
@@ -156,5 +146,42 @@ describe("ComplaintDetailScreen — GET /complaints/{id} has a caller (I8)", () 
         body: "Hâlâ yanıt bekliyorum.",
       }),
     );
+  });
+
+  // `GET /complaints/{id}` is CONSUMER-only AND ownership-checked
+  // server-side (complaints.service.ts's `getMine` throws a 403 — a
+  // distinct ForbiddenException — when `complaint.userId !== userId`,
+  // and a 404 when the id doesn't exist at all). Both branches must land
+  // on the SAME "not found" screen: telling a caller "this complaint
+  // exists but isn't yours" (vs. "no such complaint") would leak which
+  // ids are real to someone probing IDs they don't own.
+  it("renders the same not-found state for a 403 (not the caller's complaint) as for a 404", async () => {
+    mockGet.mockRejectedValue(
+      new KurtarApiError({
+        statusCode: 403,
+        errorCode: "FORBIDDEN",
+        message: "Not your complaint",
+        isBackendErrorCode: false,
+      }),
+    );
+
+    await renderComplaintDetail();
+
+    expect(await screen.findByText("Aradığın kayıt bulunamadı.")).toBeTruthy();
+  });
+
+  it("renders the not-found state for a 404 (complaint id does not exist)", async () => {
+    mockGet.mockRejectedValue(
+      new KurtarApiError({
+        statusCode: 404,
+        errorCode: "NOT_FOUND",
+        message: "Complaint not found",
+        isBackendErrorCode: false,
+      }),
+    );
+
+    await renderComplaintDetail();
+
+    expect(await screen.findByText("Aradığın kayıt bulunamadı.")).toBeTruthy();
   });
 });

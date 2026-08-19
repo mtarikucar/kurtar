@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { colors, spacing, typeScale } from "@kurtar/ui-tokens";
-import { Screen } from "../components/Screen";
-import { IconButton } from "../components/IconButton";
-import { Button } from "../components/Button";
-import { LoadingState } from "../components/LoadingState";
+import { usePalet } from "../design/theme";
+import { r, s, yazi } from "../design/tokens";
+import { PanelScreen } from "../components/panel/PanelScreen";
+import { PanelHeader } from "../components/panel/PanelHeader";
+import { PanelButton } from "../components/panel/PanelButton";
+import { PanelLoadingState } from "../components/panel/PanelLoadingState";
+import { PanelToggle } from "../components/panel/PanelToggle";
 import {
   useNotificationPreferences,
   useUpdateNotificationPreferences,
@@ -23,23 +25,19 @@ function PreferenceRow({
   value: boolean;
   onChange: (value: boolean) => void;
 }) {
+  const palet = usePalet();
   return (
-    <View style={styles.row}>
-      <View style={styles.rowText}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        <Text style={styles.rowBody}>{body}</Text>
+    <View style={[styles.satir, { borderBottomColor: palet.cizgiKil }]}>
+      <View style={styles.satirMetni}>
+        <Text style={[yazi.bodyStrong, { color: palet.yaziAna }]}>{title}</Text>
+        <Text style={[yazi.data, { color: palet.yaziSis }]}>{body}</Text>
       </View>
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        accessibilityLabel={title}
-        trackColor={{ true: colors.primary[500], false: colors.neutral[200] }}
-      />
+      <PanelToggle value={value} onValueChange={onChange} accessibilityLabel={title} />
     </View>
   );
 }
 
-function HourStepper({
+function SaatArtirici({
   label,
   value,
   onChange,
@@ -49,35 +47,60 @@ function HourStepper({
   onChange: (value: number | null) => void;
 }) {
   const { t } = useTranslation();
+  const palet = usePalet();
   return (
-    <View style={styles.hourRow}>
-      <Text style={styles.hourLabel}>{label}</Text>
-      <View style={styles.hourStepper}>
-        <IconButton
-          name="remove"
-          accessibilityLabel={`${label} azalt`}
+    <View style={styles.saatSatiri}>
+      <Text style={[yazi.body, { color: palet.yaziAna }]}>{label}</Text>
+      <View style={styles.saatArtirici}>
+        <SaatButonu
+          ikon="remove"
+          etiket={`${label} azalt`}
           onPress={() => onChange(value === null ? 22 : (value + 23) % 24)}
-          variant="filled"
-          size={16}
         />
-        <Text style={styles.hourValue}>
+        <Text style={[yazi.dataLg, styles.saatDeger, { color: palet.yaziAna }]}>
           {value === null ? t("notificationPrefs.quietHoursOff") : `${value}:00`}
         </Text>
-        <IconButton
-          name="add"
-          accessibilityLabel={`${label} artır`}
+        <SaatButonu
+          ikon="add"
+          etiket={`${label} artır`}
           onPress={() => onChange(value === null ? 0 : (value + 1) % 24)}
-          variant="filled"
-          size={16}
         />
       </View>
     </View>
   );
 }
 
+function SaatButonu({
+  ikon,
+  etiket,
+  onPress,
+}: {
+  ikon: "add" | "remove";
+  etiket: string;
+  onPress: () => void;
+}) {
+  const palet = usePalet();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={etiket}
+      onPress={onPress}
+      hitSlop={4}
+      style={({ pressed }) => [
+        styles.saatButonu,
+        { backgroundColor: palet.yuzeyKaldirim, borderColor: palet.cizgiKil },
+        pressed && { opacity: 0.7 },
+      ]}
+    >
+      <Text style={{ color: palet.yaziAna, fontSize: 18 }}>{ikon === "add" ? "+" : "−"}</Text>
+    </Pressable>
+  );
+}
+
 export default function NotificationPreferencesScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const palet = usePalet();
   const prefsQuery = useNotificationPreferences();
   const updatePrefs = useUpdateNotificationPreferences();
 
@@ -103,18 +126,9 @@ export default function NotificationPreferencesScreen() {
       favoritesEnabled,
       nearbyEnabled,
       nearbyRadiusM,
-      // [M16 fix] marketingEnabled is deliberately never sent from here
-      // anymore — no NotificationKind maps to it anywhere in the backend
-      // (notification-policy.table.ts), so the toggle that used to be
-      // here controlled nothing: consent was captured and never
-      // consulted. Removed rather than left as a false promise; see the
-      // (now-deleted) PreferenceRow below's own history for why.
-      //
-      // PATCH cannot currently clear a quiet-hour field back to null once
-      // set (backend's own documented gap — see
-      // update-notification-preferences.dto.ts's doc comment) — omitting
-      // the field when null leaves it unchanged server-side rather than
-      // sending an invalid value.
+      // [M16 fix, preserved] marketingEnabled is deliberately never sent —
+      // no NotificationKind maps to it server-side (see the old
+      // implementation's own note).
       ...(quietHoursStart !== null ? { quietHoursStart } : {}),
       ...(quietHoursEnd !== null ? { quietHoursEnd } : {}),
     });
@@ -122,21 +136,17 @@ export default function NotificationPreferencesScreen() {
   };
 
   return (
-    <Screen padded={false}>
-      <View style={styles.header}>
-        <IconButton
-          name="chevron-back"
-          accessibilityLabel={t("common.back")}
-          onPress={() => router.back()}
-        />
-        <Text style={styles.headerTitle}>{t("notificationPrefs.title")}</Text>
-        <View style={{ width: 44 }} />
-      </View>
+    <PanelScreen padded={false}>
+      <PanelHeader
+        title={t("notificationPrefs.title")}
+        onBack={() => router.back()}
+        backLabel={t("common.back")}
+      />
 
       {prefsQuery.isLoading ? (
-        <LoadingState />
+        <PanelLoadingState />
       ) : (
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView contentContainerStyle={styles.icerik}>
           <PreferenceRow
             title={t("notificationPrefs.favorites")}
             body={t("notificationPrefs.favoritesBody")}
@@ -149,105 +159,76 @@ export default function NotificationPreferencesScreen() {
             value={nearbyEnabled}
             onChange={setNearbyEnabled}
           />
-          <Text style={styles.sectionTitle}>{t("notificationPrefs.quietHours")}</Text>
-          <Text style={styles.sectionBody}>{t("notificationPrefs.quietHoursBody")}</Text>
-          <HourStepper
+          <Text style={[yazi.title, styles.bolumBasligi, { color: palet.yaziAna }]}>
+            {t("notificationPrefs.quietHours")}
+          </Text>
+          <Text style={[yazi.data, { color: palet.yaziSis }]}>
+            {t("notificationPrefs.quietHoursBody")}
+          </Text>
+          <SaatArtirici
             label={t("notificationPrefs.quietHoursFrom")}
             value={quietHoursStart}
             onChange={setQuietHoursStart}
           />
-          <HourStepper
+          <SaatArtirici
             label={t("notificationPrefs.quietHoursTo")}
             value={quietHoursEnd}
             onChange={setQuietHoursEnd}
           />
 
-          {saved ? <Text style={styles.saved}>{t("notificationPrefs.saved")}</Text> : null}
+          {saved ? (
+            <Text style={[yazi.data, styles.kaydedildi, { color: palet.sodyumYazi }]}>
+              {t("notificationPrefs.saved")}
+            </Text>
+          ) : null}
 
-          <Button
+          <PanelButton
             label={t("common.save")}
             onPress={handleSave}
             loading={updatePrefs.isPending}
           />
         </ScrollView>
       )}
-    </Screen>
+    </PanelScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
+  icerik: {
+    paddingHorizontal: s.s4,
+    paddingBottom: s.s10,
+    gap: s.s4,
+  },
+  satir: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  headerTitle: {
-    fontSize: typeScale.h3.size,
-    fontWeight: typeScale.h3.weight,
-    color: colors.neutral[900],
-  },
-  content: {
-    paddingHorizontal: 20,
-    paddingBottom: spacing["3xl"],
-    gap: spacing.md,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
+    gap: s.s3,
+    paddingVertical: s.s3,
     borderBottomWidth: 1,
-    borderBottomColor: colors.neutral[100],
   },
-  rowText: {
-    flex: 1,
-    gap: 2,
-  },
-  rowTitle: {
-    fontSize: typeScale.bodyStrong.size,
-    fontWeight: typeScale.bodyStrong.weight,
-    color: colors.neutral[900],
-  },
-  rowBody: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[600],
-  },
-  sectionTitle: {
-    fontSize: typeScale.h3.size,
-    fontWeight: typeScale.h3.weight,
-    color: colors.neutral[900],
-    marginTop: spacing.md,
-  },
-  sectionBody: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[600],
-  },
-  hourRow: {
+  satirMetni: { flex: 1, gap: 2 },
+  bolumBasligi: { marginTop: s.s2 },
+  saatSatiri: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  hourLabel: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[700],
-  },
-  hourStepper: {
+  saatArtirici: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: s.s3,
   },
-  hourValue: {
-    fontSize: typeScale.bodyStrong.size,
-    fontWeight: typeScale.bodyStrong.weight,
-    color: colors.neutral[900],
+  saatDeger: {
     minWidth: 56,
     textAlign: "center",
   },
-  saved: {
-    fontSize: typeScale.caption.size,
-    color: colors.secondary[600],
-    textAlign: "center",
+  saatButonu: {
+    width: 44,
+    height: 44,
+    borderRadius: r.cta,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  kaydedildi: { textAlign: "center" },
 });

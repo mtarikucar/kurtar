@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, screen, waitFor } from "@testing-library/react-native";
 
 // Auto-mock (no factory) — see otp-screen.test.tsx's comment.
 jest.mock("../lib/api-client");
@@ -7,8 +7,7 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ back: jest.fn(), push: jest.fn(), replace: jest.fn() }),
 }));
 
-import { QueryClientProvider } from "@tanstack/react-query";
-import { createTestQueryClient } from "../test-utils/render";
+import { renderWithPanelProviders } from "../test-utils/panel-render";
 import { client } from "../lib/api-client";
 import NotificationPreferencesScreen from "../app/notification-preferences";
 import "../i18n";
@@ -17,12 +16,7 @@ const mockGet = client.account.notificationPreferences.get as jest.Mock;
 const mockUpdate = client.account.notificationPreferences.update as jest.Mock;
 
 function renderScreen() {
-  const queryClient = createTestQueryClient();
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <NotificationPreferencesScreen />
-    </QueryClientProvider>,
-  );
+  return renderWithPanelProviders(<NotificationPreferencesScreen />);
 }
 
 const PREFS = {
