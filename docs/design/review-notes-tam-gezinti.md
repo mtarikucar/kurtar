@@ -81,23 +81,55 @@ Primitives: `Button`, `TextField`, `Chip`, `Badge`, `IconButton`,
 `Screen`'s change is what exposed this; it is not what caused it. The
 conversion is required before the redesign can be called done.
 
-## To fix — B. on screens that WERE redesigned
+## B. RESOLVED — verified on the frames, not on a claim
 
-1. **Siparişler is three-quarters void.** One past order, then an empty
+All five are fixed and re-photographed (`/tmp/sokak-profil/`, `/tmp/son3/`).
+
+1. ~~**Siparişler is three-quarters void.**~~ One past order, then an empty
    screen with nothing to do. An empty screen is an invitation to act;
    this one invites nothing. Same for Favoriler's empty state — it
    explains, then stops.
-2. **Profil's loudest element is "Çıkış yap".** A full-width saturated red
+2. ~~**Profil's loudest element is "Çıkış yap".**~~ A full-width saturated red
    bar, more visually dominant than the impact numbers and the street
    above it. The least important action on the page is winning the page,
    and the red reads destructive.
-3. **SENİN SOKAĞIN is ~40pt tall.** The signature element of the profile
+3. ~~**SENİN SOKAĞIN is ~40pt tall.**~~ Scaling it revealed the drawing
+   itself was too crude to survive being seen, so it was rebuilt as a
+   terrace. See below. The signature element of the profile
    screen renders as one small shop and four grey blocks — at that size it
    reads as a progress bar, not a street. The low-count fix (three unlit
    frontages) is correct in substance and invisible in practice.
-4. **The phone number is raw E.164**: `+905551110004`.
-5. **Screen titles sit flush against the top edge** on Profil and
-   Siparişler — check the top safe-area inset.
+4. ~~**The phone number is raw E.164**~~ — now `+90 555 111 00 04`.
+5. **The tab bar was losing Turkish.** Not in the original list — found
+   on the re-walk. The bar sat flush with the bottom of the screen and
+   the cedilla of "Keşfet"/"Siparişler" fell outside it, so the tabs read
+   "Kesfet"/"Siparisler". Raising the leading alone was not enough, and
+   giving the bar a height too small for the line box made it drop the
+   labels entirely — worse than clipping. It now reserves icon + label +
+   padding and ADDS the device's bottom inset rather than eating it.
+6. **The status bar was pinned to dark icons**, which go black on a black
+   ground after sunset. It moved inside the theme and follows the phase.
+7. Still open: screen titles sit flush against the top edge on Profil and
+   Siparişler — check the top safe-area inset on a device.
+
+## The street, second pass
+
+Scaling SENİN SOKAĞIN to 2.2x fixed the size and exposed the drawing: the
+rescued shop was a flat brown rectangle with no window, the continuation
+frontages were featureless grey slabs, and the shops floated apart on a
+baseline — still a bar chart, now a legible one. It is rebuilt as a
+terrace: adjoining façades on a continuous pavement and kerb, closed
+shops speaking the card's own corrugated-shutter language, and a rescued
+shop with glass, a door and lit flats above whose roofline rises with the
+visit count.
+
+Two things that were wrong in the light itself:
+- The glass lerped toward the lamp's PALE CORE, so a lit window resolved
+  to tan. It now lerps toward sodium; the pale core is kept for the one
+  band where the lamp physically is.
+- A single visit sat at the darkest end of the lerp — the state a user
+  spends by far the longest looking at said "unfinished". The floor is
+  now high enough that one rescue reads as lit at a glance.
 
 ## Traps that produce a FALSE verification
 
@@ -112,6 +144,13 @@ conversion is required before the redesign can be called done.
   client appends it. With the suffix every request becomes
   `/api/api/...` and 404s, which surfaces only as "login did not
   navigate".
+- **Check WHO is serving the port before believing a pixel.** A killed
+  background server frees nothing if another process already holds the
+  port: my `expo-dist-serve` exited 1 on a taken port, `curl` still
+  answered 200 from a subagent's month-old snapshot, and I sampled its
+  pixels and nearly filed "the window is still tan" as a code defect —
+  the code was already correct. `ss -ltnp | grep <port>` names the
+  process; `ps aux | grep expo-dist-serve` names its document root.
 - **The session does not survive `page.goto()` on web.** Navigate by
   clicking, or every frame after the first photographs the signed-out
   phone screen. Four such frames are what sent me looking in the first
