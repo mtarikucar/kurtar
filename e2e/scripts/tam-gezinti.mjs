@@ -18,11 +18,15 @@
  */
 import { chromium } from "@playwright/test";
 import fs from "node:fs";
+import pg from "pg";
 
 const CIKTI = process.argv[2] ?? "/tmp/gezinti";
 const FAZ = process.argv[3] ?? "gece";
 const URL = process.env.GEZINTI_URL ?? "http://localhost:8092";
 const BACKEND_LOG = process.env.BACKEND_LOG ?? "/tmp/kurtar-backend-e2e.log";
+const API = process.env.GEZINTI_API ?? "http://localhost:4750";
+const DB = process.env.DATABASE_URL ?? "postgresql://kurtar:kurtar@localhost:4754/kurtar";
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET ?? "change-me-dev-webhook-secret";
 const PHONE = "5551110004";
 fs.mkdirSync(CIKTI, { recursive: true });
 
@@ -174,14 +178,27 @@ await cek("profil-sokak");
 // tapping a real card is the only way into the offer/purchase path with
 // the session intact.
 await sekmeye("Keşfet");
-await page.getByText("Pastane Sürpriz Kutusu", { exact: false }).first().click();
+// Whichever storefront the street offers first — naming one couples the
+// walk to seed data that the walk itself spends (it buys a bag).
+await page.locator('[data-testid="kesif-liste"] [role="button"]').first().click();
 await page.waitForTimeout(1800);
 await cek("teklif-detay");
 
 // ---- The money loop, all the way to an open shutter. Everything past
 // this point paints `bg.derin` rather than the street, so it is the only
 // part of the walk that photographs the recess: buy -> pay -> the
-// confirmation's lit interior -> the redeem screen, closed and open. ----
+// confirmation's lit interior -> the redeem screen, closed and open.
+//
+// GEZINTI_SATIN_ALMA=0 stops here. The leg SPENDS seeded stock and adds
+// an order, so two runs of the full walk never see the same data — which
+// makes it useless for the one thing a before/after comparison needs,
+// namely two frames that differ only by the change under review. ----
+if (process.env.GEZINTI_SATIN_ALMA === "0") {
+  console.log(JSON.stringify({ faz: FAZ, hatalar, satinAlma: "atlandı" }, null, 2));
+  await browser.close();
+  process.exit(0);
+}
+
 await page.getByTestId("offer-buy-cta").click();
 await page.waitForTimeout(1500);
 await cek("satin-alma");
@@ -192,7 +209,39 @@ await page.getByTestId("purchase-confirm").click();
 await page.waitForTimeout(2500);
 await cek("odeme");
 
-// The mock provider confirms on its own; the screen polls for it.
+// The mock provider does NOT confirm on its own — kurtar's payment flow
+// is webhook-driven on purpose (see MockPaymentProvider's own note), and
+// `react-native-webview` has no web build at all, so the provider page
+// the screen embeds is a red "does not support this platform" line. The
+// review therefore delivers the webhook the provider would have: the
+// screen's own poll is what picks it up, so everything downstream of it
+// is the real flow rather than a staged screen.
+const havuz = new pg.Pool({ connectionString: DB });
+try {
+  const { rows } = await havuz.query(
+    `select p."merchantOid", p."amountCents"
+       from payments p
+       join reservations r on r.id = p."reservationId"
+      where r.status = 'PENDING_PAYMENT'
+      order by p."createdAt" desc
+      limit 1`,
+  );
+  if (!rows[0]) throw new Error("no PENDING_PAYMENT reservation to settle");
+  const cevap = await fetch(`${API}/api/webhooks/payment`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-webhook-secret": WEBHOOK_SECRET },
+    body: JSON.stringify({
+      merchantOid: rows[0].merchantOid,
+      status: "success",
+      totalCents: rows[0].amountCents,
+      eventId: `gezinti-${Date.now()}`,
+    }),
+  });
+  console.log("webhook:", cevap.status, rows[0].merchantOid);
+} finally {
+  await havuz.end();
+}
+
 await page
   .getByTestId("satin-alma-onayi")
   .waitFor({ timeout: 30000 })
