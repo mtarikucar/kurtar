@@ -296,7 +296,8 @@ function pickupWindowPassedError(pickupStartAt: Date, pickupEndAt: Date) {
   });
 }
 
-/** [I3 fix] refundRedeemed's guard error — the reservation isn't REDEEMED,
+/** [I3 fix] refundRedeemed's guard error — the reservation isn't REDEEMED
+ * or NO_SHOW,
  * or its Payment isn't (still) PAID (never paid, already refunded, or a
  * concurrent refund attempt already claimed it). */
 function notRefundableError() {
@@ -935,7 +936,23 @@ export class ReservationsService {
         `Reservation ${reservationId} has no Payment row (data invariant violated)`,
       );
     }
-    if (reservation.status !== "REDEEMED") {
+    // NO_SHOW is refundable too, and that is not a contradiction of "a
+    // no-show is not refunded" (plan §4.3). That rule is about the
+    // CUSTOMER failing to turn up: they keep the charge and the merchant
+    // keeps the money. It says nothing about the case the complaint queue
+    // actually fills up with — the customer DID turn up and the shop was
+    // shut, or closed early, or had nothing left. That reservation ends
+    // as NO_SHOW too, because the sweeper cannot tell the two apart from
+    // the outside, and until now it could never be refunded by any path:
+    // the seeded demo's own STORE_CLOSED_NO_SHOW complaint was
+    // unanswerable. Deciding which of the two happened is exactly what an
+    // admin reviewing a complaint is for.
+    //
+    // The money unwinds the same way it does for a redeemed bag: the
+    // clawback ledger keys on settlement_lines -> payments -> refunds and
+    // never reads the reservation's status, so a settled no-show is
+    // recovered from the merchant's next batch identically.
+    if (reservation.status !== "REDEEMED" && reservation.status !== "NO_SHOW") {
       throw notRefundableError();
     }
     const payment = reservation.payment;

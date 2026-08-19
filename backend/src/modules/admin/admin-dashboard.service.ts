@@ -50,6 +50,7 @@ export class AdminDashboardService {
       openReports,
       settlementBatchesNeedingAttention,
       todayAgg,
+      todayNoShowAgg,
     ] = await Promise.all([
       this.prisma.merchant.count({
         where: { verificationStatus: { in: ["SUBMITTED", "UNDER_REVIEW"] } },
@@ -72,6 +73,24 @@ export class AdminDashboardService {
         _sum: { totalCents: true },
         _count: { _all: true },
       }),
+      // A no-show is a completed sale: the customer is not refunded and the
+      // merchant is settled for it exactly as for a collected bag. It has
+      // no `redeemedAt`, so it is dated by the same anchor the settlement
+      // scan uses — the window it failed to be collected in.
+      //
+      // This is a SECOND aggregate rather than an OR on the first because
+      // the two numbers mean different things: `redeemedCount` counts bags
+      // that went out of the door (what the merchant's own counter and
+      // sell-through read), while GMV counts money that settles. Sharing
+      // one query made GMV under-report everything the platform actually
+      // pays out on.
+      this.prisma.reservation.aggregate({
+        where: {
+          status: "NO_SHOW",
+          offer: { pickupEndAt: { gte: start, lt: end } },
+        },
+        _sum: { totalCents: true },
+      }),
     ]);
 
     return {
@@ -81,7 +100,9 @@ export class AdminDashboardService {
       openReports,
       settlementBatchesNeedingAttention,
       today: {
-        gmvCents: todayAgg._sum.totalCents ?? 0,
+        gmvCents:
+          (todayAgg._sum.totalCents ?? 0) +
+          (todayNoShowAgg._sum.totalCents ?? 0),
         redeemedCount: todayAgg._count._all,
       },
     };

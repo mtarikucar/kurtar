@@ -469,7 +469,7 @@ d("NoShowSweeperService.sweepOnce — real DB", () => {
     expect(afterThird.updatedAt).toEqual(after.updatedAt);
   }, 20_000);
 
-  it("[f] a NO_SHOW is refunded by no path at all — the money stays with the sale", async () => {
+  it("[f] no automatic or customer-initiated path refunds a NO_SHOW — the money stays with the sale", async () => {
     const swept = await seedReservation({
       status: "CONFIRMED",
       pickupStartAt: new Date(SWEEP_NOW.getTime() - 8 * HOUR),
@@ -491,15 +491,7 @@ d("NoShowSweeperService.sweepOnce — real DB", () => {
       response: { errorCode: "RESERVATION_NOT_CANCELLABLE" },
     });
 
-    // (2) The complaint-driven admin refund (the only surface that can
-    // refund a bag whose pickup window has been and gone).
-    await expect(
-      service.refundRedeemed(swept.reservation.id),
-    ).rejects.toMatchObject({
-      response: { errorCode: "RESERVATION_NOT_REFUNDABLE" },
-    });
-
-    // (3) The merchant-cancel / suspend kill-switch fan-out over the whole
+    // (2) The merchant-cancel / suspend kill-switch fan-out over the whole
     // offer — a NO_SHOW is not even a candidate.
     const fanOut = await prisma.$transaction((tx) =>
       service.cancelAllForOffer(tx, swept.offer.id),
@@ -522,6 +514,55 @@ d("NoShowSweeperService.sweepOnce — real DB", () => {
         where: { id: swept.payment.id },
       }),
     ).toMatchObject({ status: "PAID" });
+    expect(
+      await prisma.reservation.findUniqueOrThrow({
+        where: { id: swept.reservation.id },
+      }),
+    ).toMatchObject({ status: "NO_SHOW" });
+  }, 30_000);
+
+  it("[g] an admin CAN refund a NO_SHOW — 'the shop was shut' ends in the same status as 'the customer never came'", async () => {
+    // The sweeper cannot tell those two apart from the outside: both are a
+    // CONFIRMED reservation whose window closed uncollected. Deciding
+    // which happened is what an admin reviewing a complaint is for, and
+    // before this the answer could never be acted on — the seeded demo's
+    // own STORE_CLOSED_NO_SHOW complaint was unanswerable.
+    const swept = await seedReservation({
+      status: "CONFIRMED",
+      pickupStartAt: new Date(SWEEP_NOW.getTime() - 8 * HOUR),
+      pickupEndAt: new Date(SWEEP_NOW.getTime() - 7 * HOUR),
+    });
+    await sweeper.sweepOnce(SWEEP_NOW);
+
+    const { service, mockProvider } = buildReservationsHarness(prisma);
+    // The payment row is seeded straight into the DB, so the provider has
+    // never seen this merchantOid — give it the intent a real purchase
+    // would have created.
+    mockProvider.seedIntent(
+      swept.payment.merchantOid,
+      swept.payment.amountCents,
+    );
+    const sonuc = await service.refundRedeemed(swept.reservation.id);
+    expect(sonuc.ok).toBe(true);
+
+    expect(
+      mockProvider
+        .getRefundLog()
+        .filter((r) => r.merchantOid === swept.payment.merchantOid),
+    ).toHaveLength(1);
+    expect(
+      await prisma.refund.count({
+        where: {
+          paymentId: swept.payment.id,
+          status: { in: ["DONE", "SENT"] },
+        },
+      }),
+    ).toBe(1);
+    // The reservation stays NO_SHOW — the refund is a money event, not a
+    // rewriting of what happened at the counter. The clawback ledger keys
+    // on settlement_lines -> payments -> refunds, so a settled no-show is
+    // recovered from the merchant's next batch exactly as a redeemed one
+    // would be.
     expect(
       await prisma.reservation.findUniqueOrThrow({
         where: { id: swept.reservation.id },
