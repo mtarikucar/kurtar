@@ -146,13 +146,27 @@ export function KepenkKolu({
       useNativeDriver: false,
     });
     dolumAnimasyonu.current.start();
-    basiliTimer.current = setTimeout(onKaldir, BASILI_TUT_SURESI);
+    // The ref is nulled by the timer ITSELF, not only by the release:
+    // `clearTimeout` on an already-fired timer is a silent no-op, so
+    // without this a completed hold would still look "pending" on
+    // `onPressOut` and be counted as a miss.
+    basiliTimer.current = setTimeout(() => {
+      basiliTimer.current = null;
+      onKaldir();
+    }, BASILI_TUT_SURESI);
   };
 
   const basmayiBirak = () => {
     if (basiliTimer.current !== null) {
       clearTimeout(basiliTimer.current);
       basiliTimer.current = null;
+      // Lifted before the fill completed — 600ms is longer than it feels.
+      // The drag counts exactly this as a failed attempt (see the
+      // responder release above), and without it the `Kaldıramıyor
+      // musun?` way out could never appear in the one mode where the
+      // gesture is hardest: the escape hatch was disabled for precisely
+      // the users it exists for.
+      if (!kilitli) setBasarisiz((sayi) => sayi + 1);
     }
     dolumAnimasyonu.current?.stop();
     dolumAnimasyonu.current = null;
@@ -247,6 +261,12 @@ export function KepenkKolu({
           testID="kepenk-kol-basili"
           onPressIn={basmayaBasla}
           onPressOut={basmayiBirak}
+          // A press-and-hold cannot be performed by Switch Control, Voice
+          // Control or a keyboard at all; without an activate action this
+          // `button` role announced a control that does nothing, and no
+          // other control on the screen reveals the code (§5.11).
+          accessibilityActions={[{ name: "activate" }]}
+          onAccessibilityAction={kilitli ? onKilitliDeneme : onKaldir}
         >
           {govde}
         </Pressable>
@@ -269,6 +289,12 @@ export function KepenkKolu({
         <Pressable
           accessibilityRole="button"
           testID="kepenk-yardim"
+          // 38pt of drawn target — the ONE control on this screen under
+          // 44pt, and it is shown only to a customer whose thumb has
+          // already missed the shutter twice. 6pt of slop takes the
+          // effective target to 50 and moves no pixel, so the handle does
+          // not jump when the button appears.
+          hitSlop={6}
           onPress={onKaldir}
           style={({ pressed }) => [
             styles.yardim,

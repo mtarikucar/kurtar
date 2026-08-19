@@ -65,7 +65,19 @@ export default function OrderDetailScreen() {
         <PanelEmptyState icon="alert-circle-outline" title={t("errors.RESERVATION_NOT_FOUND")} />
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
-          <View style={styles.tabelaAlani}>
+          {/* The sign is DRAWN — `Tabela` hides its own subtree from the
+              screen reader on purpose, because a plaque with bolts is not
+              a label — and the shop's name appears nowhere else on this
+              page. Without a name here a blind customer opening a past
+              order hears the district, the package, the qty, the price,
+              the code and the status, and never learns which shop it was.
+              The wrapper speaks; Tabela stays hidden. */}
+          <View
+            style={styles.tabelaAlani}
+            accessible
+            accessibilityRole="header"
+            accessibilityLabel={data.storeName}
+          >
             <Tente
               genislik={genislik}
               yukseklik={TENTE_YUKSEKLIK}

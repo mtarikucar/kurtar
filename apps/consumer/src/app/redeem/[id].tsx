@@ -4,6 +4,7 @@ import {
   Animated,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -207,9 +208,18 @@ export default function KepenkEkrani() {
       ? ACIK_KALMA_SN
       : Math.max(0, ACIK_KALMA_SN - Math.floor((simdiMs - acildiMs) / 1000));
 
+  // The shutter rolls itself back down after thirty seconds — but NOT
+  // while a screen reader is running. A TalkBack user swipes item by item
+  // through the announcement, the clock, the date, the code, the qty, the
+  // price and the counter on the way to TESLİM ALDIM; the auto-close
+  // unmounts that whole subtree underneath them, accessibility focus is
+  // destroyed and the reader jumps back to the top of the screen, in
+  // front of a queue, every single time. It is still never left open by
+  // accident: `yanlışlıkla açtım` and the back control both close it, and
+  // the code is still not mounted until the shutter actually moves.
   useEffect(() => {
-    if (acik && kalanSn <= 0) indir();
-  }, [acik, indir, kalanSn]);
+    if (!ekranOkuyucu && acik && kalanSn <= 0) indir();
+  }, [acik, ekranOkuyucu, indir, kalanSn]);
 
   const kilitliDeneme = useCallback(() => {
     if (Platform.OS === "web") return;
@@ -464,7 +474,12 @@ export default function KepenkEkrani() {
               mounted only then, so a screenshot of the closed state
               cannot contain it at all. */}
           {acik ? (
-            <View style={styles.acikIcerik} testID="kepenk-acik">
+            <ScrollView
+              style={styles.acikKaydirma}
+              contentContainerStyle={styles.acikIcerik}
+              showsVerticalScrollIndicator={false}
+              testID="kepenk-acik"
+            >
               <CanliSaat
                 genislik={kolGenisligi}
                 palet={palet}
@@ -512,13 +527,18 @@ export default function KepenkEkrani() {
                   kod: kodParcasi.tam,
                 })}
               </Text>
-              <Text
-                testID="kepenk-sayac"
-                style={[yazi.data, styles.ortali, { color: palet.yaziSisCukur }]}
-                maxFontSizeMultiplier={1.3}
-              >
-                {t("kepenk.kapanisSayaci", { sn: kalanSn })}
-              </Text>
+              {/* Dropped along with the auto-close: a counter ticking
+                  down to a close that will not happen tells the one user
+                  who cannot see it something untrue. */}
+              {!ekranOkuyucu ? (
+                <Text
+                  testID="kepenk-sayac"
+                  style={[yazi.data, styles.ortali, { color: palet.yaziSisCukur }]}
+                  maxFontSizeMultiplier={1.3}
+                >
+                  {t("kepenk.kapanisSayaci", { sn: kalanSn })}
+                </Text>
+              ) : null}
 
               {cevrimdisi ? (
                 <Text
@@ -576,12 +596,15 @@ export default function KepenkEkrani() {
                     pressed ? { opacity: m.pressOpacity } : null,
                   ]}
                 >
-                  <Text style={[yazi.body, { color: palet.yaziSisCukur }]}>
+                  <Text
+                    style={[yazi.body, { color: palet.yaziSisCukur }]}
+                    maxFontSizeMultiplier={1.4}
+                  >
                     {t("kepenk.yanlislikla")}
                   </Text>
                 </Pressable>
               </View>
-            </View>
+            </ScrollView>
           ) : (
             <View style={styles.kapaliBilgi} pointerEvents="none">
               <Text
@@ -651,8 +674,17 @@ const styles = StyleSheet.create({
   // the last thing in it, so the group fills the opening and the action
   // sits at the bottom of the frame rather than floating in the middle of
   // it with a third of the screen empty underneath.
+  acikKaydirma: { flex: 1 },
+  // `flexGrow`, not `flex`: at every normal text size the column still
+  // fills the opening and `derinlik` still pushes TESLİM ALDIM down onto
+  // the sill. At the accessibility steps the column needs more than the
+  // opening has, and `vitrin`'s `overflow: 'hidden'` used to cut the
+  // button and the undo clean off the screen — a customer at the counter
+  // who could neither confirm the handover nor put the shutter back down.
+  // Rendered BEFORE `TamKepenk`, so the handle's PanResponder still sits
+  // on top and the lift gesture is untouched.
   acikIcerik: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: "center",
     gap: s.s2,
     paddingHorizontal: s.s4,

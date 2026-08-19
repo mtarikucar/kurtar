@@ -101,7 +101,13 @@ export function TeslimSeli({
         <Text style={[yazi.tabelaXl, styles.baslik]} maxFontSizeMultiplier={1.4}>
           {t("kepenk.teslimAlindi")}
         </Text>
-        <Text style={[yazi.clock, styles.saat]} allowFontScaling={false}>
+        {/* Capped rather than pinned: the flood is full-bleed and cannot
+            scroll, so the frozen time takes the clock's own 1.6 ceiling
+            instead of refusing to scale at all (§1.2). */}
+        <Text
+          style={[yazi.clock, styles.saat]}
+          maxFontSizeMultiplier={yazi.clock.maxFontSizeMultiplier}
+        >
           {saat}
         </Text>
         <Text style={[yazi.tabelaLg, styles.dukkan]} numberOfLines={2}>

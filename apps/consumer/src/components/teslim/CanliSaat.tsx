@@ -54,8 +54,12 @@ export function CanliSaat({
         // second — a screen reader that reads the clock aloud once a
         // second is unusable at a counter (spec §4.5).
         accessibilityLabel={t("kepenk.saatErisim", { saat: yuz })}
+        // The 1.6 ceiling and nothing else. `allowFontScaling={false}`
+        // used to sit here too and won, which made the ceiling dead code
+        // and left the app's own proof-of-liveness as the single element
+        // on the screen that ignored the user's text size (§1.2:
+        // "allowFontScaling stays true everywhere").
         maxFontSizeMultiplier={yazi.clock.maxFontSizeMultiplier}
-        allowFontScaling={false}
       >
         {yuz}
       </Text>

@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { SafeAreaInsetsContext } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { m, r, s, yazi, type Palet } from "../../design/tokens";
 import { anaYazi, sisYazi, sodyumYazisi, type YaziZemini } from "../../design/zemin";
@@ -159,6 +160,23 @@ export function Blok({
  * a surface that floats over content and must be unambiguously separated
  * from it. The Android half is a hard contact edge with no spread, so the
  * two platforms still read the same.
+ *
+ * It pays the device's bottom inset ITSELF. Both of its hosts mount under
+ * `edges={["top","left","right"]}` — deliberately, because the bar has to
+ * keep painting all the way to the physical edge and a `bottom` edge on
+ * the host would push the whole root up and leave a strip of pavement
+ * under a floating bar. But edge-to-edge is mandatory on Android from
+ * Expo SDK 57 / RN 0.86, so with only its own 16pt of padding the lower
+ * 32pt of the 56pt CTA sat behind Back/Home/Recents on a three-button
+ * phone, and inside the home-indicator gesture strip on iOS: a customer
+ * in a doorway taps `KUTUYU AYIR · 149₺` and lands on the home screen.
+ * The tab bar next door already ADDS the inset ((tabs)/_layout.tsx); this
+ * is the same move, one component lower.
+ *
+ * The inset is read off the context rather than through
+ * `useSafeAreaInsets()`, which throws outside a provider — the bar is a
+ * leaf that any screen (or test) may render on its own, and a missing
+ * provider must cost 16pt of padding, not a crash.
  */
 export function YapiskanCubuk({
   children,
@@ -167,12 +185,18 @@ export function YapiskanCubuk({
   children: ReactNode;
   palet: Palet;
 }) {
+  const altBosluk = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
   return (
     <View
+      testID="yapiskan-cubuk"
       style={[
         styles.yapiskan,
         YUZEN,
-        { backgroundColor: palet.yuzeyYukselti, borderTopColor: palet.bgDerin },
+        {
+          backgroundColor: palet.yuzeyYukselti,
+          borderTopColor: palet.bgDerin,
+          paddingBottom: s.s4 + altBosluk,
+        },
       ]}
     >
       {children}
