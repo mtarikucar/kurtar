@@ -1,11 +1,11 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import MapView, { Marker, PROVIDER_GOOGLE, type Region } from "react-native-maps";
-import { Platform } from "react-native";
 import Supercluster, { type PointFeature } from "supercluster";
-import { colors, radii } from "@kurtar/ui-tokens";
+import { usePalet } from "../design/theme";
+import { r, yazi, type Palet } from "../design/tokens";
+import { fiyatMetni } from "./kepenk";
 import type { DiscoveryMapPin } from "../lib/api-types";
-import { formatPriceCents } from "../lib/format";
 import type { MapPaneProps, MapRegion } from "./MapPane.types";
 
 type PinProperties = { pin: DiscoveryMapPin };
@@ -28,21 +28,132 @@ function regionToBbox(region: MapRegion): [number, number, number, number] {
 }
 
 /**
- * Native (iOS/Android) map pane — Apple Maps provider on iOS (the RN Maps
- * default), Google provider on Android, per the brief. Clusters pins with
- * `supercluster` client-side (the `/discovery/map` bbox query already caps
- * results at 500 pins server-side — see discovery.service.ts's
- * MAP_PINS_LIMIT — so clustering a bounded result set client-side is
- * cheap, no server-side clustering endpoint needed).
+ * The dark Kadıköy street style (spec §4.2): "land bg.asfalt, water
+ * bg.derin, roads yuzeyKaldirim, labels text.sis, no POI icons." Built
+ * from the SAME palette tokens the rest of the screen reads — the map
+ * inverts with the day/night phase exactly like every other surface,
+ * because it is the same three frozen objects, not a fourth hand-tuned
+ * style.
+ */
+function haritaStili(palet: Palet) {
+  return [
+    { elementType: "geometry", stylers: [{ color: palet.bgAsfalt }] },
+    { elementType: "labels.text.fill", stylers: [{ color: palet.yaziSis }] },
+    { elementType: "labels.text.stroke", stylers: [{ color: palet.bgAsfalt }] },
+    { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+    { featureType: "poi", stylers: [{ visibility: "off" }] },
+    { featureType: "transit", stylers: [{ visibility: "off" }] },
+    { featureType: "administrative", elementType: "geometry", stylers: [{ visibility: "off" }] },
+    { featureType: "road", elementType: "geometry", stylers: [{ color: palet.yuzeyKaldirim }] },
+    { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: palet.yaziSis }] },
+    { featureType: "water", elementType: "geometry", stylers: [{ color: palet.bgDerin }] },
+  ];
+}
+
+/**
+ * FİYAT PİNİ — a price-chip marker (spec §4.2: "Markers are price chips,
+ * 56 × 28, bg.derin fill, 1pt zinc border, data 12 ivory: `69₺`. Selected:
+ * accent.sodyum fill, #12181F ink, lifted 8pt").
+ *
+ * The Android marker rule, non-negotiable (spec §4.2): render the custom
+ * view once, THEN flip `tracksViewChanges` to false in `onLayout` — a
+ * Custom-View marker on Android is a bitmap snapshot, and leaving
+ * `tracksViewChanges` true through any animation is the classic marker
+ * flicker. Selection is therefore a discrete re-snapshot (one extra
+ * `onLayout` when `secili` flips), never a continuous animation.
+ */
+function FiyatPini({ pin, secili, palet, onPress }: { pin: DiscoveryMapPin; secili: boolean; palet: Palet; onPress: () => void }) {
+  const [izle, setIzle] = useState(true);
+  return (
+    <Marker
+      coordinate={{ latitude: pin.lat, longitude: pin.lng }}
+      onPress={onPress}
+      tracksViewChanges={izle}
+      zIndex={secili ? 1 : 0}
+      accessibilityLabel={
+        secili
+          ? `Seçili, ${fiyatMetni(pin.minPriceCents)}'den başlayan fiyatlarla`
+          : `Mağaza, ${fiyatMetni(pin.minPriceCents)}'den başlayan fiyatlarla`
+      }
+    >
+      <View
+        onLayout={() => setIzle(false)}
+        style={[
+          styles.pin,
+          {
+            backgroundColor: secili ? palet.sodyumDolgu : palet.bgDerin,
+            borderColor: secili ? palet.sodyumDolgu : palet.metalCinko,
+            marginBottom: secili ? 8 : 0,
+          },
+        ]}
+      >
+        <Text
+          style={[yazi.data, { color: secili ? palet.sodyumMurekkep : palet.yaziAna }]}
+          numberOfLines={1}
+        >
+          {fiyatMetni(pin.minPriceCents)}
+        </Text>
+      </View>
+    </Marker>
+  );
+}
+
+function KumePini({
+  clusterId,
+  count,
+  lat,
+  lng,
+  palet,
+  onPress,
+}: {
+  clusterId: number;
+  count: number;
+  lat: number;
+  lng: number;
+  palet: Palet;
+  onPress: () => void;
+}) {
+  const [izle, setIzle] = useState(true);
+  return (
+    <Marker
+      key={`cluster-${clusterId}`}
+      coordinate={{ latitude: lat, longitude: lng }}
+      onPress={onPress}
+      tracksViewChanges={izle}
+      accessibilityLabel={`${count} mağaza — yakınlaştırmak için dokun`}
+    >
+      <View
+        onLayout={() => setIzle(false)}
+        style={[styles.kume, { backgroundColor: palet.sodyumDolgu, borderColor: palet.bgDerin }]}
+      >
+        <Text style={[yazi.dataLg, { color: palet.sodyumMurekkep }]}>{count}</Text>
+      </View>
+    </Marker>
+  );
+}
+
+/**
+ * Native (iOS/Android) map pane — `PROVIDER_GOOGLE` on BOTH platforms
+ * (spec §4.2, non-negotiable: "Apple's provider ignores customMapStyle,
+ * so the dark Kadıköy style is only achievable via Google"). This needs a
+ * real Google Maps API key configured for iOS before it will render
+ * anything there — see app.json's `android.config.googleMaps.apiKey` for
+ * the existing Android wiring and build log §4 for what iOS still needs.
+ * Clusters pins with `supercluster` client-side (the `/discovery/map`
+ * bbox query already caps results at 500 pins server-side, so clustering
+ * a bounded result set client-side is cheap).
  */
 export function MapPane({
   pins,
   initialRegion,
   onRegionChangeComplete,
   onPinPress,
+  selectedStoreId = null,
 }: MapPaneProps) {
+  const palet = usePalet();
   const mapRef = useRef<MapView | null>(null);
   const regionRef = useRef<MapRegion>(initialRegion);
+  const stil = useMemo(() => haritaStili(palet), [palet]);
 
   const index = useMemo(() => {
     const points: PointFeature<PinProperties>[] = pins.map((pin) => ({
@@ -91,11 +202,13 @@ export function MapPane({
     <MapView
       ref={mapRef}
       style={StyleSheet.absoluteFill}
-      provider={Platform.OS === "android" ? PROVIDER_GOOGLE : undefined}
+      provider={PROVIDER_GOOGLE}
+      customMapStyle={stil}
       initialRegion={initialRegion}
       onRegionChangeComplete={handleRegionChangeComplete}
       showsUserLocation
-      showsMyLocationButton
+      showsMyLocationButton={false}
+      showsPointsOfInterest={false}
     >
       {clusters.map((feature) => {
         const [lng, lat] = feature.geometry.coordinates;
@@ -110,31 +223,27 @@ export function MapPane({
           const clusterId = properties.cluster_id;
           const count = properties.point_count;
           return (
-            <Marker
+            <KumePini
               key={`cluster-${clusterId}`}
-              coordinate={{ latitude: lat, longitude: lng }}
+              clusterId={clusterId}
+              count={count}
+              lat={lat}
+              lng={lng}
+              palet={palet}
               onPress={() => handleClusterPress(clusterId, lng, lat)}
-              accessibilityLabel={`${count} mağaza — yakınlaştırmak için dokun`}
-            >
-              <View style={styles.clusterMarker}>
-                <Text style={styles.clusterMarkerText}>{count}</Text>
-              </View>
-            </Marker>
+            />
           );
         }
 
         const pin = properties.pin;
         return (
-          <Marker
+          <FiyatPini
             key={pin.storeId}
-            coordinate={{ latitude: lat, longitude: lng }}
+            pin={pin}
+            secili={pin.storeId === selectedStoreId}
+            palet={palet}
             onPress={() => onPinPress(pin)}
-            accessibilityLabel={`Mağaza, ${formatPriceCents(pin.minPriceCents)}'den başlayan fiyatlarla`}
-          >
-            <View style={styles.pinMarker}>
-              <Text style={styles.pinMarkerText}>{formatPriceCents(pin.minPriceCents)}</Text>
-            </View>
-          </Marker>
+          />
         );
       })}
     </MapView>
@@ -142,32 +251,22 @@ export function MapPane({
 }
 
 const styles = StyleSheet.create({
-  clusterMarker: {
+  pin: {
+    minWidth: 56,
+    height: 28,
+    borderRadius: r.cta,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+  },
+  kume: {
     minWidth: 36,
     height: 36,
-    borderRadius: radii.full,
-    backgroundColor: colors.secondary[500],
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 6,
     borderWidth: 2,
-    borderColor: colors.neutral[0],
-  },
-  clusterMarkerText: {
-    color: colors.neutral[0],
-    fontWeight: "700",
-  },
-  pinMarker: {
-    backgroundColor: colors.primary[500],
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radii.md,
-    borderWidth: 2,
-    borderColor: colors.neutral[0],
-  },
-  pinMarkerText: {
-    color: colors.neutral[0],
-    fontWeight: "700",
-    fontSize: 12,
   },
 });

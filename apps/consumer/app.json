@@ -15,7 +15,8 @@
         "UIBackgroundModes": []
       },
       "config": {
-        "usesNonExemptEncryption": false
+        "usesNonExemptEncryption": false,
+        "googleMapsApiKey": "${EXPO_PUBLIC_IOS_MAPS_API_KEY}"
       }
     },
     "android": {

@@ -1,304 +1,353 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
+  Animated,
   FlatList,
+  Linking,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { Ionicons } from "@expo/vector-icons";
-import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
 import { Screen } from "../../components/Screen";
-import { OfferCard } from "../../components/OfferCard";
-import { EmptyState } from "../../components/EmptyState";
-import { ErrorState } from "../../components/ErrorState";
-import { LoadingState } from "../../components/LoadingState";
-import { IconButton } from "../../components/IconButton";
-import { Button } from "../../components/Button";
-import {
-  FilterSheet,
-  type DiscoveryFilterState,
-} from "../../components/FilterSheet";
 import { DistrictPicker } from "../../components/DistrictPicker";
-import { MapPane } from "../../components/MapPane";
+import { VitrinKarti } from "../../components/kepenk";
+import { Baslik } from "../../components/kesif/Baslik";
+import { BolumBasligi } from "../../components/kesif/BolumBasligi";
+import { BosSokak } from "../../components/kesif/BosSokak";
+import { CiplerBar } from "../../components/kesif/CiplerBar";
+import { KESIF_SAG_KENAR, KESIF_SOL_KENAR, kartGenisligiHesapla } from "../../components/kesif/duzen";
+import { HaritaMini } from "../../components/kesif/HaritaMini";
+import { HataSokagi } from "../../components/kesif/HataSokagi";
+import { SokakSatiri } from "../../components/kesif/SokakSatiri";
+import { SokakYukleniyor } from "../../components/kesif/SokakYukleniyor";
+import { useIlkYuklemeKademesi } from "../../components/kesif/use-ilk-yukleme";
+import type { MapRegion } from "../../components/MapPane.types";
+import { useSimdi } from "../../design/saat";
+import { usePalet, useTema } from "../../design/theme";
+import { kart, s, yazi } from "../../design/tokens";
+import { trUpper } from "../../design/tr-upper";
 import { useDiscoveryMap, useDiscoveryOffers } from "../../hooks/use-discovery";
 import { useEffectiveLocation } from "../../hooks/use-effective-location";
+import type { DiscoveryMapPin, DiscoveryOfferItem } from "../../lib/api-types";
+import { formatRemaining } from "../../lib/format";
+import {
+  BASLIK_ESIGI,
+  HARITA_KAYDIRMA_ESIGI,
+  acikMi,
+  baskinBolge,
+  eslesiyorMu,
+  kategoriSorgusu,
+  sokakListesi,
+  sonrakiAcilisaMs,
+  type KesifKategorisi,
+  type KesifSatiri,
+} from "../../lib/kesif";
 import type { LatLng } from "../../lib/location";
-import type { DiscoveryMapPin } from "../../lib/api-types";
-import { formatPriceCents } from "../../lib/format";
-import type { MapRegion } from "../../components/MapPane.types";
 
-const DEFAULT_FILTERS: DiscoveryFilterState = {
-  category: null,
-  diet: [],
-  radiusM: 3000,
-  pickupTime: "ALL",
-};
+/** Kadıköy — same coordinates as `design/faz.ts`'s `VARSAYILAN_KONUM`
+ * (the app's default solar-phase location), used here as the discovery
+ * search origin BEFORE any location signal (GPS or manual district)
+ * exists, so the screen never blocks on a permission prompt (spec §4.8
+ * LOCATION DENIED: "never a blocking wall"). */
+const KADIKOY: LatLng = { lat: 40.9903, lng: 29.03 };
+const KADIKOY_ADI = "Kadıköy";
 
-/** Istanbul's rough geographic center — only used as the map's own initial
- * region before ANY location signal (GPS or manual district) exists, so
- * the map view never opens on a blank ocean tile. Replaced the instant
- * real coordinates are available. */
-const ISTANBUL_FALLBACK: LatLng = { lat: 41.0082, lng: 28.9784 };
+/** No radius control on this screen — the finished spec's Keşfet has
+ * category chips only, no diet/radius/pickup-time sheet (that UI belongs
+ * to the earlier, replaced design; `FilterSheet` is untouched and still
+ * serves Search, out of this track's scope). 12km reaches across the
+ * Bosphorus to Beşiktaş — the real seeded data spans Kadıköy AND
+ * Beşiktaş, which is exactly the cross-district case the street spine's
+ * grouping exists to show. */
+const ARAMA_YARICAPI_M = 12_000;
 
-function endOfTodayIso(): string {
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  return end.toISOString();
-}
+const BOLUM_SATIR_YUKSEKLIGI = 48;
 
-export default function DiscoverScreen() {
+export default function KesifEkrani() {
   const { t } = useTranslation();
   const router = useRouter();
+  const palet = usePalet();
+  const { faz } = useTema();
+  const simdi = useSimdi();
+  const { width } = useWindowDimensions();
 
-  const [viewMode, setViewMode] = useState<"list" | "map">("list");
-  const [filters, setFilters] = useState<DiscoveryFilterState>(DEFAULT_FILTERS);
-  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
-  const [districtPickerOpen, setDistrictPickerOpen] = useState(false);
-
-  const { coords: effectiveCoords, denied: locationDenied, setManualLocation } =
-    useEffectiveLocation();
-
+  const [kategori, setKategori] = useState<KesifKategorisi>("TUMU");
+  const [bolgePickerAcik, setBolgePickerAcik] = useState(false);
+  const [manuelBolgeAdi, setManuelBolgeAdi] = useState<string | null>(null);
   const [mapRegion, setMapRegion] = useState<MapRegion | null>(null);
-  const [selectedPin, setSelectedPin] = useState<DiscoveryMapPin | null>(null);
+  const [seciliPin, setSeciliPin] = useState<DiscoveryMapPin | null>(null);
 
-  const offersQuery = useDiscoveryOffers(
-    effectiveCoords
-      ? {
-          lat: effectiveCoords.lat,
-          lng: effectiveCoords.lng,
-          radiusM: filters.radiusM,
-          category: filters.category ?? undefined,
-          diet: filters.diet.length > 0 ? filters.diet.join(",") : undefined,
-          pickupBefore: filters.pickupTime === "TONIGHT" ? endOfTodayIso() : undefined,
-        }
-      : null,
+  const { coords: gercekKonum, denied: konumReddedildi, setManualLocation } =
+    useEffectiveLocation();
+  const aramaKonumu = gercekKonum ?? KADIKOY;
+
+  const offersQuery = useDiscoveryOffers({
+    lat: aramaKonumu.lat,
+    lng: aramaKonumu.lng,
+    radiusM: ARAMA_YARICAPI_M,
+    category: kategoriSorgusu(kategori) ?? undefined,
+    pageSize: 40,
+  });
+
+  const filtreliTeklifler = useMemo<DiscoveryOfferItem[]>(
+    () => (offersQuery.data?.items ?? []).filter((offer) => eslesiyorMu(kategori, offer)),
+    [offersQuery.data, kategori],
   );
 
-  const bbox = useMemo(() => {
-    if (!mapRegion) return null;
-    return {
-      west: mapRegion.longitude - mapRegion.longitudeDelta / 2,
-      south: mapRegion.latitude - mapRegion.latitudeDelta / 2,
-      east: mapRegion.longitude + mapRegion.longitudeDelta / 2,
-      north: mapRegion.latitude + mapRegion.latitudeDelta / 2,
-    };
-  }, [mapRegion]);
-
-  const mapQuery = useDiscoveryMap(
-    viewMode === "map" ? bbox : null,
-    filters.category ?? undefined,
+  const satirlar = useMemo<KesifSatiri[]>(
+    () => sokakListesi(filtreliTeklifler, simdi),
+    [filtreliTeklifler, simdi],
   );
 
+  const acikSayisi = useMemo(
+    () => filtreliTeklifler.filter((offer) => acikMi(offer, simdi)).length,
+    [filtreliTeklifler, simdi],
+  );
+  const baskinBolgeAdi = useMemo(
+    () => baskinBolge(filtreliTeklifler, simdi),
+    [filtreliTeklifler, simdi],
+  );
+  const basaligMetni =
+    acikSayisi > BASLIK_ESIGI && baskinBolgeAdi
+      ? t("kesif.acikCok", { bolge: baskinBolgeAdi, count: acikSayisi })
+      : t("kesif.acikTekil", { count: acikSayisi });
+
+  const ilkYukHazir = !offersQuery.isLoading && !offersQuery.isError;
+  const gorunenSayi = useIlkYuklemeKademesi(satirlar.length, ilkYukHazir);
+  const gorunenSatirlar = useMemo(
+    () => (ilkYukHazir ? satirlar.slice(0, gorunenSayi) : []),
+    [ilkYukHazir, satirlar, gorunenSayi],
+  );
+
+  const kartGenisligi = kartGenisligiHesapla(width);
+
+  // --- The map (spec §4.1's collapsing header + §4.2's pins) ---
   const initialMapRegion = useMemo<MapRegion>(() => {
-    const center = effectiveCoords ?? ISTANBUL_FALLBACK;
-    const delta = filters.radiusM / 55_000; // rough meters->degrees at Istanbul's latitude
+    const delta = ARAMA_YARICAPI_M / 55_000; // rough meters -> degrees at Istanbul's latitude
     return {
-      latitude: center.lat,
-      longitude: center.lng,
+      latitude: aramaKonumu.lat,
+      longitude: aramaKonumu.lng,
       latitudeDelta: Math.max(delta, 0.01),
       longitudeDelta: Math.max(delta, 0.01),
     };
-  }, [effectiveCoords, filters.radiusM]);
+  }, [aramaKonumu.lat, aramaKonumu.lng]);
 
-  const handleWidenRadius = () => {
-    setFilters((prev) => ({ ...prev, radiusM: Math.min(prev.radiusM * 2, 20000) }));
-  };
+  const bbox = useMemo(() => {
+    const bolge = mapRegion ?? initialMapRegion;
+    return {
+      west: bolge.longitude - bolge.longitudeDelta / 2,
+      south: bolge.latitude - bolge.latitudeDelta / 2,
+      east: bolge.longitude + bolge.longitudeDelta / 2,
+      north: bolge.latitude + bolge.latitudeDelta / 2,
+    };
+  }, [mapRegion, initialMapRegion]);
 
-  const handleSelectDistrict = (coords: LatLng) => {
-    setManualLocation(coords);
-    setDistrictPickerOpen(false);
-  };
+  const mapQuery = useDiscoveryMap(bbox, kategoriSorgusu(kategori) ?? undefined);
 
-  const showLocationBanner = locationDenied;
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const listeRef = useRef<FlatList<KesifSatiri> | null>(null);
+  const onScroll = useMemo(
+    () =>
+      Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
+        useNativeDriver: false,
+      }),
+    [scrollY],
+  );
+
+  // --- The street spine's cumulative row offsets (fixed-height rows —
+  // spec §3's card height never changes with width, only with font
+  // scale, so this is stable across every card in a list). ---
+  const satirYuksekligi = kart.yukseklik + kart.aralik;
+  const duzen = useMemo(() => {
+    let ofset = 0;
+    return gorunenSatirlar.map((satir) => {
+      const yukseklik = satir.tip === "bolum" ? BOLUM_SATIR_YUKSEKLIGI : satirYuksekligi;
+      const kayit = { length: yukseklik, offset: ofset, index: 0 };
+      ofset += yukseklik;
+      return kayit;
+    });
+  }, [gorunenSatirlar, satirYuksekligi]);
+
+  const handlePinPress = useCallback((pin: DiscoveryMapPin) => {
+    setSeciliPin(pin);
+    const index = satirlar.findIndex(
+      (satir) => satir.tip === "teklif" && satir.teklif.dukkanId === pin.storeId,
+    );
+    if (index >= 0) {
+      listeRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.2 });
+    }
+  }, [satirlar]);
+
+  const handleCardPress = useCallback(
+    (satir: Extract<KesifSatiri, { tip: "teklif" }>) => {
+      const eslesenPin = mapQuery.data?.find((p) => p.storeId === satir.teklif.dukkanId);
+      if (eslesenPin) setSeciliPin(eslesenPin);
+      router.push({
+        pathname: "/offer/[id]",
+        params: {
+          id: satir.teklif.teklifId,
+          storeId: satir.teklif.dukkanId,
+          distanceM: String(satir.teklif.mesafeM),
+        },
+      });
+    },
+    [mapQuery.data, router],
+  );
+
+  const bosMu = ilkYukHazir && filtreliTeklifler.length === 0;
+  const bosTuru = kategori !== "TUMU" ? "filtreli" : faz === "gece" ? "gece" : "gunduz";
+  const gorunenBolgeAdi = manuelBolgeAdi ?? (gercekKonum ? baskinBolgeAdi : null) ?? KADIKOY_ADI;
 
   return (
-    <Screen padded={false}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>{t("discover.title")}</Text>
-        <View style={styles.headerActions}>
-          <IconButton
-            name={viewMode === "list" ? "map-outline" : "list-outline"}
-            accessibilityLabel={
-              viewMode === "list" ? t("discover.viewMap") : t("discover.viewList")
-            }
-            onPress={() => setViewMode(viewMode === "list" ? "map" : "list")}
-            testID="toggle-map-view"
-          />
-          <IconButton
-            name="options-outline"
-            accessibilityLabel={t("discover.filters.title")}
-            onPress={() => setFilterSheetOpen(true)}
-            testID="open-filters"
-          />
-        </View>
-      </View>
+    <Screen
+      padded={false}
+      edges={["top", "left", "right"]}
+      // `Screen`'s own background is a fixed light `neutral[50]` — right
+      // for every OTHER route, but this one screen lives under the
+      // day/night phase system (spec §1.1) and must show the phase's own
+      // ground colour, not a hardcoded light one. Invisible in gündüz,
+      // where the two happen to be close; a stark light band behind the
+      // header and the empty/loading text in gece, where they are not —
+      // found by actually looking at the night frames (see build log).
+      style={{ backgroundColor: palet.bgAsfalt }}
+    >
+      <Baslik bolgeAdi={gorunenBolgeAdi} onBolgeDegistir={() => setBolgePickerAcik(true)} />
 
-      {showLocationBanner ? (
-        <Pressable
-          onPress={() => setDistrictPickerOpen(true)}
-          style={styles.banner}
-          accessibilityRole="button"
-        >
-          <Ionicons name="location-outline" size={18} color={colors.semantic.info[700]} />
-          <Text style={styles.bannerText}>{t("discover.locationDeniedBanner")}</Text>
-        </Pressable>
+      <HaritaMini
+        scrollY={scrollY}
+        pins={mapQuery.data ?? []}
+        initialRegion={mapRegion ?? initialMapRegion}
+        onRegionChangeComplete={setMapRegion}
+        onPinPress={handlePinPress}
+        onSwitchToList={() =>
+          listeRef.current?.scrollToOffset({ offset: HARITA_KAYDIRMA_ESIGI + 40, animated: true })
+        }
+        selectedStoreId={seciliPin?.storeId ?? null}
+      />
+
+      {konumReddedildi ? (
+        <View style={[styles.konumBanner, { borderColor: palet.cizgiKil }]}>
+          <Text style={[yazi.data, styles.konumMetni, { color: palet.yaziSis }]}>
+            {t("kesif.konumKapali", { bolge: KADIKOY_ADI })}
+          </Text>
+          <Pressable
+            onPress={() => Linking.openSettings().catch(() => undefined)}
+            accessibilityRole="button"
+            accessibilityLabel={t("kesif.konumAc")}
+            hitSlop={8}
+          >
+            <Text style={[yazi.label, { color: palet.sodyumYazi }]}>{t("kesif.konumAc")}</Text>
+          </Pressable>
+        </View>
       ) : null}
 
-      {!effectiveCoords ? (
-        <LoadingState />
-      ) : viewMode === "list" ? (
-        <FlatList
-          data={offersQuery.data?.items ?? []}
-          keyExtractor={(item) => item.offerId}
-          contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
-            <OfferCard
-              offer={item}
-              onPress={() =>
-                router.push({
-                  pathname: "/offer/[id]",
-                  params: {
-                    id: item.offerId,
-                    storeId: item.store.id,
-                    distanceM: String(item.store.distanceM),
-                  },
-                })
-              }
-            />
-          )}
+      <View style={styles.ustBilgi}>
+        <Text style={[yazi.data, { color: palet.yaziSis }]} maxFontSizeMultiplier={1.3}>
+          {basaligMetni}
+        </Text>
+      </View>
+
+      <View style={styles.ciplerSarici}>
+        <CiplerBar secili={kategori} onSec={setKategori} />
+      </View>
+
+      {offersQuery.isError ? (
+        <ScrollView style={styles.doluAlan} contentContainerStyle={styles.doluAlanIcerik}>
+          <HataSokagi kartGenisligi={kartGenisligi} onTekrarDene={() => offersQuery.refetch()} />
+        </ScrollView>
+      ) : !ilkYukHazir ? (
+        <ScrollView style={styles.doluAlan} contentContainerStyle={styles.doluAlanIcerik}>
+          <SokakYukleniyor kartGenisligi={kartGenisligi} />
+        </ScrollView>
+      ) : bosMu ? (
+        <ScrollView style={styles.doluAlan} contentContainerStyle={styles.doluAlanIcerik}>
+          <BosSokak
+            tur={bosTuru}
+            kartGenisligi={kartGenisligi}
+            geriSayimMetni={
+              bosTuru === "gece" ? formatRemaining(sonrakiAcilisaMs(simdi)) : undefined
+            }
+            onFiltreleriTemizle={() => setKategori("TUMU")}
+          />
+        </ScrollView>
+      ) : (
+        <Animated.FlatList
+          ref={listeRef as never}
+          testID="kesif-liste"
+          style={styles.doluAlan}
+          data={gorunenSatirlar}
+          keyExtractor={(item: KesifSatiri) => item.anahtar}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={styles.liste}
+          getItemLayout={(_data, index) => ({ ...duzen[index]!, index })}
+          renderItem={({ item }: { item: KesifSatiri }) =>
+            item.tip === "bolum" ? (
+              <BolumBasligi
+                baslik={item.tur === "bolge" ? trUpper(item.bolge) : t("kesif.kacirdiklarin")}
+              />
+            ) : (
+              <SokakSatiri mesafeM={item.teklif.mesafeM}>
+                <VitrinKarti
+                  teklif={item.teklif}
+                  genislik={kartGenisligi}
+                  onPress={() => handleCardPress(item)}
+                />
+              </SokakSatiri>
+            )
+          }
           refreshControl={
             <RefreshControl
               refreshing={offersQuery.isRefetching}
               onRefresh={() => offersQuery.refetch()}
-              tintColor={colors.primary[500]}
+              tintColor={palet.sodyumDolgu}
             />
           }
-          ListEmptyComponent={
-            offersQuery.isLoading ? (
-              <LoadingState />
-            ) : offersQuery.isError ? (
-              <ErrorState onRetry={() => offersQuery.refetch()} />
-            ) : (
-              <EmptyState
-                icon="restaurant-outline"
-                title={t("discover.emptyTitle")}
-                body={t("discover.emptyBody")}
-                ctaLabel={t("discover.emptyWidenCta")}
-                onPressCta={handleWidenRadius}
-              />
-            )
-          }
         />
-      ) : (
-        <View style={styles.mapContainer}>
-          <MapPane
-            pins={mapQuery.data ?? []}
-            initialRegion={mapRegion ?? initialMapRegion}
-            onRegionChangeComplete={setMapRegion}
-            onPinPress={setSelectedPin}
-            onSwitchToList={() => setViewMode("list")}
-          />
-          {selectedPin ? (
-            <View style={styles.pinCard}>
-              <View style={styles.pinCardBody}>
-                <Text style={styles.pinCardPrice}>
-                  {formatPriceCents(selectedPin.minPriceCents)} {"·"} {selectedPin.offersCount}{" "}
-                  paket
-                </Text>
-              </View>
-              <Button
-                label={t("offerDetail.viewStoreCta")}
-                onPress={() =>
-                  router.push({ pathname: "/store/[id]", params: { id: selectedPin.storeId } })
-                }
-              />
-            </View>
-          ) : null}
-        </View>
       )}
 
-      <FilterSheet
-        visible={filterSheetOpen}
-        value={filters}
-        onApply={setFilters}
-        onClose={() => setFilterSheetOpen(false)}
-      />
       <DistrictPicker
-        visible={districtPickerOpen}
-        onSelect={handleSelectDistrict}
-        onClose={() => setDistrictPickerOpen(false)}
+        visible={bolgePickerAcik}
+        onSelect={(coords, name) => {
+          setManualLocation(coords);
+          setManuelBolgeAdi(name);
+          setBolgePickerAcik(false);
+        }}
+        onClose={() => setBolgePickerAcik(false)}
       />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
+  ustBilgi: { paddingHorizontal: s.s4, paddingTop: s.s3, paddingBottom: s.s1 },
+  ciplerSarici: { paddingVertical: s.s2 },
+  doluAlan: { flex: 1 },
+  doluAlanIcerik: { flexGrow: 1, paddingBottom: s.s10 },
+  // Asymmetric on purpose: the spine reads as the street's own left edge
+  // (see duzen.ts), so the list's left inset is the spine's, not another
+  // s4 gutter on top of it — the right edge keeps s4 so it still lines up
+  // with the header and the filter chips above.
+  liste: {
+    paddingLeft: KESIF_SOL_KENAR,
+    paddingRight: KESIF_SAG_KENAR,
+    paddingBottom: s.s10,
   },
-  headerTitle: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.neutral[900],
-  },
-  headerActions: {
-    flexDirection: "row",
-    gap: spacing.xs,
-  },
-  banner: {
+  konumBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
-    marginHorizontal: 20,
-    marginBottom: spacing.sm,
-    padding: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: colors.semantic.info[50],
+    gap: s.s3,
+    marginHorizontal: s.s4,
+    marginTop: s.s2,
+    paddingVertical: s.s2,
+    paddingHorizontal: s.s3,
+    borderWidth: 1,
+    borderRadius: 6,
   },
-  bannerText: {
-    flex: 1,
-    fontSize: typeScale.caption.size,
-    color: colors.semantic.info[700],
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: spacing["3xl"],
-    gap: spacing.md,
-    flexGrow: 1,
-  },
-  mapContainer: {
-    flex: 1,
-  },
-  pinCard: {
-    position: "absolute",
-    left: spacing.lg,
-    right: spacing.lg,
-    bottom: spacing.lg,
-    backgroundColor: colors.neutral[0],
-    borderRadius: radii.lg,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    shadowColor: colors.neutral[900],
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  pinCardBody: {
-    gap: 2,
-  },
-  pinCardPrice: {
-    fontSize: typeScale.bodyStrong.size,
-    fontWeight: typeScale.bodyStrong.weight,
-    color: colors.neutral[900],
-  },
+  konumMetni: { flex: 1 },
 });
