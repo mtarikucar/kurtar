@@ -1,7 +1,7 @@
 import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 import { SafeAreaView, type Edge } from "react-native-safe-area-context";
-import { colors } from "@kurtar/ui-tokens";
 import type { ReactNode } from "react";
+import { usePalet } from "@/design/theme";
 
 interface ScreenProps {
   children: ReactNode;
@@ -11,14 +11,18 @@ interface ScreenProps {
   padded?: boolean;
 }
 
-/** Base screen wrapper — consistent background + safe-area handling for
- * every route. Kept deliberately dumb (no scroll behavior of its own) so
- * screens with a FlatList/ScrollView compose cleanly underneath it. */
+/** Base screen wrapper — the street's ground + safe-area handling for every
+ * route. The ground follows the phase (spec §1.1): a screen that painted a
+ * fixed pale background sat under night type and made it unreadable, so the
+ * background is read from the palette, never hardcoded. Kept deliberately
+ * dumb (no scroll behavior of its own) so screens with a FlatList/ScrollView
+ * compose cleanly underneath it. */
 export function Screen({ children, edges, style, padded = true }: ScreenProps) {
+  const palet = usePalet();
   return (
     <SafeAreaView
       edges={edges ?? ["top", "left", "right"]}
-      style={[styles.safe, style]}
+      style={[styles.safe, { backgroundColor: palet.bgAsfalt }, style]}
     >
       <View style={[styles.content, padded && styles.padded]}>{children}</View>
     </SafeAreaView>
@@ -28,7 +32,6 @@ export function Screen({ children, edges, style, padded = true }: ScreenProps) {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: colors.neutral[50],
   },
   content: {
     flex: 1,

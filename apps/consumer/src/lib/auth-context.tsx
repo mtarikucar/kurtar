@@ -126,7 +126,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tokenStore.accessToken = result.accessToken;
     if (result.refreshToken) {
       tokenStore.refreshToken = result.refreshToken;
-      await setStoredRefreshToken(result.refreshToken);
+      // The server has already minted this session — the code was correct
+      // and the tokens are in hand. Persisting the refresh token is what
+      // makes the session survive a restart, so a failure here degrades
+      // the session rather than invalidating it, and must NOT propagate:
+      // handleVerify()'s catch reports any throw as "wrong or expired
+      // code", which would tell a user whose login just succeeded that it
+      // failed — and their (now consumed) code genuinely would fail on the
+      // retry, locking them out of a session they actually hold.
+      try {
+        await setStoredRefreshToken(result.refreshToken);
+      } catch (err) {
+        console.warn(
+          "[auth] session minted but the refresh token could not be persisted — staying signed in for this run only",
+          err,
+        );
+      }
     }
     const nextUser: ConsumerUser = {
       id: result.user.id,

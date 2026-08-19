@@ -15,6 +15,8 @@ import { createTestQueryClient } from "../test-utils/render";
 import { client } from "../lib/api-client";
 import CancelScreen from "../app/cancel/[id]";
 import "../i18n";
+import { ThemeProvider } from "../design/theme";
+import { ClockProvider } from "../design/saat";
 import { KurtarApiError } from "@kurtar/api-client";
 import type { ReservationItem } from "../lib/api-types";
 
@@ -51,7 +53,11 @@ function renderCancelScreen() {
   const queryClient = createTestQueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <CancelScreen />
+      <ClockProvider>
+        <ThemeProvider fazZorla="gece">
+        <CancelScreen />
+      </ThemeProvider>
+      </ClockProvider>
     </QueryClientProvider>,
   );
 }

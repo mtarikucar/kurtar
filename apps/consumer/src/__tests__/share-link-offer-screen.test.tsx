@@ -14,6 +14,8 @@ import { createTestQueryClient } from "../test-utils/render";
 import { client } from "../lib/api-client";
 import ShareLinkOfferScreen from "../app/o/[id]";
 import "../i18n";
+import { ThemeProvider } from "../design/theme";
+import { ClockProvider } from "../design/saat";
 
 const mockOffer = client.discovery.offer as jest.Mock;
 
@@ -21,7 +23,11 @@ function renderScreen() {
   const queryClient = createTestQueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <ShareLinkOfferScreen />
+      <ClockProvider>
+        <ThemeProvider fazZorla="gece">
+        <ShareLinkOfferScreen />
+      </ThemeProvider>
+      </ClockProvider>
     </QueryClientProvider>,
   );
 }

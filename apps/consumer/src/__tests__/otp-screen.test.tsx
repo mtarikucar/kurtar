@@ -21,6 +21,8 @@ import { client, tokenStore } from "../lib/api-client";
 import { AuthProvider } from "../lib/auth-context";
 import OtpScreen from "../app/(auth)/otp";
 import "../i18n";
+import { ThemeProvider } from "../design/theme";
+import { ClockProvider } from "../design/saat";
 import { KurtarApiError } from "@kurtar/api-client";
 
 const mockVerifyOtp = client.auth.verifyOtp as jest.Mock;
@@ -31,7 +33,11 @@ const mockRequestOtp = client.auth.requestOtp as jest.Mock;
 function renderOtpScreen() {
   return render(
     <AuthProvider>
-      <OtpScreen />
+      <ClockProvider>
+        <ThemeProvider fazZorla="gece">
+        <OtpScreen />
+      </ThemeProvider>
+      </ClockProvider>
     </AuthProvider>,
   );
 }

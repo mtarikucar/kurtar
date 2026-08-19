@@ -7,6 +7,8 @@ jest.mock("expo-router", () => ({
 
 import NotFoundScreen from "../app/+not-found";
 import "../i18n";
+import { ThemeProvider } from "../design/theme";
+import { ClockProvider } from "../design/saat";
 
 // [M4 fix] apps/consumer/src/app/+not-found.tsx did not exist before this
 // fix — an unmatched deep link fell through to expo-router's unbranded
@@ -17,7 +19,13 @@ describe("NotFoundScreen — branded catch-all for an unmatched route (M4)", () 
   });
 
   it("renders branded copy and a CTA back to the app's home", async () => {
-    await render(<NotFoundScreen />);
+    await render(
+      <ClockProvider>
+        <ThemeProvider fazZorla="gece">
+        <NotFoundScreen />
+      </ThemeProvider>
+      </ClockProvider>,
+    );
 
     expect(screen.getByText("Bu sayfa bulunamadı")).toBeTruthy();
     await fireEvent.press(screen.getByText("Ana sayfaya dön"));
