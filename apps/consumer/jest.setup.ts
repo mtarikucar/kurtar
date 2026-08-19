@@ -56,6 +56,20 @@ jest.mock("expo-notifications", () => ({
 }));
 
 jest.mock("expo-device", () => ({ isDevice: false }));
+
+// The redeem screen's two device concessions (src/lib/parlaklik.ts). Both
+// are native-only and have no JS behaviour under Jest; left unmocked they
+// leave an unsettled promise on the native-module proxy for every test
+// that mounts the screen.
+jest.mock("expo-brightness", () => ({
+  getBrightnessAsync: jest.fn(() => Promise.resolve(0.5)),
+  setBrightnessAsync: jest.fn(() => Promise.resolve()),
+  restoreSystemBrightnessAsync: jest.fn(() => Promise.resolve()),
+}));
+jest.mock("expo-keep-awake", () => ({
+  activateKeepAwakeAsync: jest.fn(() => Promise.resolve()),
+  deactivateKeepAwake: jest.fn(() => Promise.resolve()),
+}));
 jest.mock("expo-haptics", () => ({
   notificationAsync: jest.fn(() => Promise.resolve()),
   impactAsync: jest.fn(() => Promise.resolve()),

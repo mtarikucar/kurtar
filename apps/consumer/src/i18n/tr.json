@@ -174,7 +174,10 @@
     "preContractTitle": "Rezervasyonu onaylamadan önce",
     "preContractObf": "Ön Bilgilendirme Formu'nu oku",
     "preContractMss": "Mesafeli Satış Sözleşmesi'ni oku",
-    "consentLabel": "Ön Bilgilendirme Formu'nu ve Mesafeli Satış Sözleşmesi'ni okudum; içeriğin sürpriz olduğunu, alerjen uyarısını, teslim penceresi kurallarını ve bu tür bir gıda ürününde cayma hakkının uygulanmadığını anlıyorum."
+    "consentLabel": "Ön Bilgilendirme Formu'nu ve Mesafeli Satış Sözleşmesi'ni okudum; içeriğin sürpriz olduğunu, alerjen uyarısını, teslim penceresi kurallarını ve bu tür bir gıda ürününde cayma hakkının uygulanmadığını anlıyorum.",
+    "kapandiBaslik": "AZ ÖNCE KAPANDI",
+    "kapandiGovde": "Bu paketi başka biri senden saniyeler önce aldı. Aşağıdaki kepenk hâlâ açık.",
+    "enYakinAlternatif": "EN YAKIN ALTERNATİF"
   },
   "payment": {
     "title": "Ödeme",
@@ -187,7 +190,12 @@
     "failedBody": "Rezervasyonun tamamlanmadı: ödemen onaylanmadı ya da paket artık mevcut değil. Diğer paketlere göz atabilirsin.",
     "loadError": "Ödeme sayfası açılamadı.",
     "closeConfirmTitle": "Ödemeden vazgeç?",
-    "closeConfirmBody": "Ödemeyi tamamlamazsan rezervasyonun onaylanmaz."
+    "closeConfirmBody": "Ödemeyi tamamlamazsan rezervasyonun onaylanmaz.",
+    "adet": "{{adet}} adet",
+    "odendi": "{{fiyat}} ödendi · #{{kod}}",
+    "arasindaAl": "BUGÜN {{pencere}} arası al",
+    "canta": "Kendi çantanı getir",
+    "siparislerimde": "Siparişlerim'de de duruyor"
   },
   "redeem": {
     "title": "Teslim al",
@@ -402,5 +410,61 @@
     "zaman20dk": "20 DAKİKA KALA · kepenk 0,78",
     "zamanAcilmadi": "AÇILMADI · kepenk 0,78",
     "zamanTukendi": "TÜKENDİ · kepenk 1,00"
+  },
+  "dugme": {
+    "kutuyuAyir": "KUTUYU AYIR · {{fiyat}}",
+    "tukendi": "TÜKENDİ",
+    "acilmadi": "HENÜZ AÇILMADI",
+    "haritadaGoster": "HARİTADA GÖSTER",
+    "yolTarifi": "YOL TARİFİ",
+    "odemeyeGec": "ÖDEMEYE GEÇ · {{fiyat}}",
+    "olusturuluyor": "REZERVASYON OLUŞTURULUYOR…",
+    "kepengiAc": "KEPENGİ AÇ",
+    "teslimAldim": "TESLİM ALDIM",
+    "siparisiGor": "SİPARİŞİ GÖRÜNTÜLE",
+    "siparislerim": "SİPARİŞLERİME DÖN",
+    "degerlendir": "ŞİMDİ DEĞERLENDİR",
+    "kesfet": "BAŞKA PAKET BUL",
+    "geriDon": "GERİ DÖN"
+  },
+  "teklif": {
+    "vitrinBaslik": "VİTRİN — BU KUTUDA NE OLABİLİR?",
+    "vitrinAciklama": "Kutunun içi dükkânın o günkü fazlasıdır. Sürpriz olmasının sebebi bu — fotoğrafını kimse çekmedi.",
+    "alisPenceresi": "ALIŞ PENCERESİ",
+    "bugun": "BUGÜN",
+    "simdi": "şimdi {{saat}}",
+    "kepenkIniyor": "Kepenk {{sure}} sonra iniyor",
+    "kepenkKalkiyor": "Kepenk {{saat}} kalkıyor",
+    "kepenkIndi": "Kepenk indi",
+    "yuruyus": "YÜRÜYÜŞ",
+    "alerjen": "ALERJEN",
+    "iade": "İPTAL VE İADE",
+    "kalanPaket": "son {{adet}} paket kaldı",
+    "puan": "★ {{puan}} · {{adet}}",
+    "paylas": "Paylaş",
+    "paylasMetni": "{{dukkan}} — kurtar'da bir sürpriz paket var: {{baglanti}}"
+  },
+  "kepenk": {
+    "kolEtiket": "KEPENGİ KALDIR",
+    "kolAltEtiket": "yukarı kaydır",
+    "kolBasiliTut": "basılı tut",
+    "kolKilitli": "KEPENK KİLİTLİ",
+    "kolErisim": "Kepengi kaldır — kodu göster",
+    "yardim": "Kaldıramıyor musun?",
+    "kodEtiketi": "KURTAR",
+    "saatErisim": "Saat {{saat}}",
+    "acikDuyuru": "{{dukkan}}. Kod: {{kod}}. {{paket}}.",
+    "paketBilinmiyor": "Sürpriz paket",
+    "kapanisSayaci": "{{sn}} sn sonra kapanır",
+    "yanlislikla": "yanlışlıkla açtım",
+    "iniyor": "kepenk {{dk}} dk sonra iniyor",
+    "acilir": "{{saat}} açılır",
+    "kapandi": "{{saat}} kapandı",
+    "odendi": "Ödendi {{fiyat}} · #{{kod}}",
+    "adetPaket": "{{adet}} × {{paket}}",
+    "teslimAlindi": "TESLİM ALINDI",
+    "selErisim": "Teslim alındı. {{dukkan}}, {{saat}}.",
+    "etkiSatiri": "{{yer}} {{sira}}. kepenk",
+    "kolKilitliAlt": "alış saatinde açılır"
   }
 }

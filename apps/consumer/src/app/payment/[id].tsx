@@ -1,67 +1,80 @@
 import { useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { WebView } from "react-native-webview";
-import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, typeScale } from "@kurtar/ui-tokens";
-import { Screen } from "../../components/Screen";
-import { IconButton } from "../../components/IconButton";
-import { Button } from "../../components/Button";
-import { LoadingState } from "../../components/LoadingState";
-import { RESERVATIONS_QUERY_KEY, fetchMyReservations } from "../../hooks/use-reservations";
+import {
+  DurumEkrani,
+  IKON,
+  IkonDugmesi,
+} from "../../components/teslim";
+import { OnayEkrani } from "../../components/teslim/OnayEkrani";
+import { useReduceMotion } from "../../design/reduce-motion";
+import { usePalet } from "../../design/theme";
+import { s, yazi } from "../../design/tokens";
+import {
+  RESERVATIONS_QUERY_KEY,
+  fetchMyReservations,
+} from "../../hooks/use-reservations";
+import { useOrderDetails } from "../../hooks/use-order-details";
+import { formatPickupWindow } from "../../lib/format";
 
-const POLL_INTERVAL_MS = 3000;
-const TERMINAL_FAILURE_STATUSES = new Set([
+const YOKLAMA_MS = 3000;
+const BITEN_DURUMLAR = new Set([
   "CANCELLED_BY_USER",
   "CANCELLED_BY_MERCHANT",
   "EXPIRED",
 ]);
 
 /**
- * The provider redirect happens in a WebView (App Store rule: this is a
- * physical good, so an external payment page is allowed — flagged for
- * store-review notes in the task report). This app never sees card data;
- * it only opens `redirectUrl` and waits for the RESULT, which it learns
- * about the same way it learns about anything else — polling the one
- * consumer-reachable read (`GET /reservations/mine`) — never by parsing
- * the WebView's URL/navigation state, which the mock provider's fake
- * `https://mock-payment.local/...` domain doesn't even support (no real
- * page is served there in this dev/test environment; see the task
- * report's verification section for how payment completion was actually
- * exercised — a direct webhook POST, mirroring the real PSP's callback).
+ * The provider redirect happens in a WebView and this app never sees card
+ * data: it opens `redirectUrl` and then learns the RESULT the same way it
+ * learns anything else — by polling the one consumer-reachable read
+ * (`GET /reservations/mine`) — never by parsing the WebView's navigation
+ * state, which the mock provider's fake domain does not even serve.
+ *
+ * The confirmed branch is spec §4.4: full-screen, the shutter rolls UP,
+ * and the ticket settles under a lit sign. It is deliberately NOT a toast
+ * and deliberately not a checkmark.
  */
-export default function PaymentScreen() {
+export default function OdemeEkrani() {
   const { t } = useTranslation();
   const router = useRouter();
-  const { id, redirectUrl, code } = useLocalSearchParams<{
+  const palet = usePalet();
+  const azaltHareket = useReduceMotion();
+  const { id, redirectUrl } = useLocalSearchParams<{
     id: string;
     redirectUrl: string;
     code: string;
   }>();
 
-  const [webViewError, setWebViewError] = useState(false);
+  const [webHatasi, setWebHatasi] = useState(false);
 
-  const pollQuery = useQuery({
+  const yoklama = useQuery({
     queryKey: RESERVATIONS_QUERY_KEY,
     queryFn: fetchMyReservations,
     refetchInterval: (query) => {
-      const items = query.state.data?.items ?? [];
-      const mine = items.find((r) => r.id === id);
-      if (!mine) return POLL_INTERVAL_MS;
-      if (mine.status === "CONFIRMED" || TERMINAL_FAILURE_STATUSES.has(mine.status)) {
+      const kayitlar = query.state.data?.items ?? [];
+      const benim = kayitlar.find((kayit) => kayit.id === id);
+      if (!benim) return YOKLAMA_MS;
+      if (benim.status === "CONFIRMED" || BITEN_DURUMLAR.has(benim.status)) {
         return false;
       }
-      return POLL_INTERVAL_MS;
+      return YOKLAMA_MS;
     },
   });
 
-  const mine = pollQuery.data?.items.find((r) => r.id === id);
-  const confirmed = mine?.status === "CONFIRMED";
-  const failed = mine ? TERMINAL_FAILURE_STATUSES.has(mine.status) : false;
+  const benim = yoklama.data?.items.find((kayit) => kayit.id === id);
+  const onaylandi = benim?.status === "CONFIRMED";
+  const basarisiz = benim ? BITEN_DURUMLAR.has(benim.status) : false;
 
-  const handleClose = () => {
+  // Only for the shop/bag NAMES — every number below comes off the
+  // reservation the server just confirmed.
+  const detay = useOrderDetails(id ?? "");
+
+  const kapat = () => {
     Alert.alert(t("payment.closeConfirmTitle"), t("payment.closeConfirmBody"), [
       { text: t("common.cancel"), style: "cancel" },
       {
@@ -72,119 +85,98 @@ export default function PaymentScreen() {
     ]);
   };
 
-  if (confirmed) {
+  if (onaylandi && benim) {
     return (
-      <Screen>
-        <View style={styles.resultContainer}>
-          <Ionicons name="checkmark-circle" size={72} color={colors.secondary[500]} />
-          <Text style={styles.resultTitle}>{t("payment.success")}</Text>
-          <Text style={styles.resultBody}>{t("payment.successBody")}</Text>
-          <Text style={styles.code}>{code}</Text>
-          <Button
-            label={t("payment.viewOrderCta")}
-            onPress={() => router.replace({ pathname: "/order/[id]", params: { id } })}
-          />
-        </View>
-      </Screen>
+      <OnayEkrani
+        dukkanAdi={detay.data?.storeName ?? t("orders.unknownStoreName")}
+        paketAdi={detay.data?.bagTitle ?? null}
+        adet={benim.qty}
+        toplamKurus={benim.totalCents}
+        kod={benim.code}
+        pencere={formatPickupWindow(benim.pickupStartAt, benim.pickupEndAt)}
+        azaltHareket={azaltHareket}
+        onKepengiAc={() =>
+          router.replace({ pathname: "/redeem/[id]", params: { id } })
+        }
+        onSiparisler={() =>
+          router.replace({ pathname: "/order/[id]", params: { id } })
+        }
+      />
     );
   }
 
-  if (failed) {
+  if (basarisiz) {
     return (
-      <Screen>
-        <View style={styles.resultContainer}>
-          <Ionicons name="close-circle" size={72} color={colors.semantic.danger[500]} />
-          <Text style={styles.resultTitle}>{t("payment.failedTitle")}</Text>
-          <Text style={styles.resultBody}>{t("payment.failedBody")}</Text>
-          <Button label={t("common.back")} onPress={() => router.replace("/(tabs)")} />
-        </View>
-      </Screen>
+      <DurumEkrani
+        tur="kapali"
+        baslik={t("payment.failedTitle")}
+        govde={t("payment.failedBody")}
+        eylemEtiketi={t("dugme.kesfet")}
+        onEylem={() => router.replace("/(tabs)")}
+        testID="odeme-basarisiz"
+      />
     );
   }
 
   return (
-    <Screen padded={false}>
-      <View style={styles.header}>
-        <IconButton
-          name="close"
-          accessibilityLabel={t("common.close")}
-          onPress={handleClose}
+    <SafeAreaView
+      style={[styles.kok, { backgroundColor: palet.bgAsfalt }]}
+      edges={["top", "left", "right"]}
+    >
+      <View style={styles.ustCubuk}>
+        <IkonDugmesi
+          yol={IKON.geri}
+          etiket={t("common.close")}
+          onPress={kapat}
+          palet={palet}
+          testID="odeme-kapat"
         />
-        <Text style={styles.headerTitle}>{t("payment.title")}</Text>
-        <View style={{ width: 44 }} />
+        <Text style={[yazi.title, { color: palet.yaziAna }]} numberOfLines={1}>
+          {t("payment.title")}
+        </Text>
+        <View style={styles.ikonBosluk} />
       </View>
 
-      <Text style={styles.waitingText}>{t("payment.waiting")}</Text>
+      <Text
+        style={[yazi.body, styles.bekleme, { color: palet.yaziSis }]}
+        maxFontSizeMultiplier={1.5}
+      >
+        {t("payment.waiting")}
+      </Text>
 
-      {webViewError || !redirectUrl ? (
-        <View style={styles.resultContainer}>
-          <Ionicons name="cloud-offline-outline" size={48} color={colors.neutral[400]} />
-          <Text style={styles.resultBody}>{t("payment.loadError")}</Text>
-          <Text style={styles.checkingText}>{t("payment.checking")}</Text>
+      {webHatasi || !redirectUrl ? (
+        <View style={styles.orta}>
+          <Text style={[yazi.body, styles.bekleme, { color: palet.yaziAna }]}>
+            {t("payment.loadError")}
+          </Text>
+          <Text style={[yazi.data, styles.bekleme, { color: palet.yaziSis }]}>
+            {t("payment.checking")}
+          </Text>
         </View>
       ) : (
         <WebView
           source={{ uri: redirectUrl }}
-          style={styles.webview}
-          onError={() => setWebViewError(true)}
-          onHttpError={() => setWebViewError(true)}
+          style={styles.web}
+          onError={() => setWebHatasi(true)}
+          onHttpError={() => setWebHatasi(true)}
           startInLoadingState
-          renderLoading={() => <LoadingState />}
         />
       )}
-    </Screen>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
+  kok: { flex: 1 },
+  ustCubuk: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: s.s2,
+    paddingVertical: s.s1,
   },
-  headerTitle: {
-    fontSize: typeScale.h3.size,
-    fontWeight: typeScale.h3.weight,
-    color: colors.neutral[900],
-  },
-  waitingText: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[600],
-    textAlign: "center",
-    paddingHorizontal: 20,
-    paddingBottom: spacing.sm,
-  },
-  webview: {
-    flex: 1,
-  },
-  resultContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing["2xl"],
-  },
-  resultTitle: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.neutral[900],
-    textAlign: "center",
-  },
-  resultBody: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[600],
-    textAlign: "center",
-  },
-  code: {
-    fontSize: typeScale.display.size,
-    fontWeight: typeScale.display.weight,
-    color: colors.primary[600],
-    letterSpacing: 2,
-  },
-  checkingText: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[500],
-  },
+  ikonBosluk: { width: 40 },
+  bekleme: { textAlign: "center", paddingHorizontal: s.s5 },
+  orta: { flex: 1, alignItems: "center", justifyContent: "center", gap: s.s3 },
+  web: { flex: 1 },
 });

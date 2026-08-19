@@ -1,11 +1,4 @@
-import {
-  render,
-  screen,
-  waitFor,
-  act,
-  within,
-  fireEvent,
-} from "@testing-library/react-native";
+import { screen, waitFor, act, within, fireEvent } from "@testing-library/react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Auto-mock (no factory) — see otp-screen.test.tsx's comment.
@@ -17,8 +10,7 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "resv-1" }),
 }));
 
-import { QueryClientProvider } from "@tanstack/react-query";
-import { createTestQueryClient } from "../test-utils/render";
+import { ekraniCiz } from "../test-utils/ekran";
 import { client } from "../lib/api-client";
 import RedeemScreen from "../app/redeem/[id]";
 import { savePurchaseSnapshot } from "../lib/purchase-cache";
@@ -32,7 +24,7 @@ const mockListMine = client.reservations.listMine as jest.Mock;
 function reservation(overrides: Partial<ReservationItem> = {}): ReservationItem {
   return {
     id: "resv-1",
-    code: "AB12CD",
+    code: "K-7F3M",
     userId: "user-1",
     offerId: "offer-1",
     storeId: "store-1",
@@ -60,25 +52,32 @@ function listResponse(item: ReservationItem): ReservationListResponse {
 }
 
 function renderRedeemScreen() {
-  const queryClient = createTestQueryClient();
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <RedeemScreen />
-    </QueryClientProvider>,
-  );
+  return ekraniCiz(<RedeemScreen />);
+}
+
+/** The shutter's own activate action — the same path VoiceOver takes, and
+ * the only one a Node test environment can drive (a 140pt drag needs real
+ * touches). The threshold itself is proven in teslim-perde.test.ts. */
+async function kepengiKaldir() {
+  const kol = await screen.findByTestId("kepenk-kol-suruklenir");
+  await act(async () => {
+    fireEvent(kol, "accessibilityAction", {
+      nativeEvent: { actionName: "activate" },
+    });
+  });
 }
 
 // [I9 fix] The redeem screen used to show no pickup window at all, and
 // would let a too-early/too-late swipe fail server-side into one vague
 // "Bu sipariş şu anda teslim alınamıyor" message.
 //
-// [Cross-lane fix, I9] The window now comes off the RESERVATION itself
+// [Cross-lane fix, I9] The window comes off the RESERVATION itself
 // (`GET /reservations/mine` joins the offer's window), not off a local
 // purchase-time snapshot — so these tests deliberately drive it through
 // the reservation and, in the first case, assert it renders with NO
 // snapshot saved at all: the reinstalled-device-at-the-counter case that
 // previously had no window and no end time.
-describe("Redeem screen — pickup window visibility and pre-emptive gating (I9)", () => {
+describe("Kepenk — pickup window visibility and pre-emptive gating (I9)", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     await AsyncStorage.clear();
@@ -88,7 +87,7 @@ describe("Redeem screen — pickup window visibility and pre-emptive gating (I9)
     jest.useRealTimers();
   });
 
-  it("shows the window and offers the swipe when it is open — with no local snapshot at all", async () => {
+  it("shows the window on the closed shutter and lets it be lifted — with no local snapshot at all", async () => {
     const pickupStartAt = new Date(Date.now() - 10 * 60_000).toISOString();
     const pickupEndAt = new Date(Date.now() + 60 * 60_000).toISOString();
     mockListMine.mockResolvedValue(
@@ -98,13 +97,18 @@ describe("Redeem screen — pickup window visibility and pre-emptive gating (I9)
     await renderRedeemScreen();
 
     expect(
-      await screen.findByText(formatPickupWindow(pickupStartAt, pickupEndAt), { exact: false }),
+      await screen.findByText(formatPickupWindow(pickupStartAt, pickupEndAt), {
+        exact: false,
+      }),
     ).toBeTruthy();
-    expect(screen.getByLabelText("Teslim almak için kaydır")).toBeTruthy();
-    expect(screen.queryByTestId("redeem-not-started-yet")).toBeNull();
+    expect(screen.getByTestId("kepenk-kol-suruklenir")).toBeTruthy();
+    expect(screen.queryByTestId("kepenk-uyari")).toBeNull();
+
+    await kepengiKaldir();
+    expect(screen.getByTestId("kepenk-acik")).toBeTruthy();
   });
 
-  it("before the window opens, replaces the swipe control with a specific reason instead of letting it fail", async () => {
+  it("before the window opens, bolts the shutter and states the reason instead of letting a swipe fail", async () => {
     const pickupStartAt = new Date(Date.now() + 45 * 60_000).toISOString();
     const pickupEndAt = new Date(Date.now() + 105 * 60_000).toISOString();
     mockListMine.mockResolvedValue(
@@ -121,15 +125,20 @@ describe("Redeem screen — pickup window visibility and pre-emptive gating (I9)
 
     await renderRedeemScreen();
 
-    const banner = await screen.findByTestId("redeem-not-started-yet");
+    const uyari = await screen.findByTestId("kepenk-uyari");
     // The specific start time is stated, not a vague "not redeemable" line.
     expect(
-      within(banner).getByText(new RegExp(formatClockTime(pickupStartAt))),
+      within(uyari).getByText(new RegExp(formatClockTime(pickupStartAt))),
     ).toBeTruthy();
-    expect(screen.queryByLabelText("Teslim almak için kaydır")).toBeNull();
+
+    // The handle still exists — a dead control reads as a broken screen —
+    // but it cannot open anything, and the code stays off the screen.
+    await kepengiKaldir();
+    expect(screen.queryByTestId("kepenk-acik")).toBeNull();
+    expect(screen.queryByTestId("kepenk-kod-hanesi")).toBeNull();
   });
 
-  it("unlocks the swipe control live once the clock crosses the window start, with no navigation", async () => {
+  it("unlocks the shutter live once the clock crosses the window start, with no navigation", async () => {
     jest.useFakeTimers({ advanceTimers: true });
     const pickupStartAt = new Date(Date.now() + 2_000).toISOString();
     const pickupEndAt = new Date(Date.now() + 60 * 60_000).toISOString();
@@ -138,19 +147,18 @@ describe("Redeem screen — pickup window visibility and pre-emptive gating (I9)
     );
 
     await renderRedeemScreen();
-    await waitFor(() => expect(screen.getByTestId("redeem-not-started-yet")).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId("kepenk-uyari")).toBeTruthy());
 
     await act(async () => {
-      jest.advanceTimersByTime(3_000);
+      jest.advanceTimersByTime(4_000);
     });
 
-    await waitFor(() =>
-      expect(screen.getByLabelText("Teslim almak için kaydır")).toBeTruthy(),
-    );
-    expect(screen.queryByTestId("redeem-not-started-yet")).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId("kepenk-uyari")).toBeNull());
+    await kepengiKaldir();
+    expect(screen.getByTestId("kepenk-acik")).toBeTruthy();
   });
 
-  it("once the window has closed, falls through to the not-redeemable empty state instead of offering a doomed swipe", async () => {
+  it("once the window has closed, falls through to the not-redeemable state instead of offering a doomed swipe", async () => {
     const pickupStartAt = new Date(Date.now() - 3 * 60 * 60_000).toISOString();
     const pickupEndAt = new Date(Date.now() - 60 * 60_000).toISOString();
     mockListMine.mockResolvedValue(
@@ -160,16 +168,16 @@ describe("Redeem screen — pickup window visibility and pre-emptive gating (I9)
     await renderRedeemScreen();
 
     expect(await screen.findByText("Bu sipariş şu anda teslim alınamıyor")).toBeTruthy();
-    expect(screen.queryByLabelText("Teslim almak için kaydır")).toBeNull();
+    expect(screen.queryByTestId("kepenk-kol-suruklenir")).toBeNull();
   });
 });
 
-// [Cross-lane fix, I9] The other half: a swipe that DOES reach the server
+// [Cross-lane fix, I9] The other half: a redeem that DOES reach the server
 // and is refused now comes back with a reason-specific errorCode, and the
 // screen renders the sentence for THAT reason instead of one vague line
 // for all of them. Driven end-to-end through the real screen + the real
 // getErrorMessage mapping, not by asserting the i18n file's contents.
-describe("Redeem screen — a server refusal states its own reason", () => {
+describe("Kepenk — a server refusal states its own reason", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     await AsyncStorage.clear();
@@ -180,7 +188,7 @@ describe("Redeem screen — a server refusal states its own reason", () => {
     pickupEndAt: new Date(Date.now() + 60 * 60_000).toISOString(),
   });
 
-  async function swipeAndReadError(errorCode: string, message: string) {
+  async function teslimAlVeHatayiOku(errorCode: string, message: string) {
     mockListMine.mockResolvedValue(listResponse(reservation(openWindow())));
     (client.reservations.redeem as jest.Mock).mockRejectedValueOnce(
       new KurtarApiError({
@@ -192,31 +200,25 @@ describe("Redeem screen — a server refusal states its own reason", () => {
     );
 
     await renderRedeemScreen();
-    const swipe = await screen.findByLabelText("Teslim almak için kaydır");
+    await kepengiKaldir();
     await act(async () => {
-      fireEvent(swipe, "accessibilityAction", {
-        nativeEvent: { actionName: "activate" },
-      });
+      fireEvent.press(screen.getByTestId("kepenk-teslim-aldim"));
     });
   }
 
   it("renders the merchant-cancelled sentence, not the generic one", async () => {
-    await swipeAndReadError(
+    await teslimAlVeHatayiOku(
       "RESERVATION_CANCELLED_BY_MERCHANT",
       "The merchant cancelled this offer.",
     );
     expect(
-      await screen.findByText(
-        "Mağaza bu paketi iptal etti — ödemen iade edildi.",
-      ),
+      await screen.findByText("Mağaza bu paketi iptal etti — ödemen iade edildi."),
     ).toBeTruthy();
-    expect(
-      screen.queryByText("Bu sipariş şu anda teslim alınamıyor."),
-    ).toBeNull();
+    expect(screen.queryByText("Bu sipariş şu anda teslim alınamıyor.")).toBeNull();
   });
 
-  it("renders the window-passed sentence for a too-late swipe the client did not pre-empt", async () => {
-    await swipeAndReadError(
+  it("renders the window-passed sentence for a too-late redeem the client did not pre-empt", async () => {
+    await teslimAlVeHatayiOku(
       "RESERVATION_PICKUP_WINDOW_PASSED",
       "The pickup window has already closed.",
     );
@@ -228,13 +230,11 @@ describe("Redeem screen — a server refusal states its own reason", () => {
   });
 
   it("renders the not-yours sentence rather than the bare permission copy", async () => {
-    await swipeAndReadError(
+    await teslimAlVeHatayiOku(
       "RESERVATION_NOT_YOURS",
       "This reservation does not belong to you.",
     );
-    expect(
-      await screen.findByText("Bu sipariş sana ait değil."),
-    ).toBeTruthy();
+    expect(await screen.findByText("Bu sipariş sana ait değil.")).toBeTruthy();
     expect(screen.queryByText("Bu işlem için yetkin yok.")).toBeNull();
   });
 });

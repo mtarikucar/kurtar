@@ -1,148 +1,248 @@
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { Ionicons } from "@expo/vector-icons";
-import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
-import { Screen } from "../../components/Screen";
-import { Button } from "../../components/Button";
-import { IconButton } from "../../components/IconButton";
-import { LoadingState } from "../../components/LoadingState";
-import { EmptyState } from "../../components/EmptyState";
-import { useStoreProfile } from "../../hooks/use-discovery";
+import Svg, { Path } from "react-native-svg";
+import { fiyatMetni } from "../../components/kepenk/olcum";
+import type { VitrinTeklifi } from "../../components/kepenk/VitrinKarti";
+import {
+  Blok,
+  BolumBasligi,
+  Dugme,
+  DurumEkrani,
+  IKON,
+  IkonDugmesi,
+  YapiskanCubuk,
+} from "../../components/teslim";
+import { KapandiEkrani } from "../../components/teslim/KapandiEkrani";
+import { teklifeCevir } from "../../components/teslim/eslestir";
+import { useReduceMotion } from "../../design/reduce-motion";
+import { usePalet } from "../../design/theme";
+import { m, r, s, yazi, type Palet } from "../../design/tokens";
+import { trUpper } from "../../design/tr-upper";
+import { useDiscoveryOffers, useStoreProfile } from "../../hooks/use-discovery";
+import { useEffectiveLocation } from "../../hooks/use-effective-location";
+import { ISTANBUL_DISTRICTS } from "../../lib/location";
 import {
   isOfferUnavailableError,
   useCreateReservation,
 } from "../../hooks/use-reservations";
-import { formatPriceCents } from "../../lib/format";
 import { getErrorMessage } from "../../lib/errors";
+import { formatPickupWindow } from "../../lib/format";
 import { savePurchaseSnapshot } from "../../lib/purchase-cache";
 
-const MAX_QTY = 5;
+const EN_FAZLA_ADET = 5;
+/** Wide enough that "the nearest alternative" is genuinely near. */
+const ALTERNATIF_YARICAP_M = 5000;
 
-export default function PurchaseScreen() {
+/**
+ * SATIN ALMA — the money path (spec §4.4).
+ *
+ * The stock claim is atomic server-side and CAN legitimately lose the
+ * race; `OFFER_UNAVAILABLE` is common at drop time, not exceptional. That
+ * branch is `<KapandiEkrani/>`: a shutter slamming down and the nearest
+ * alternative, never a dead-end alert.
+ *
+ * The pre-contract gate is unchanged and non-negotiable — this is the one
+ * place a Turkish consumer forms a distance contract, so the ÖBF/MSS
+ * links and the unchecked-by-default acknowledgement stay exactly as
+ * they were, restyled and no weaker.
+ */
+export default function SatinAlmaEkrani() {
   const { t } = useTranslation();
   const router = useRouter();
+  const palet = usePalet();
+  const azaltHareket = useReduceMotion();
+
   const { offerId, storeId } = useLocalSearchParams<{
     offerId: string;
     storeId: string;
   }>();
 
-  const storeQuery = useStoreProfile(storeId ?? null);
-  const offer = storeQuery.data?.todaysOffers.find((o) => o.offerId === offerId);
+  const dukkanSorgusu = useStoreProfile(storeId ?? null);
+  const teklif = dukkanSorgusu.data?.todaysOffers.find(
+    (o) => o.offerId === offerId,
+  );
 
-  const [qty, setQty] = useState(1);
-  const [unavailable, setUnavailable] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // [I13 fix] Required, unchecked by default — the pre-contract
-  // disclosure this purchase screen used to have NONE of: no ÖBF/MSS
-  // link, no acknowledgement control, straight from a quantity stepper
-  // to "Ödemeye geç". This is the only place a Turkish consumer actually
-  // enters a distance contract (landing has no checkout).
-  const [consentChecked, setConsentChecked] = useState(false);
-  const createReservation = useCreateReservation();
+  const [adet, setAdet] = useState(1);
+  const [kapandi, setKapandi] = useState(false);
+  const [hata, setHata] = useState<string | null>(null);
+  const [onay, setOnay] = useState(false);
+  const rezervasyon = useCreateReservation();
 
-  const maxQty = Math.min(MAX_QTY, offer?.qtyLeft ?? MAX_QTY);
+  // Only fetched once the race has actually been lost, so the ordinary
+  // path never pays for it.
+  const { coords } = useEffectiveLocation();
+  // A denied location must not turn §4.4's "and here is the nearest
+  // alternative" into the dead end §4.4 exists to prevent. The shop's OWN
+  // district centre is the honest fallback anchor: it is where the
+  // customer was already walking.
+  const ilceMerkezi = ISTANBUL_DISTRICTS.find(
+    (ilce) => ilce.name === dukkanSorgusu.data?.store.district,
+  );
+  const merkez = coords ?? ilceMerkezi ?? null;
+  const alternatifSorgusu = useDiscoveryOffers(
+    kapandi && merkez
+      ? { lat: merkez.lat, lng: merkez.lng, radiusM: ALTERNATIF_YARICAP_M, pageSize: 5 }
+      : null,
+  );
+  const alternatif: VitrinTeklifi | null =
+    alternatifSorgusu.data?.items
+      .filter((satir) => satir.offerId !== offerId && satir.qtyLeft > 0)
+      .map(teklifeCevir)[0] ?? null;
 
-  const handleConfirm = async () => {
-    if (!offer || !storeQuery.data || !offerId || !consentChecked) return;
-    setError(null);
+  const enFazla = Math.min(EN_FAZLA_ADET, teklif?.qtyLeft ?? EN_FAZLA_ADET);
+
+  const onayla = async () => {
+    if (!teklif || !dukkanSorgusu.data || !offerId || !onay) return;
+    setHata(null);
     try {
-      const result = await createReservation.mutateAsync({ offerId, qty });
-      await savePurchaseSnapshot(result.reservationId, {
-        storeName: storeQuery.data.store.name,
-        storeDistrict: storeQuery.data.store.district,
-        bagTitle: offer.template.title,
-        coverImageUrl: storeQuery.data.store.coverImageUrl,
-        pickupStartAt: offer.pickupStartAt,
-        pickupEndAt: offer.pickupEndAt,
+      const sonuc = await rezervasyon.mutateAsync({ offerId, qty: adet });
+      await savePurchaseSnapshot(sonuc.reservationId, {
+        storeName: dukkanSorgusu.data.store.name,
+        storeDistrict: dukkanSorgusu.data.store.district,
+        bagTitle: teklif.template.title,
+        coverImageUrl: dukkanSorgusu.data.store.coverImageUrl,
+        pickupStartAt: teklif.pickupStartAt,
+        pickupEndAt: teklif.pickupEndAt,
       });
       router.replace({
         pathname: "/payment/[id]",
         params: {
-          id: result.reservationId,
-          redirectUrl: result.payment.redirectUrl ?? "",
-          code: result.code,
+          id: sonuc.reservationId,
+          redirectUrl: sonuc.payment.redirectUrl ?? "",
+          code: sonuc.code,
         },
       });
     } catch (err) {
-      if (isOfferUnavailableError(err)) {
-        setUnavailable(true);
-      } else {
-        setError(getErrorMessage(err, t));
-      }
+      if (isOfferUnavailableError(err)) setKapandi(true);
+      else setHata(getErrorMessage(err, t));
     }
   };
 
-  if (unavailable) {
+  if (kapandi) {
     return (
-      <Screen>
-        <EmptyState
-          icon="sad-outline"
-          title={t("purchase.unavailableTitle")}
-          body={t("purchase.unavailableBody")}
-          ctaLabel={t("purchase.backToDiscoverCta")}
-          onPressCta={() => router.replace("/(tabs)")}
-        />
-      </Screen>
+      <KapandiEkrani
+        alternatif={alternatif}
+        azaltHareket={azaltHareket}
+        onKesfet={() => router.replace("/(tabs)")}
+        onAlternatif={(secilen) =>
+          router.replace({
+            pathname: "/offer/[id]",
+            params: {
+              id: secilen.teklifId,
+              storeId: secilen.dukkanId,
+              distanceM: String(secilen.mesafeM),
+            },
+          })
+        }
+      />
     );
   }
 
+  if (dukkanSorgusu.isLoading) {
+    return <DurumEkrani tur="yukleniyor" baslik={t("common.loading")} />;
+  }
+
+  if (!teklif) {
+    return (
+      <DurumEkrani
+        tur="hata"
+        baslik={t("offerDetail.loadError")}
+        eylemEtiketi={t("dugme.kesfet")}
+        onEylem={() => router.replace("/(tabs)")}
+      />
+    );
+  }
+
+  const birim = teklif.template.priceCents;
+
   return (
-    <Screen padded={false}>
-      <View style={styles.header}>
-        <IconButton
-          name="close"
-          accessibilityLabel={t("common.close")}
+    <SafeAreaView
+      style={[styles.kok, { backgroundColor: palet.bgAsfalt }]}
+      edges={["top", "left", "right"]}
+    >
+      <View style={styles.ustCubuk}>
+        <IkonDugmesi
+          yol={IKON.geri}
+          etiket={t("common.back")}
           onPress={() => router.back()}
+          palet={palet}
+          testID="alim-geri"
         />
-        <Text style={styles.headerTitle}>{t("purchase.title")}</Text>
-        <View style={{ width: 44 }} />
+        <Text style={[yazi.title, { color: palet.yaziAna }]} numberOfLines={1}>
+          {t("purchase.title")}
+        </Text>
+        <View style={styles.ikonBosluk} />
       </View>
 
-      {storeQuery.isLoading ? (
-        <LoadingState />
-      ) : !offer ? (
-        <EmptyState
-          icon="alert-circle-outline"
-          title={t("offerDetail.loadError")}
-          ctaLabel={t("offerDetail.backToDiscover")}
-          onPressCta={() => router.replace("/(tabs)")}
-        />
-      ) : (
-        <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.bagTitle}>{offer.template.title}</Text>
-          <Text style={styles.quantityLabel}>{t("purchase.quantityTitle")}</Text>
+      <ScrollView contentContainerStyle={styles.icerik} showsVerticalScrollIndicator={false}>
+        <View style={styles.bolum}>
+          <Text
+            style={[yazi.tabelaLg, { color: palet.yaziAna }]}
+            numberOfLines={2}
+            maxFontSizeMultiplier={1.4}
+          >
+            {trUpper(dukkanSorgusu.data?.store.name ?? "")}
+          </Text>
+          <Text style={[yazi.paket, { color: palet.yaziSis }]} numberOfLines={2}>
+            {teklif.template.title}
+          </Text>
+          <Text style={[yazi.data, { color: palet.yaziSis }]} numberOfLines={1}>
+            {formatPickupWindow(teklif.pickupStartAt, teklif.pickupEndAt)}
+          </Text>
+        </View>
 
-          <View style={styles.stepper}>
-            <IconButton
-              name="remove"
-              accessibilityLabel={t("purchase.decreaseQty")}
-              onPress={() => setQty((prev) => Math.max(1, prev - 1))}
-              disabled={qty <= 1}
-              variant="filled"
-            />
-            <Text style={styles.qtyValue} testID="purchase-qty">
-              {qty}
-            </Text>
-            <IconButton
-              name="add"
-              accessibilityLabel={t("purchase.increaseQty")}
-              onPress={() => setQty((prev) => Math.min(maxQty, prev + 1))}
-              disabled={qty >= maxQty}
-              variant="filled"
-            />
-          </View>
+        <View style={styles.bolum}>
+          <BolumBasligi etiket={t("purchase.quantityTitle")} palet={palet} />
+          <Blok palet={palet}>
+            <View style={styles.sayac}>
+              <SayacDugmesi
+                yol="M6 12 H18"
+                etiket={t("purchase.decreaseQty")}
+                pasif={adet <= 1}
+                onPress={() => setAdet((n) => Math.max(1, n - 1))}
+                palet={palet}
+              />
+              <Text
+                testID="purchase-qty"
+                style={[yazi.priceXl, styles.sayi, { color: palet.yaziAna }]}
+                maxFontSizeMultiplier={1.3}
+              >
+                {adet}
+              </Text>
+              <SayacDugmesi
+                yol="M12 6 V18 M6 12 H18"
+                etiket={t("purchase.increaseQty")}
+                pasif={adet >= enFazla}
+                onPress={() => setAdet((n) => Math.min(enFazla, n + 1))}
+                palet={palet}
+              />
+            </View>
+            <View style={styles.toplamSatiri}>
+              <Text style={[yazi.label, { color: palet.yaziSis }]}>
+                {t("purchase.total")}
+              </Text>
+              <Text
+                style={[yazi.priceLg, { color: palet.sodyumYazi }]}
+                maxFontSizeMultiplier={1.3}
+              >
+                {fiyatMetni(birim * adet)}
+              </Text>
+            </View>
+          </Blok>
+        </View>
 
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>{t("purchase.total")}</Text>
-            <Text style={styles.totalValue}>
-              {formatPriceCents(offer.template.priceCents * qty)}
-            </Text>
-          </View>
-
-          <View style={styles.preContract}>
-            <Text style={styles.preContractTitle}>{t("purchase.preContractTitle")}</Text>
+        <View style={styles.bolum}>
+          <BolumBasligi etiket={t("purchase.preContractTitle")} palet={palet} />
+          <Blok palet={palet}>
             <Pressable
               onPress={() =>
                 router.push({
@@ -151,8 +251,11 @@ export default function PurchaseScreen() {
                 })
               }
               accessibilityRole="link"
+              style={({ pressed }) => (pressed ? { opacity: m.pressOpacity } : null)}
             >
-              <Text style={styles.preContractLink}>{t("purchase.preContractObf")}</Text>
+              <Text style={[yazi.bodyStrong, styles.baglanti, { color: palet.sodyumYazi }]}>
+                {t("purchase.preContractObf")}
+              </Text>
             </Pressable>
             <Pressable
               onPress={() =>
@@ -162,133 +265,173 @@ export default function PurchaseScreen() {
                 })
               }
               accessibilityRole="link"
+              style={({ pressed }) => (pressed ? { opacity: m.pressOpacity } : null)}
             >
-              <Text style={styles.preContractLink}>{t("purchase.preContractMss")}</Text>
+              <Text style={[yazi.bodyStrong, styles.baglanti, { color: palet.sodyumYazi }]}>
+                {t("purchase.preContractMss")}
+              </Text>
             </Pressable>
 
             <Pressable
-              style={styles.consentRow}
-              onPress={() => setConsentChecked((prev) => !prev)}
+              style={styles.onaySatiri}
+              onPress={() => setOnay((secili) => !secili)}
               accessibilityRole="checkbox"
-              accessibilityState={{ checked: consentChecked }}
+              accessibilityState={{ checked: onay }}
+              accessibilityLabel={t("purchase.consentLabel")}
               testID="purchase-consent-checkbox"
             >
-              <Ionicons
-                name={consentChecked ? "checkbox" : "square-outline"}
-                size={22}
-                color={consentChecked ? colors.primary[500] : colors.neutral[400]}
-              />
-              <Text style={styles.consentLabel}>{t("purchase.consentLabel")}</Text>
+              <View
+                style={[
+                  styles.kutucuk,
+                  {
+                    borderColor: onay ? palet.sodyumDolgu : palet.yaziSis,
+                    // Empty means EMPTY: an unchecked box is the surface it
+                    // sits on with a line around it, not a filled tile that
+                    // reads as already answered.
+                    backgroundColor: onay ? palet.sodyumDolgu : palet.yuzeyKaldirim,
+                  },
+                ]}
+              >
+                {onay ? (
+                  <Svg width={16} height={16}>
+                    <Path
+                      d="M3 8.5 L6.5 12 L13 4.5"
+                      stroke={palet.sodyumMurekkep}
+                      strokeWidth={2.4}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      fill="none"
+                    />
+                  </Svg>
+                ) : null}
+              </View>
+              <Text style={[yazi.body, styles.onayYazisi, { color: palet.yaziSis }]}>
+                {t("purchase.consentLabel")}
+              </Text>
             </Pressable>
-          </View>
+          </Blok>
+        </View>
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+        {hata ? (
+          <Text
+            style={[
+              yazi.bodyStrong,
+              styles.hata,
+              { backgroundColor: palet.tenteDolgu, color: palet.tenteMurekkep },
+            ]}
+          >
+            {hata}
+          </Text>
+        ) : null}
+      </ScrollView>
 
-          <Button
-            label={t("purchase.confirmCta")}
-            onPress={handleConfirm}
-            loading={createReservation.isPending}
-            disabled={!consentChecked}
-            testID="purchase-confirm"
-          />
-        </ScrollView>
-      )}
-    </Screen>
+      <YapiskanCubuk palet={palet}>
+        <Dugme
+          etiket={
+            rezervasyon.isPending
+              ? t("dugme.olusturuluyor")
+              : t("dugme.odemeyeGec", { fiyat: fiyatMetni(birim * adet) })
+          }
+          pasif={!onay || rezervasyon.isPending}
+          onPress={() => {
+            void onayla();
+          }}
+          palet={palet}
+          testID="purchase-confirm"
+        />
+      </YapiskanCubuk>
+    </SafeAreaView>
+  );
+}
+
+function SayacDugmesi({
+  yol,
+  etiket,
+  pasif,
+  onPress,
+  palet,
+}: {
+  yol: string;
+  etiket: string;
+  pasif: boolean;
+  onPress: () => void;
+  palet: Palet;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={etiket}
+      accessibilityState={{ disabled: pasif }}
+      disabled={pasif}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.sayacDugmesi,
+        { borderColor: palet.yaziSis },
+        pasif ? styles.pasif : null,
+        pressed ? { opacity: m.pressOpacity } : null,
+      ]}
+    >
+      <Svg width={24} height={24}>
+        <Path
+          d={yol}
+          stroke={palet.yaziAna}
+          strokeWidth={2}
+          strokeLinecap="round"
+          fill="none"
+        />
+      </Svg>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
+  kok: { flex: 1 },
+  ustCubuk: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: s.s2,
+    paddingVertical: s.s1,
   },
-  headerTitle: {
-    fontSize: typeScale.h3.size,
-    fontWeight: typeScale.h3.weight,
-    color: colors.neutral[900],
-  },
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingVertical: spacing.lg,
-    gap: spacing.lg,
-    justifyContent: "center",
-  },
-  bagTitle: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.neutral[900],
-    textAlign: "center",
-  },
-  quantityLabel: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[600],
-    textAlign: "center",
-  },
-  stepper: {
+  ikonBosluk: { width: 40 },
+  icerik: { paddingHorizontal: s.s4, paddingBottom: s.s8, gap: s.s6 },
+  bolum: { gap: s.s2 },
+  sayac: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.xl,
+    gap: s.s8,
   },
-  qtyValue: {
-    fontSize: typeScale.display.size,
-    fontWeight: typeScale.display.weight,
-    color: colors.neutral[900],
-    minWidth: 48,
-    textAlign: "center",
+  sayacDugmesi: {
+    width: 48,
+    height: 48,
+    borderRadius: r.cta,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  totalRow: {
+  pasif: { opacity: 0.35 },
+  sayi: { minWidth: 56, textAlign: "center" },
+  toplamSatiri: {
     flexDirection: "row",
+    alignItems: "baseline",
     justifyContent: "space-between",
+    marginTop: s.s3,
+  },
+  baglanti: { paddingVertical: s.s1 },
+  onaySatiri: { flexDirection: "row", gap: s.s3, marginTop: s.s2 },
+  kutucuk: {
+    width: 24,
+    height: 24,
+    borderRadius: 3,
+    borderWidth: 1.5,
     alignItems: "center",
-    padding: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: colors.neutral[50],
+    justifyContent: "center",
   },
-  totalLabel: {
-    fontSize: typeScale.bodyStrong.size,
-    color: colors.neutral[700],
-  },
-  totalValue: {
-    fontSize: typeScale.h2.size,
-    fontWeight: typeScale.h2.weight,
-    color: colors.primary[600],
-  },
-  error: {
-    fontSize: typeScale.caption.size,
-    color: colors.semantic.danger[500],
-    textAlign: "center",
-  },
-  preContract: {
-    borderRadius: radii.md,
-    padding: spacing.md,
-    backgroundColor: colors.neutral[50],
-    gap: spacing.xs,
-  },
-  preContractTitle: {
-    fontSize: typeScale.label.size,
-    fontWeight: typeScale.label.weight,
-    color: colors.neutral[600],
-  },
-  preContractLink: {
-    fontSize: typeScale.caption.size,
-    color: colors.primary[600],
-    textDecorationLine: "underline",
-  },
-  consentRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  consentLabel: {
-    flex: 1,
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[700],
-    lineHeight: 18,
+  onayYazisi: { flex: 1 },
+  hata: {
+    padding: s.s3,
+    borderRadius: r.card,
+    overflow: "hidden",
   },
 });

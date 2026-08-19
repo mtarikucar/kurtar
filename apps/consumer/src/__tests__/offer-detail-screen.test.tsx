@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react-native";
+import { screen, waitFor } from "@testing-library/react-native";
 
 // Auto-mock (no factory) — see otp-screen.test.tsx's comment.
 jest.mock("../lib/api-client");
@@ -15,8 +15,7 @@ jest.mock("expo-router", () => ({
   useLocalSearchParams: () => mockSearchParams,
 }));
 
-import { QueryClientProvider } from "@tanstack/react-query";
-import { createTestQueryClient } from "../test-utils/render";
+import { ekraniCiz } from "../test-utils/ekran";
 import { client } from "../lib/api-client";
 import OfferDetailScreen from "../app/offer/[id]";
 import "../i18n";
@@ -48,8 +47,8 @@ function baseStoreProfile(overrides: Record<string, unknown> = {}) {
           allergenDisclaimer: "Fındık ve süt ürünleri içerir.",
           ...((overrides.template as object) ?? {}),
         },
-        pickupStartAt: new Date(Date.now() + 3600_000).toISOString(),
-        pickupEndAt: new Date(Date.now() + 7200_000).toISOString(),
+        pickupStartAt: "2026-08-19T14:30:00.000Z",
+        pickupEndAt: "2026-08-19T17:00:00.000Z",
         qtyLeft: 3,
       },
     ],
@@ -59,12 +58,9 @@ function baseStoreProfile(overrides: Record<string, unknown> = {}) {
 }
 
 function renderOfferDetail() {
-  const queryClient = createTestQueryClient();
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <OfferDetailScreen />
-    </QueryClientProvider>,
-  );
+  return ekraniCiz(<OfferDetailScreen />, {
+    sabitZaman: new Date("2026-08-19T15:00:00.000Z"),
+  });
 }
 
 // [I12 fix] Regression coverage: the allergen Section used to always

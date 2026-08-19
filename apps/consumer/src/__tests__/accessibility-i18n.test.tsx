@@ -1,59 +1,91 @@
+import { Animated } from "react-native";
 import { render } from "@testing-library/react-native";
 import i18n from "../i18n";
 import "../i18n";
-import { SwipeToConfirm } from "../components/SwipeToConfirm";
-import { LiveClock } from "../components/LiveClock";
+import { ClockProvider } from "../design/saat";
+import { PALETLER } from "../design/tokens";
+import { CanliSaat } from "../components/teslim/CanliSaat";
+import { KepenkKolu } from "../components/teslim/KepenkKolu";
 
 /**
- * [M22 fix] Four accessibility/fallback strings used to be hardcoded
- * Turkish literals instead of i18n keys — everything else in this app has
- * exact tr/en key parity (see i18n/tr.json + en.json), but these four
- * would have stayed Turkish even if the app ever shipped a language
- * switch. A DOM/text snapshot can't distinguish "sourced from i18n" from
- * "hardcoded to the same string" (both render identical Turkish by
- * default), so this proves it the only way that actually can: switch the
+ * [M22 fix] Accessibility strings must come from i18n, not from Turkish
+ * literals that happen to render identically today. A DOM/text snapshot
+ * cannot distinguish "sourced from i18n" from "hardcoded to the same
+ * string", so this proves it the only way that actually can: switch the
  * active language and assert the accessible text changes with it.
+ *
+ * The two components under test are the redeem screen's own: the shutter
+ * handle (whose label is the ONLY path a screen-reader user has to the
+ * code — spec §4.5: "a gesture is never the only path") and the live
+ * clock (announced on request, never as a live region every second).
+ * They replaced `SwipeToConfirm`/`LiveClock`, which this test used to
+ * cover; the guarantee moved with the screen rather than being deleted
+ * along with the old components.
  */
+function kol() {
+  return (
+    <ClockProvider sabitZaman={new Date("2026-08-19T15:34:07.000Z")}>
+      <KepenkKolu
+        genislik={358}
+        yukseklik={800}
+        konum={new Animated.Value(0)}
+        palet={PALETLER.gece}
+        kilitli={false}
+        azaltHareket={false}
+        ekranOkuyucu
+        onKaldir={() => undefined}
+        onKilitliDeneme={() => undefined}
+      />
+    </ClockProvider>
+  );
+}
+
+function saat() {
+  return (
+    <ClockProvider sabitZaman={new Date("2026-08-19T15:34:07.000Z")}>
+      <CanliSaat genislik={358} palet={PALETLER.gece} azaltHareket={false} />
+    </ClockProvider>
+  );
+}
+
 describe("Accessibility strings are i18n-sourced, not hardcoded (M22)", () => {
   afterEach(async () => {
     await i18n.changeLanguage("tr");
   });
 
-  it("SwipeToConfirm's accessibilityHint changes with the active language", async () => {
+  it("the shutter handle's accessible label changes with the active language", async () => {
     await i18n.changeLanguage("tr");
-    const first = await render(
-      <SwipeToConfirm label="Kaydır" onConfirm={() => undefined} />,
-    );
-    expect(first.getByLabelText("Kaydır").props.accessibilityHint).toBe(
-      "Teslim almayı onaylamak için etkinleştir",
-    );
-    await first.unmount();
+    const ilk = await render(kol());
+    expect(
+      ilk.getByTestId("kepenk-kol-dugmesi").props.accessibilityLabel,
+    ).toBe("Kepengi kaldır — kodu göster");
+    await ilk.unmount();
 
     await i18n.changeLanguage("en");
-    const second = await render(
-      <SwipeToConfirm label="Swipe" onConfirm={() => undefined} />,
-    );
-    expect(second.getByLabelText("Swipe").props.accessibilityHint).toBe(
-      "Activate to confirm pickup",
-    );
-    await second.unmount();
+    const ikinci = await render(kol());
+    expect(
+      ikinci.getByTestId("kepenk-kol-dugmesi").props.accessibilityLabel,
+    ).toBe("Lift the shutter — show the code");
+    await ikinci.unmount();
   });
 
-  it("LiveClock's accessibilityLabel changes with the active language", async () => {
-    const clockFace = /^\d{2}:\d{2}:\d{2}$/;
-
+  it("the live clock's accessible label changes with the active language", async () => {
     await i18n.changeLanguage("tr");
-    const first = await render(<LiveClock color="#fff" />);
-    const trLabel = first.getByText(clockFace).props
-      .accessibilityLabel as string;
-    expect(trLabel.startsWith("Canlı saat:")).toBe(true);
-    await first.unmount();
+    const ilk = await render(saat());
+    expect(
+      (ilk.getByTestId("kepenk-saat").props.accessibilityLabel as string).startsWith(
+        "Saat ",
+      ),
+    ).toBe(true);
+    await ilk.unmount();
 
     await i18n.changeLanguage("en");
-    const second = await render(<LiveClock color="#fff" />);
-    const enLabel = second.getByText(clockFace).props
-      .accessibilityLabel as string;
-    expect(enLabel.startsWith("Live clock:")).toBe(true);
-    await second.unmount();
+    const ikinci = await render(saat());
+    expect(
+      (ikinci.getByTestId("kepenk-saat").props.accessibilityLabel as string).startsWith(
+        "Time ",
+      ),
+    ).toBe(true);
+    await ikinci.unmount();
   });
 });

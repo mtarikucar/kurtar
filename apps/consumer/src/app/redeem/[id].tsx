@@ -1,37 +1,107 @@
-import { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  Animated,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, typeScale } from "@kurtar/ui-tokens";
-import { Screen } from "../../components/Screen";
-import { Button } from "../../components/Button";
-import { LoadingState } from "../../components/LoadingState";
-import { EmptyState } from "../../components/EmptyState";
-import { LiveClock } from "../../components/LiveClock";
-import { SwipeToConfirm } from "../../components/SwipeToConfirm";
+import { useQuery } from "@tanstack/react-query";
+import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
+import { fiyatMetni } from "../../components/kepenk/olcum";
+import { tabelaGenisligi } from "../../components/kepenk/tabela-olcu";
+import { saatBulunma } from "../../components/kepenk/tr-saat";
+import {
+  ACIK_KALMA_SN,
+  CanliSaat,
+  DurumEkrani,
+  Dugme,
+  IKON,
+  IkonDugmesi,
+  INIS_SURESI,
+  KepenkKolu,
+  Kod,
+  TamKepenk,
+  TeslimSeli,
+  kepenkIniyorMu,
+  kapanmayaDk,
+  kodHeceleme,
+  kodParcalari,
+  pencereDurumu,
+  tikSayisi,
+  tikZamanlari,
+  useEkranOkuyucu,
+  yerBulunma,
+} from "../../components/teslim";
+import { egri, YERLI_SURUCU } from "../../design/motion";
+import { useReduceMotion } from "../../design/reduce-motion";
+import { useSaniyeTiki } from "../../design/saat";
+import { usePalet } from "../../design/theme";
+import { m, r, s, yazi } from "../../design/tokens";
+import { trUpper } from "../../design/tr-upper";
 import { useOrderDetails } from "../../hooks/use-order-details";
 import { useRedeemReconciliation } from "../../hooks/use-redeem-reconciliation";
-import { formatClockTime, formatPickupWindow } from "../../lib/format";
+import { client } from "../../lib/api-client";
 import { getErrorMessage } from "../../lib/errors";
+import {
+  formatClockTime,
+  formatClockWithSeconds,
+  formatPickupWindow,
+} from "../../lib/format";
+import { useTezgahModu } from "../../lib/parlaklik";
 
 /**
- * The redeem screen's own state machine, layered on top of
- * use-redeem-reconciliation.ts's redeem/queued/reconciled model:
+ * KEPENK — redeem, the defining interaction (spec §4.5).
  *
- *   not CONFIRMED yet / already terminal (cancelled/expired) -> notRedeemable
- *   CONFIRMED, not yet redeemed, not swiped -> ready (swipe control shown)
- *   swiped, mid-flight (POST /reservations/:id/redeem in progress) -> swipe disabled
- *   swiped, server rejected for a real reason -> error shown inline, swipe re-enabled
- *   swiped, server unreachable -> offline fallback queued (orange)
- *   swiped, offline fallback queued, server reachable but not yet flipped -> waiting
- *   status is REDEEMED (direct success, reconciled via polling, OR because
- *     the screen was reopened after an earlier successful pickup) -> success (green)
+ * The customer holds the phone up; a stranger behind a counter has three
+ * seconds and bad lighting. Three jobs: be unmistakably this app, prove
+ * it is live, and end in a moment worth the walk.
+ *
+ * **State A — closed.** Full-bleed zinc under an UNLIT sign. No code, no
+ * clock, no order. Screenshot it and you have a picture of a closed shop:
+ * the code does not exist on screen until the swipe happens, which is a
+ * structural anti-fraud property rather than a cosmetic one, and the
+ * reason this beats a static QR.
+ *
+ * **The swipe.** ≥140pt up. Brightness to 1.0 and auto-lock off (see
+ * lib/parlaklik.ts). The shutter rolls over 700ms with haptic ticks at
+ * decelerating intervals — nine on iOS, three on Android, because nine
+ * inside 700ms smear into one buzz on an ERM motor. The ticks are
+ * scheduled from JS as absolute timestamps taken at release, so they do
+ * not drift against the UI-thread animation, and the last one is `Medium`
+ * and lands exactly when the sign lights.
+ *
+ * **State B — open, ordered by the STAFF MEMBER's task, not the
+ * customer's:** shop name largest (staff verify "this is us" first,
+ * always), then the live clock and its sweep, then the code, then the
+ * order, then the button.
+ *
+ * **It is never one-shot.** The open state lasts 30 seconds and rolls
+ * back down by itself with no haptics; re-swipe as many times as needed.
+ * Nothing is more hostile than a redeem screen you can accidentally burn.
+ *
+ * The state machine underneath (`use-redeem-reconciliation.ts`) is
+ * unchanged: the direct `POST /reservations/:id/redeem` is the primary
+ * path, a genuine server refusal is surfaced with ITS OWN reason, and only
+ * an unreachable server falls back to the local queue that staff
+ * reconcile from their side.
  */
-export default function RedeemScreen() {
+export default function KepenkEkrani() {
   const { t } = useTranslation();
   const router = useRouter();
+  const palet = usePalet();
+  const azaltHareket = useReduceMotion();
+  const ekranOkuyucu = useEkranOkuyucu();
+  const { width, height } = useWindowDimensions();
   const { id } = useLocalSearchParams<{ id: string }>();
+
   const { data, isLoading } = useOrderDetails(id ?? "");
   const {
     queued,
@@ -42,285 +112,675 @@ export default function RedeemScreen() {
     redeemedAt,
     isOffline,
   } = useRedeemReconciliation(id ?? "");
-  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [hata, setHata] = useState<string | null>(null);
 
-  // [I9 fix] Ticks once a second, same cadence as the LiveClock proof-of-
-  // liveness clock below — lets the "hasn't started yet" gate re-evaluate
-  // live, so a consumer who opens this screen early sees the swipe
-  // control unlock itself the instant the window opens, with no
-  // navigation required.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
+  // The 1Hz rail — the ONE thing on this screen that is exempt from
+  // reduced motion, because it is proof rather than decoration. Mounting
+  // this hook is what starts the interval; nothing else in the app pays
+  // for it.
+  const simdiMs = useSaniyeTiki();
+
+  // WHEN it was opened, not how many seconds are left: a per-tick
+  // decrement drifts the moment a render is batched or the JS thread is
+  // busy, and this counter is the thing that decides when the shutter
+  // comes back down in front of a shop worker.
+  const [acildiMs, setAcildiMs] = useState<number | null>(null);
+  const [selBitti, setSelBitti] = useState(false);
+  // Seeded from the window rather than left null until `onLayout`: the
+  // shutter has to be down on the FIRST frame, not the second. A frame of
+  // bare screen before the metal arrives is a frame of open shop that
+  // nobody opened.
+  const [vitrinOlcusu, setVitrinOlcusu] = useState({ width, height });
+  const konum = useRef(new Animated.Value(0)).current;
+  const tikTimerlari = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useTezgahModu(true);
+
+  const tiklariTemizle = useCallback(() => {
+    for (const zamanlayici of tikTimerlari.current) clearTimeout(zamanlayici);
+    tikTimerlari.current = [];
   }, []);
 
-  const handleConfirm = () => {
-    setConfirmError(null);
-    confirm().catch((err: unknown) => setConfirmError(getErrorMessage(err, t)));
+  useEffect(() => tiklariTemizle, [tiklariTemizle]);
+
+  const indir = useCallback(() => {
+    setAcildiMs(null);
+    tiklariTemizle();
+    if (azaltHareket === true) {
+      konum.setValue(0);
+      return;
+    }
+    // No haptics on the way down: the shutter closing is not news.
+    Animated.timing(konum, {
+      toValue: 0,
+      duration: INIS_SURESI,
+      easing: egri.base,
+      useNativeDriver: YERLI_SURUCU,
+    }).start();
+  }, [azaltHareket, konum, tiklariTemizle]);
+
+  const kaldir = useCallback(() => {
+    setHata(null);
+
+    // Absolute timestamps taken at release, so a busy JS thread shifts a
+    // tick rather than compounding the error across all of them.
+    tiklariTemizle();
+    const adet = tikSayisi();
+    const zamanlar = tikZamanlari(adet);
+    const t0 = Date.now();
+    setAcildiMs(t0);
+    zamanlar.forEach((ofset, i) => {
+      const hedef = t0 + ofset;
+      tikTimerlari.current.push(
+        setTimeout(
+          () => {
+            if (Platform.OS === "web") return;
+            void Haptics.impactAsync(
+              i === adet - 1
+                ? Haptics.ImpactFeedbackStyle.Medium
+                : Haptics.ImpactFeedbackStyle.Light,
+            ).catch(() => undefined);
+          },
+          Math.max(0, hedef - Date.now()),
+        ),
+      );
+    });
+
+    if (azaltHareket === true) {
+      // The ritual survives, the movement doesn't — and the haptics are
+      // unchanged (spec §2 Degradation).
+      konum.setValue(1);
+      return;
+    }
+    Animated.timing(konum, {
+      toValue: 1,
+      duration: m.roll,
+      easing: egri.roll,
+      useNativeDriver: YERLI_SURUCU,
+    }).start();
+  }, [azaltHareket, konum, tiklariTemizle]);
+
+  const acik = acildiMs !== null;
+  // The 30-second window, read off the same 1Hz rail as the clock rather
+  // than counted down by hand.
+  const kalanSn =
+    acildiMs === null
+      ? ACIK_KALMA_SN
+      : Math.max(0, ACIK_KALMA_SN - Math.floor((simdiMs - acildiMs) / 1000));
+
+  useEffect(() => {
+    if (acik && kalanSn <= 0) indir();
+  }, [acik, indir, kalanSn]);
+
+  const kilitliDeneme = useCallback(() => {
+    if (Platform.OS === "web") return;
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(
+      () => undefined,
+    );
+  }, []);
+
+  const teslimAldim = () => {
+    setHata(null);
+    confirm().catch((err: unknown) => setHata(getErrorMessage(err, t)));
   };
 
-  if (isLoading || !queueChecked) {
-    return (
-      <Screen>
-        <LoadingState />
-      </Screen>
+  const basarili = data?.reservation.status === "REDEEMED" || reconciled;
+
+  // The impact line — read AFTER the handover, never fabricated. If the
+  // ledger has not caught up yet the line is simply absent.
+  const etki = useQuery({
+    queryKey: ["impact", "mine"],
+    queryFn: () => client.impact.getMine(),
+    enabled: basarili,
+    staleTime: 60_000,
+  });
+
+  // One live region on open: shop, then the code CHARACTER BY CHARACTER,
+  // then the item. A screen reader given "K-7F3M" says nothing useful.
+  const duyuruldu = useRef(false);
+  useEffect(() => {
+    if (!acik || !data) {
+      if (!acik) duyuruldu.current = false;
+      return;
+    }
+    if (duyuruldu.current) return;
+    duyuruldu.current = true;
+    AccessibilityInfo.announceForAccessibility(
+      t("kepenk.acikDuyuru", {
+        dukkan: data.storeName,
+        kod: kodHeceleme(data.reservation.code),
+        paket: data.bagTitle ?? t("kepenk.paketBilinmiyor"),
+      }),
     );
+  }, [acik, data, t]);
+
+  if (isLoading || !queueChecked) {
+    return <DurumEkrani tur="yukleniyor" baslik={t("common.loading")} />;
   }
 
   if (!data) {
     return (
-      <Screen>
-        <EmptyState
-          icon="alert-circle-outline"
-          title={t("redeem.notRedeemableTitle")}
-          ctaLabel={t("common.back")}
-          onPressCta={() => router.back()}
-        />
-      </Screen>
+      <DurumEkrani
+        tur="hata"
+        baslik={t("redeem.notRedeemableTitle")}
+        eylemEtiketi={t("dugme.geriDon")}
+        onEylem={() => router.back()}
+      />
     );
   }
 
-  const alreadyRedeemed = data.reservation.status === "REDEEMED";
-  const isSuccess = alreadyRedeemed || reconciled;
-  const isRedeemable = data.reservation.status === "CONFIRMED";
+  const rezervasyon = data.reservation;
+  const baslangicMs = new Date(data.pickupStartAt).getTime();
+  const bitisMs = new Date(data.pickupEndAt).getTime();
+  const pencere = pencereDurumu(simdiMs, baslangicMs, bitisMs);
+  const teslimEdilebilir = rezervasyon.status === "CONFIRMED";
 
-  const pickupStartAtMs = new Date(data.pickupStartAt).getTime();
-  const pickupEndAtMs = new Date(data.pickupEndAt).getTime();
-
-  // [I9 fix] Pre-empts the two window reasons client-side, against the
-  // SAME window the server now states on the reservation itself, so the
-  // swipe is never even attempted for a reason this screen can already
-  // see coming. The server no longer collapses those reasons either — a
-  // swipe that DOES reach it comes back with its own code, rendered
-  // verbatim below via getErrorMessage — but pre-empting is still kinder
-  // at a counter than a failed swipe. `queued === null` guards against
-  // yanking away an in-flight/offline-queued confirmation that was
-  // legitimately started before the window closed.
-  const windowNotStartedYet = isRedeemable && now < pickupStartAtMs;
-  const windowAlreadyPassed =
-    isRedeemable && now > pickupEndAtMs && queued === null;
-
-  if (!isSuccess && (!isRedeemable || windowAlreadyPassed)) {
+  // A window that has closed on an unqueued reservation is not a shutter
+  // you can push at all — that is the empty state, not a locked handle.
+  if (!basarili && (!teslimEdilebilir || (pencere === "kapandi" && queued === null))) {
     return (
-      <Screen>
-        <EmptyState
-          icon="time-outline"
-          title={t("redeem.notRedeemableTitle")}
-          body={t("redeem.notRedeemableBody")}
-          ctaLabel={t("orders.viewCta")}
-          onPressCta={() => router.replace({ pathname: "/order/[id]", params: { id } })}
-        />
-      </Screen>
+      <DurumEkrani
+        tur="kapali"
+        baslik={t("redeem.notRedeemableTitle")}
+        govde={t("redeem.notRedeemableBody")}
+        eylemEtiketi={t("dugme.siparisiGor")}
+        onEylem={() =>
+          router.replace({ pathname: "/order/[id]", params: { id } })
+        }
+      />
     );
   }
 
-  if (isSuccess) {
-    const time = data.reservation.redeemedAt ?? redeemedAt;
+  if (basarili) {
+    const an = rezervasyon.redeemedAt ?? redeemedAt;
+    const saat = an ? formatClockWithSeconds(new Date(an)) : formatClockTime(new Date(simdiMs));
     return (
-      <Screen style={[styles.fullBleed, styles.successBg]} edges={["top", "bottom"]} padded={false}>
-        <View style={styles.centerContent}>
-          <Ionicons name="checkmark-circle" size={96} color={colors.neutral[0]} />
-          <Text style={styles.successTitle}>{t("redeem.successTitle")}</Text>
-          <Text style={styles.successBody}>
-            {t("redeem.successBody", { time: time ? formatClockTime(time) : "" })}
-          </Text>
-          <Button
-            label={t("redeem.rateCta")}
-            variant="secondary"
-            onPress={() => router.replace({ pathname: "/rate/[id]", params: { id } })}
-            style={styles.successButton}
-          />
-          <Button
-            label={t("redeem.doneCta")}
-            variant="ghost"
-            onPress={() => router.replace("/(tabs)/orders")}
-          />
-        </View>
-      </Screen>
-    );
-  }
-
-  const offline = queued !== null && isOffline;
-  const waiting = queued !== null && !isOffline;
-
-  return (
-    <Screen
-      style={[styles.fullBleed, offline ? styles.offlineBg : styles.readyBg]}
-      edges={["top", "bottom"]}
-      padded={false}
-    >
-      <View style={styles.centerContent}>
-        <Text style={styles.storeName}>{data.storeName}</Text>
-        {data.bagTitle ? <Text style={styles.bagTitle}>{data.bagTitle}</Text> : null}
-
-        <LiveClock color={colors.neutral[0]} />
-        <Text style={styles.clockHint}>{t("redeem.liveClockHint")}</Text>
-
-        <Text style={styles.pickupWindow}>
-          {t("redeem.pickupWindowLabel")}:{" "}
-          {formatPickupWindow(data.pickupStartAt, data.pickupEndAt)}
-        </Text>
-
-        <View style={styles.codeBlock}>
-          <Text style={styles.codeLabel}>{t("redeem.codeLabel")}</Text>
-          <Text style={styles.code} testID="redeem-code">
-            {data.reservation.code}
-          </Text>
-          <Text style={styles.qty}>
-            {t("redeem.qtyLabel")}: {data.reservation.qty}
-          </Text>
-        </View>
-
-        {offline ? (
-          <View style={styles.statusBanner}>
-            <Ionicons name="cloud-offline-outline" size={20} color={colors.neutral[900]} />
-            <Text style={styles.statusBannerText}>{t("redeem.offlineBody")}</Text>
-          </View>
-        ) : waiting ? (
-          <Text style={styles.waitingText}>{t("redeem.waitingForStaff")}</Text>
-        ) : windowNotStartedYet ? (
-          <View style={styles.statusBanner} testID="redeem-not-started-yet">
-            <Ionicons name="time-outline" size={20} color={colors.neutral[900]} />
-            <Text style={styles.statusBannerText}>
-              {t("redeem.notStartedYet", { time: formatClockTime(data.pickupStartAt) })}
-              {"\n"}
-              {t("redeem.notStartedYetHint")}
+      <View style={[styles.kok, { backgroundColor: palet.bgDerin }]}>
+        <SafeAreaView style={styles.kok} edges={["top", "bottom", "left", "right"]}>
+          <View style={styles.basariGovdesi}>
+            <Tabelasi
+              ad={data.storeName}
+              palet={palet}
+              yanik
+              genislik={width - 2 * s.s4}
+            />
+            <Text
+              style={[yazi.dataLg, styles.ortali, { color: palet.sodyumYazi }]}
+              maxFontSizeMultiplier={1.3}
+            >
+              {t("kepenk.odendi", {
+                fiyat: fiyatMetni(rezervasyon.totalCents),
+                kod: rezervasyon.code,
+              })}
             </Text>
+            <Text
+              style={[yazi.body, styles.ortali, { color: palet.yaziAna }]}
+              maxFontSizeMultiplier={1.4}
+            >
+              {t("kepenk.adetPaket", {
+                adet: rezervasyon.qty,
+                paket: data.bagTitle ?? t("kepenk.paketBilinmiyor"),
+              })}
+            </Text>
+            <Text
+              style={[yazi.dataLg, styles.ortali, { color: palet.yaziAna }]}
+              maxFontSizeMultiplier={1.3}
+            >
+              {saat}
+            </Text>
+            {etki.data && data.storeDistrict ? (
+              <Text
+                style={[yazi.dataLg, styles.ortali, { color: palet.sodyumYazi }]}
+                testID="kepenk-etki"
+                maxFontSizeMultiplier={1.3}
+              >
+                {t("kepenk.etkiSatiri", {
+                  yer: yerBulunma(data.storeDistrict),
+                  sira: etki.data.count,
+                })}
+              </Text>
+            ) : null}
           </View>
-        ) : (
-          <SwipeToConfirm
-            label={t("redeem.swipeCta")}
-            onConfirm={handleConfirm}
-            disabled={queued !== null || redeeming}
+
+          <View style={styles.basariEylemi}>
+            <Dugme
+              etiket={t("dugme.degerlendir")}
+              onPress={() =>
+                router.replace({ pathname: "/rate/[id]", params: { id } })
+              }
+              palet={palet}
+              testID="kepenk-degerlendir"
+            />
+            <View style={styles.ikincil}>
+              <Dugme
+                etiket={t("dugme.siparislerim")}
+                onPress={() => router.replace("/(tabs)/orders")}
+                palet={palet}
+                ikincil
+                testID="kepenk-bitti"
+              />
+            </View>
+          </View>
+        </SafeAreaView>
+
+        {!selBitti ? (
+          <TeslimSeli
+            dukkanAdi={data.storeName}
+            paketAdi={data.bagTitle}
+            saat={saat}
+            azaltHareket={azaltHareket}
+            onBitti={() => setSelBitti(true)}
           />
-        )}
-
-        {!waiting && !offline && !windowNotStartedYet ? (
-          <Text style={styles.swipeHint}>{t("redeem.swipeHint")}</Text>
-        ) : null}
-
-        {confirmError ? (
-          <Text style={styles.errorText}>{confirmError}</Text>
         ) : null}
       </View>
-    </Screen>
+    );
+  }
+
+  const kilitli = pencere !== "acik";
+  const iniyor = kepenkIniyorMu(simdiMs, bitisMs);
+  const kolGenisligi = Math.min(width - 2 * s.s4, 358);
+  const kodParcasi = kodParcalari(rezervasyon.code);
+  const cevrimdisi = queued !== null && isOffline;
+  const bekliyor = queued !== null && !isOffline;
+
+  const uyariMetni = kilitli
+    ? pencere === "acilmadi"
+      ? t("kepenk.acilir", { saat: saatBulunma(formatClockTime(data.pickupStartAt)) })
+      : t("kepenk.kapandi", { saat: saatBulunma(formatClockTime(data.pickupEndAt)) })
+    : iniyor
+      ? t("kepenk.iniyor", { dk: kapanmayaDk(simdiMs, bitisMs) })
+      : null;
+
+  return (
+    <View style={[styles.kok, { backgroundColor: palet.bgDerin }]} testID="kepenk-ekrani">
+      <SafeAreaView style={styles.kok} edges={["top", "bottom", "left", "right"]}>
+        <View style={styles.ustCubuk}>
+          <IkonDugmesi
+            yol={IKON.geri}
+            etiket={t("common.back")}
+            onPress={() => router.back()}
+            palet={palet}
+            testID="kepenk-geri"
+          />
+          {uyariMetni ? (
+            <View
+              testID="kepenk-uyari"
+              style={[styles.uyari, { backgroundColor: palet.tenteDolgu }]}
+            >
+              <Text
+                style={[yazi.cipAlarm, { color: palet.tenteMurekkep }]}
+                numberOfLines={1}
+                maxFontSizeMultiplier={1.3}
+              >
+                {uyariMetni}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.ikonBosluk} />
+          )}
+          <View style={styles.ikonBosluk} />
+        </View>
+
+        {/* The sign is above the opening, architecturally, so the shutter
+            can never reach it — the same rule the offer card obeys. It is
+            unlit until the metal moves. */}
+        <Tabelasi
+          ad={data.storeName}
+          palet={palet}
+          yanik={acik}
+          genislik={width - 2 * s.s4}
+        />
+        {data.storeDistrict ? (
+          <Text
+            style={[yazi.data, styles.ortali, { color: palet.yaziSis }]}
+            numberOfLines={1}
+            maxFontSizeMultiplier={1.3}
+          >
+            {data.storeDistrict}
+          </Text>
+        ) : null}
+
+        <View
+          style={styles.vitrin}
+          onLayout={(olay) => {
+            const { width: g, height: y } = olay.nativeEvent.layout;
+            setVitrinOlcusu((onceki) =>
+              onceki.width === g && onceki.height === y ? onceki : { width: g, height: y },
+            );
+          }}
+        >
+          {/* Everything below exists only once the shutter is up. It is
+              mounted only then, so a screenshot of the closed state
+              cannot contain it at all. */}
+          {acik ? (
+            <View style={styles.acikIcerik} testID="kepenk-acik">
+              <CanliSaat
+                genislik={kolGenisligi}
+                palet={palet}
+                azaltHareket={azaltHareket}
+              />
+              <Text
+                style={[yazi.data, styles.ortali, { color: palet.yaziSis }]}
+                maxFontSizeMultiplier={1.3}
+              >
+                {new Date(simdiMs).toLocaleDateString("tr-TR", {
+                  day: "numeric",
+                  month: "long",
+                  weekday: "long",
+                  timeZone: "Europe/Istanbul",
+                })}
+              </Text>
+
+              <View style={styles.kodAlani}>
+                <Kod kod={rezervasyon.code} palet={palet} />
+              </View>
+
+              <View style={[styles.ayrac, { backgroundColor: palet.cizgiKil }]} />
+
+              <Text
+                style={[yazi.body, styles.ortali, { color: palet.yaziAna }]}
+                maxFontSizeMultiplier={1.4}
+              >
+                {t("kepenk.adetPaket", {
+                  adet: rezervasyon.qty,
+                  paket: data.bagTitle ?? t("kepenk.paketBilinmiyor"),
+                })}
+              </Text>
+              <Text
+                style={[yazi.dataLg, styles.ortali, { color: palet.sodyumYazi }]}
+                maxFontSizeMultiplier={1.3}
+              >
+                {t("kepenk.odendi", {
+                  fiyat: fiyatMetni(rezervasyon.totalCents),
+                  kod: kodParcasi.tam,
+                })}
+              </Text>
+              <Text
+                testID="kepenk-sayac"
+                style={[yazi.data, styles.ortali, { color: palet.yaziSis }]}
+                maxFontSizeMultiplier={1.3}
+              >
+                {t("kepenk.kapanisSayaci", { sn: kalanSn })}
+              </Text>
+
+              {cevrimdisi ? (
+                <Text
+                  testID="kepenk-cevrimdisi"
+                  style={[
+                    yazi.body,
+                    styles.bildirim,
+                    { backgroundColor: palet.yuzeyKaldirim, color: palet.yaziAna },
+                  ]}
+                  maxFontSizeMultiplier={1.4}
+                >
+                  {t("redeem.offlineBody")}
+                </Text>
+              ) : bekliyor ? (
+                <Text
+                  style={[yazi.body, styles.ortali, { color: palet.yaziSis }]}
+                  maxFontSizeMultiplier={1.4}
+                >
+                  {t("redeem.waitingForStaff")}
+                </Text>
+              ) : null}
+
+              {hata ? (
+                <Text
+                  testID="kepenk-hata"
+                  style={[
+                    yazi.bodyStrong,
+                    styles.bildirim,
+                    { backgroundColor: palet.tenteDolgu, color: palet.tenteMurekkep },
+                  ]}
+                  maxFontSizeMultiplier={1.4}
+                >
+                  {hata}
+                </Text>
+              ) : null}
+
+              <View style={[styles.eylem, { width: kolGenisligi }]}>
+                <Dugme
+                  etiket={t("dugme.teslimAldim")}
+                  onPress={teslimAldim}
+                  pasif={redeeming || queued !== null}
+                  palet={palet}
+                  testID="kepenk-teslim-aldim"
+                />
+                {/* A thumb slips in a queue. Putting the shutter back down
+                    costs nothing and commits nothing — no server call has
+                    happened yet at this point. */}
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={indir}
+                  testID="kepenk-yanlislikla"
+                  style={({ pressed }) => [
+                    styles.geriAl,
+                    pressed ? { opacity: m.pressOpacity } : null,
+                  ]}
+                >
+                  <Text style={[yazi.body, { color: palet.yaziSis }]}>
+                    {t("kepenk.yanlislikla")}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.kapaliBilgi} pointerEvents="none">
+              <Text
+                style={[yazi.data, styles.ortali, { color: palet.yaziSis }]}
+                maxFontSizeMultiplier={1.3}
+              >
+                {formatPickupWindow(data.pickupStartAt, data.pickupEndAt)}
+              </Text>
+            </View>
+          )}
+
+          {/* The metal covers the OPENING and nothing else: the sign is
+              above it architecturally, which is why the card needs a
+              0.78 cap and this screen needs none (§5.13). Its travel is
+              the opening's own height, measured rather than assumed, so
+              the lip lands on the sill. */}
+          <TamKepenk
+            genislik={vitrinOlcusu.width}
+            yukseklik={vitrinOlcusu.height}
+            konum={konum}
+            palet={palet}
+            kilitli={kilitli}
+            kol={
+              <View style={styles.kolYuvasi}>
+                <KepenkKolu
+                  genislik={kolGenisligi}
+                  yukseklik={vitrinOlcusu.height}
+                  konum={konum}
+                  palet={palet}
+                  kilitli={kilitli}
+                  kilitAltEtiketi={formatPickupWindow(
+                    data.pickupStartAt,
+                    data.pickupEndAt,
+                  )}
+                  azaltHareket={azaltHareket}
+                  ekranOkuyucu={ekranOkuyucu}
+                  onKaldir={kaldir}
+                  onKilitliDeneme={kilitliDeneme}
+                />
+              </View>
+            }
+          />
+        </View>
+      </SafeAreaView>
+    </View>
+  );
+}
+
+/**
+ * The sign, and the difference between a shut shop and an open one.
+ *
+ * This is the element a shop worker reads FIRST — "is this us?" — so on
+ * this one screen it is set as large as the plaque will take it rather
+ * than at the card's `tabela.lg`, and lighting it is a painted sodium
+ * bloom rather than a colour swap: the sign does not change colour when
+ * the shop opens, a lamp comes on behind it.
+ *
+ * Real RN `<Text>` over the plaque — never SVG `<Text>`, which Android
+ * resolves through its own Typeface lookup and silently drops the Turkish
+ * diacritics with (§5.5).
+ */
+const HERO_EN_BUYUK = 44;
+const HERO_EN_KUCUK = 22;
+
+export function heroTabelaBoyutu(yazit: string, kullanilabilir: number): number {
+  for (let boyut = HERO_EN_BUYUK; boyut > HERO_EN_KUCUK; boyut -= 1) {
+    if (tabelaGenisligi(yazit, boyut) <= kullanilabilir) return boyut;
+  }
+  return HERO_EN_KUCUK;
+}
+
+function Tabelasi({
+  ad,
+  palet,
+  yanik,
+  genislik,
+}: {
+  ad: string;
+  palet: ReturnType<typeof usePalet>;
+  yanik: boolean;
+  genislik: number;
+}) {
+  const yazit = trUpper(ad);
+  const boyut = heroTabelaBoyutu(yazit, genislik - 2 * 6 - 6 - 12);
+
+  return (
+    <View style={styles.tabelaAlani}>
+      {/* The bloom the lamp throws around the sign. Ends at alpha 0,
+          never `'transparent'` (§5.7). */}
+      {yanik ? (
+        <LinearGradient
+          pointerEvents="none"
+          colors={[
+            `rgba(${palet.isikRgb},0.30)`,
+            `rgba(${palet.isikRgb},0.10)`,
+            `rgba(${palet.isikRgb},0)`,
+          ]}
+          locations={[0, 0.55, 1]}
+          style={[styles.hale, { width: genislik + 40 }]}
+        />
+      ) : null}
+      <View
+        style={[
+          styles.plaka,
+          {
+            width: genislik,
+            backgroundColor: palet.plakaZemin,
+            borderColor: yanik ? palet.sodyumDolgu : palet.plakaCizgi,
+          },
+        ]}
+        testID={yanik ? "kepenk-tabela-yanik" : "kepenk-tabela-sonuk"}
+      >
+        {/* Light landing ON the painted sign. */}
+        {yanik ? (
+          <LinearGradient
+            pointerEvents="none"
+            colors={[`rgba(${palet.isikRgb},0.34)`, `rgba(${palet.isikRgb},0.06)`]}
+            style={styles.plakaIsigi}
+          />
+        ) : null}
+        <View style={[styles.civata, { backgroundColor: palet.plakaBoltu }]} />
+        <Text
+          style={[
+            yazi.tabelaXl,
+            styles.tabelaYazisi,
+            {
+              fontSize: boyut,
+              lineHeight: boyut + 6,
+              color: yanik ? palet.plakaYazi : palet.plakaYaziSonuk,
+            },
+          ]}
+          numberOfLines={2}
+          maxFontSizeMultiplier={yazi.tabelaXl.maxFontSizeMultiplier}
+        >
+          {yazit}
+        </Text>
+        <View style={[styles.civata, { backgroundColor: palet.plakaBoltu }]} />
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  fullBleed: {
+  kok: { flex: 1 },
+  ustCubuk: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: s.s2,
+    paddingVertical: s.s1,
+  },
+  ikonBosluk: { width: 40 },
+  uyari: {
+    borderRadius: r.pill,
+    paddingHorizontal: s.s3,
+    paddingVertical: s.s1,
+    flexShrink: 1,
+  },
+  tabelaAlani: { alignItems: "center", alignSelf: "center" },
+  hale: {
+    position: "absolute",
+    top: -18,
+    bottom: -18,
+    borderRadius: r.card,
+  },
+  plakaIsigi: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: r.plaque,
+  },
+  plaka: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "center",
+    borderRadius: r.plaque,
+    borderWidth: 1.5,
+    paddingHorizontal: 6,
+    paddingVertical: s.s3,
+    overflow: "hidden",
+  },
+  civata: { width: 3, height: 3, borderRadius: 1.5 },
+  tabelaYazisi: { flex: 1, textAlign: "center", marginHorizontal: 6 },
+  vitrin: { flex: 1, justifyContent: "flex-start", overflow: "hidden" },
+  // The staff member's reading order runs top to bottom and the button is
+  // the last thing in it, so the group fills the opening and the action
+  // sits at the bottom of the frame rather than floating in the middle of
+  // it with a third of the screen empty underneath.
+  acikIcerik: {
     flex: 1,
+    alignItems: "center",
+    gap: s.s2,
+    paddingHorizontal: s.s4,
+    paddingTop: s.s6,
   },
-  readyBg: {
-    backgroundColor: colors.primary[500],
+  kapaliBilgi: { alignItems: "center", paddingTop: s.s6 },
+  ortali: { textAlign: "center" },
+  kodAlani: { marginTop: s.s3 },
+  ayrac: { height: 1, alignSelf: "stretch", marginVertical: s.s3 },
+  bildirim: {
+    padding: s.s3,
+    borderRadius: r.card,
+    overflow: "hidden",
+    textAlign: "center",
   },
-  offlineBg: {
-    backgroundColor: colors.semantic.warning[500],
-  },
-  successBg: {
-    backgroundColor: colors.secondary[500],
-  },
-  centerContent: {
+  eylem: { marginTop: "auto", paddingTop: s.s4, alignItems: "stretch" },
+  geriAl: { alignSelf: "center", paddingVertical: s.s3, paddingHorizontal: s.s4 },
+  kolYuvasi: { alignItems: "center" },
+  basariGovdesi: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing["2xl"],
+    paddingHorizontal: s.s4,
+    gap: s.s3,
   },
-  storeName: {
-    fontSize: typeScale.h2.size,
-    fontWeight: typeScale.h2.weight,
-    color: colors.neutral[0],
-    textAlign: "center",
-  },
-  bagTitle: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[0],
-    opacity: 0.9,
-    textAlign: "center",
-  },
-  clockHint: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[0],
-    opacity: 0.85,
-    textAlign: "center",
-  },
-  pickupWindow: {
-    fontSize: typeScale.body.size,
-    fontWeight: typeScale.bodyStrong.weight,
-    color: colors.neutral[0],
-    textAlign: "center",
-    marginTop: spacing.sm,
-  },
-  codeBlock: {
-    alignItems: "center",
-    marginTop: spacing.lg,
-    gap: spacing.xs,
-  },
-  codeLabel: {
-    fontSize: typeScale.label.size,
-    color: colors.neutral[0],
-    opacity: 0.85,
-  },
-  code: {
-    fontSize: 48,
-    fontWeight: "800",
-    color: colors.neutral[0],
-    letterSpacing: 4,
-  },
-  qty: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[0],
-  },
-  statusBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: "rgba(255,255,255,0.85)",
-    borderRadius: 12,
-    padding: spacing.md,
-    marginTop: spacing.xl,
-  },
-  statusBannerText: {
-    flex: 1,
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[900],
-  },
-  waitingText: {
-    marginTop: spacing.xl,
-    fontSize: typeScale.body.size,
-    color: colors.neutral[0],
-  },
-  swipeHint: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[0],
-    opacity: 0.85,
-    textAlign: "center",
-    marginTop: spacing.sm,
-  },
-  errorText: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[0],
-    backgroundColor: "rgba(0,0,0,0.25)",
-    borderRadius: 8,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    textAlign: "center",
-    marginTop: spacing.sm,
-  },
-  successTitle: {
-    fontSize: typeScale.display.size,
-    fontWeight: typeScale.display.weight,
-    color: colors.neutral[0],
-  },
-  successBody: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[0],
-    textAlign: "center",
-  },
-  successButton: {
-    marginTop: spacing.lg,
-    minWidth: 220,
-  },
+  basariEylemi: { paddingHorizontal: s.s4, paddingBottom: s.s4 },
+  ikincil: { marginTop: s.s3 },
 });
