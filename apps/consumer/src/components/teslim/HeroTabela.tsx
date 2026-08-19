@@ -1,6 +1,7 @@
-import { StyleSheet, Text, View } from "react-native";
+import { PixelRatio, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { tabelaGenisligi } from "../kepenk/tabela-olcu";
+import { kis } from "../kepenk/olcum";
 import { r, s, yazi, type Palet } from "../../design/tokens";
 import { trUpper } from "../../design/tr-upper";
 
@@ -27,17 +28,59 @@ const HERO_EN_KUCUK = 22;
  * everything the name does NOT get to use. */
 const PLAKA_ICI = 2 * 6 + 6 + 12;
 
+/** The sign may grow this far with the user's text size and no further —
+ * the same multiplier RN itself applies to the style, so the fit and the
+ * drawing agree on one number. */
+const HERO_OLCEK_TAVANI = yazi.tabelaXl.maxFontSizeMultiplier;
+
+export interface HeroTabelaOlcusu {
+  /** The `fontSize` for the style. RN multiplies it by the user's capped
+   * text scale, which is how it becomes `cizilenBoyut`. */
+  readonly boyut: number;
+  /** Absolute, never a multiplier — at multiplied leading Android clips
+   * ğ/ş/ç and the İ dot (§1.2). In style units, like `boyut`. */
+  readonly satirYuksekligi: number;
+  /** What the reader actually sees, in points on glass. The 22pt floor
+   * and the 44pt ceiling are about THIS number. */
+  readonly cizilenBoyut: number;
+}
+
 /**
- * The largest whole point size at which the name fits its plaque on one
- * or two lines, measured with Archivo Black's OWN advance widths (see
- * tabela-olcu.ts). The name wins and the type gives way, which is what a
- * signwriter would do.
+ * The largest whole DRAWN point size at which the name fits its plaque,
+ * measured with Archivo Black's OWN advance widths (see tabela-olcu.ts).
+ * The name wins and the type gives way, which is what a signwriter would
+ * do.
+ *
+ * The fit used to be computed at 1x while the text was then allowed to
+ * draw at up to 1.4x. Two lines hid it — the name wrapped instead of
+ * truncating — but a budget measured at one scale and spent at another is
+ * not a budget, and the second line is a fallback, not a plan: it costs
+ * the plaque's whole vertical room and it breaks a shop's name in the
+ * middle. Stating both the ceiling and the floor in drawn points is what
+ * makes the sign quieten only for the names that need it.
+ *
+ * `olcek` is `PixelRatio.getFontScale()`. At 1x this is byte-for-byte the
+ * old behaviour.
  */
-export function heroTabelaBoyutu(yazit: string, kullanilabilir: number): number {
-  for (let boyut = HERO_EN_BUYUK; boyut > HERO_EN_KUCUK; boyut -= 1) {
-    if (tabelaGenisligi(yazit, boyut) <= kullanilabilir) return boyut;
+export function heroTabelaOlcusu(
+  yazit: string,
+  kullanilabilir: number,
+  olcek = 1,
+): HeroTabelaOlcusu {
+  const carpan = kis(olcek, 1, HERO_OLCEK_TAVANI);
+  const tavan = HERO_EN_BUYUK * carpan;
+  let cizilenBoyut = HERO_EN_KUCUK;
+  for (let boyut = Math.floor(tavan); boyut > HERO_EN_KUCUK; boyut -= 1) {
+    if (tabelaGenisligi(yazit, boyut) <= kullanilabilir) {
+      cizilenBoyut = boyut;
+      break;
+    }
   }
-  return HERO_EN_KUCUK;
+  return {
+    boyut: cizilenBoyut / carpan,
+    satirYuksekligi: (cizilenBoyut + 6) / carpan,
+    cizilenBoyut,
+  };
 }
 
 export function HeroTabela({
@@ -55,7 +98,7 @@ export function HeroTabela({
   testIDOneki?: string;
 }) {
   const yazit = trUpper(ad);
-  const boyut = heroTabelaBoyutu(yazit, genislik - PLAKA_ICI);
+  const olcu = heroTabelaOlcusu(yazit, genislik - PLAKA_ICI, PixelRatio.getFontScale());
 
   return (
     <View style={styles.alan}>
@@ -102,8 +145,8 @@ export function HeroTabela({
             yazi.tabelaXl,
             styles.yazit,
             {
-              fontSize: boyut,
-              lineHeight: boyut + 6,
+              fontSize: olcu.boyut,
+              lineHeight: olcu.satirYuksekligi,
               color: yanik ? palet.plakaYazi : palet.plakaYaziSonuk,
             },
           ]}

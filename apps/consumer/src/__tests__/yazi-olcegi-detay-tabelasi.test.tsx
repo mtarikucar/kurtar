@@ -6,6 +6,7 @@ import { ThemeProvider, usePalet } from "../design/theme";
 import { s } from "../design/tokens";
 import { DetayBasligi } from "../components/teslim/DetayBasligi";
 import { tabelaGenisligi } from "../components/kepenk/tabela-olcu";
+import { heroTabelaOlcusu } from "../components/teslim/HeroTabela";
 import { trUpper } from "../design/tr-upper";
 import "../i18n";
 
@@ -207,5 +208,59 @@ describe("the offer detail's sign says the whole shop's name at the user's text 
     } finally {
       geriAl();
     }
+  });
+});
+
+describe("HeroTabela — the redeem screen's own plaque states its size in drawn points", () => {
+  // The redeem sign wraps to two lines, which HID this: a name measured at
+  // 1x and drawn at 1.4x broke across the plaque instead of truncating. A
+  // budget measured at one scale and spent at another is not a budget, and
+  // the second line costs the plaque's whole vertical room and breaks a
+  // shop's name in the middle.
+  const PLAKA = 340;
+
+  it("draws the reviewed sign unchanged at the default text size", () => {
+    expect(heroTabelaOlcusu("MODA FIRIN", PLAKA).cizilenBoyut).toBe(44);
+    expect(heroTabelaOlcusu("MODA FIRIN", PLAKA).boyut).toBe(44);
+  });
+
+  it("keeps every seeded name inside the plaque's TWO lines at the largest text size", () => {
+    // This plaque wraps (numberOfLines={2}), unlike the card's tabela, so
+    // the budget is two lines wide — but it IS a budget, and before this
+    // fix nothing bounded it: the size was fitted at 1x and then drawn at
+    // up to 1.4x, so the two lines were never the two lines that were
+    // measured.
+    const isimler = [
+      "MODA FIRIN",
+      "YELDEĞİRMENİ PASTANESİ",
+      "BEŞİKTAŞ MANAV ALİ USTA",
+      "CAFERAĞA KAHVE EVİ",
+    ];
+    for (const ad of isimler) {
+      const olcu = heroTabelaOlcusu(ad, PLAKA, 1.4);
+      // jest's expect takes no message argument, so the name rides along
+      // in the compared value to keep a failure readable.
+      expect([ad, tabelaGenisligi(ad, olcu.cizilenBoyut) <= PLAKA * 2]).toEqual([ad, true]);
+      expect([ad, olcu.cizilenBoyut]).toEqual([ad, expect.any(Number)]);
+      expect(olcu.cizilenBoyut).toBeGreaterThanOrEqual(22);
+      expect(olcu.cizilenBoyut).toBeLessThanOrEqual(44 * 1.4);
+    }
+  });
+
+  it("lets a short name grow with the user rather than pinning it to the 1x ceiling", () => {
+    expect(heroTabelaOlcusu("MODA FIRIN", PLAKA, 1.4).cizilenBoyut).toBeGreaterThan(44);
+  });
+
+  it("never draws below the legibility floor, whatever the plaque", () => {
+    expect(
+      heroTabelaOlcusu("YELDEĞİRMENİ PASTANESİ VE UNLU MAMULLERİ", 120, 1.4).cizilenBoyut,
+    ).toBe(22);
+  });
+
+  it("hands RN a style size that its own multiplication turns into the drawn size", () => {
+    const olcu = heroTabelaOlcusu("BEŞİKTAŞ MANAV ALİ USTA", PLAKA, 1.3);
+    expect(olcu.boyut * 1.3).toBeCloseTo(olcu.cizilenBoyut, 5);
+    // Absolute leading, never a multiplier (§1.2).
+    expect(olcu.satirYuksekligi * 1.3).toBeCloseTo(olcu.cizilenBoyut + 6, 5);
   });
 });

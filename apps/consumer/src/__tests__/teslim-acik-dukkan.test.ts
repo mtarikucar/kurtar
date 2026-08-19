@@ -13,7 +13,7 @@ import {
   tezgahAlfasi,
   toplamAlfa,
 } from "../components/teslim/dukkan-isigi";
-import { heroTabelaBoyutu } from "../components/teslim/HeroTabela";
+import { heroTabelaOlcusu } from "../components/teslim/HeroTabela";
 
 /**
  * The opened shop's light (spec §4.4 / §4.5, and the review that sent the
@@ -192,16 +192,16 @@ it("has no ground left that fails its floor UNLIT", () => {
 
 describe("the sign gives way to the name (§4.5)", () => {
   it("keeps a short name at the largest size", () => {
-    expect(heroTabelaBoyutu("MODA FIRIN", 340)).toBe(44);
+    expect(heroTabelaOlcusu("MODA FIRIN", 340).cizilenBoyut).toBe(44);
   });
 
   it("quietens a long one rather than truncating it", () => {
-    const uzun = heroTabelaBoyutu("BEŞİKTAŞ MANAV ALİ USTA", 340);
+    const uzun = heroTabelaOlcusu("BEŞİKTAŞ MANAV ALİ USTA", 340).cizilenBoyut;
     expect(uzun).toBeLessThan(44);
     expect(uzun).toBeGreaterThanOrEqual(22);
   });
 
   it("never goes below the floor, whatever the name", () => {
-    expect(heroTabelaBoyutu("YELDEĞİRMENİ PASTANESİ VE UNLU MAMULLERİ", 120)).toBe(22);
+    expect(heroTabelaOlcusu("YELDEĞİRMENİ PASTANESİ VE UNLU MAMULLERİ", 120).cizilenBoyut).toBe(22);
   });
 });

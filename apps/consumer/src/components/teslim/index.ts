@@ -3,7 +3,7 @@ export { AlisPenceresi } from "./AlisPenceresi";
 export { CanliSaat, NOTA_ACISI } from "./CanliSaat";
 export { DetayBasligi, DETAY_BANDI, detayTabelaBoyutu } from "./DetayBasligi";
 export { DurumEkrani, type DurumTuru } from "./DurumEkrani";
-export { HeroTabela, heroTabelaBoyutu } from "./HeroTabela";
+export { HeroTabela, heroTabelaOlcusu } from "./HeroTabela";
 export { KepenkKolu } from "./KepenkKolu";
 export { Kod } from "./Kod";
 export { TamKepenk, asmaKilit } from "./TamKepenk";
