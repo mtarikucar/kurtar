@@ -107,7 +107,7 @@
       "mutfak": "MUTFAK"
     },
     "acikTekil": "{{count}} dükkân açık",
-    "acikCok": "{{bolge}}'de {{count}} kepenk hâlâ açık",
+    "acikCok": "{{bolge}} {{count}} kepenk hâlâ açık",
     "kacirdiklarin": "KAÇIRDIKLARIN",
     "yukleniyor": "Kepenkler kalkıyor…",
     "bosGeceBaslik": "Bu civarda kepenkler indi.",
