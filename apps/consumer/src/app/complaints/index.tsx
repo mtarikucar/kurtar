@@ -32,10 +32,18 @@ export default function MyComplaintsScreen() {
       ) : complaintsQuery.isError && items.length === 0 ? (
         <PanelErrorState onRetry={() => complaintsQuery.refetch()} />
       ) : items.length === 0 ? (
+        // "…buradan bildirebilirsin" — so it has to be reportable from
+        // here. The screen had no route to /complaint/new at all: the
+        // only way to file was to back out to Profil and take the row
+        // above this one, on the support path a user reaches after a bad
+        // handover. Same key as that row, so the action keeps its name
+        // all the way through the flow.
         <PanelEmptyState
           icon="chatbubble-ellipses-outline"
           title={t("complaints.emptyTitle")}
           body={t("complaints.emptyBody")}
+          ctaLabel={t("profile.complaint")}
+          onPressCta={() => router.push("/complaint/new")}
         />
       ) : (
         <FlatList
