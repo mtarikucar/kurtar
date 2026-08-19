@@ -1,42 +1,73 @@
 import { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
 import { Screen } from "../../components/Screen";
 import { Button } from "../../components/Button";
+import { usePalet } from "../../design/theme";
+import { r, s, yazi } from "../../design/tokens";
 import { requestLocationPermission } from "../../lib/location";
 import { registerPushTokenIfPermitted } from "../../lib/push";
 
-type PermissionCardState = "idle" | "granted" | "denied";
+type IzinDurumu = "idle" | "granted" | "denied";
 
-function PermissionCard({
+/**
+ * One permission, as a pavement block: the card surface, the painted
+ * chassis, no shadow.
+ *
+ * A granted permission lights up in SODIUM, never in a green tick. Rescue
+ * — and every yes in this app — is expressed as light (§1.1 / §5.9), and
+ * the green checkmark this screen used to draw was the only green pixel
+ * in the whole product.
+ */
+function IzinKarti({
   icon,
   title,
   body,
-  state,
+  durum,
   onAllow,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   body: string;
-  state: PermissionCardState;
+  durum: IzinDurumu;
   onAllow: () => void;
 }) {
   const { t } = useTranslation();
+  const palet = usePalet();
+  const verildi = durum === "granted";
+
   return (
-    <View style={styles.card}>
+    <View
+      style={[
+        styles.kart,
+        {
+          backgroundColor: palet.yuzeyKaldirim,
+          borderColor: palet.kartCizgi,
+          borderWidth: palet.kartCizgiKalinlik,
+          borderTopWidth: 1,
+          borderBottomWidth: 1,
+          borderTopColor: verildi ? palet.sodyumDolgu : palet.kartUstIsik,
+          borderBottomColor: palet.kartAltTemas,
+        },
+      ]}
+    >
       <Ionicons
-        name={state === "granted" ? "checkmark-circle" : icon}
-        size={28}
-        color={state === "granted" ? colors.secondary[500] : colors.primary[500]}
+        name={verildi ? "checkmark-circle" : icon}
+        size={26}
+        color={verildi ? palet.sodyumYazi : palet.yaziSis}
       />
-      <Text style={styles.cardTitle}>{title}</Text>
-      <Text style={styles.cardBody}>{body}</Text>
-      {state === "idle" ? (
-        <Button label={t("auth.permissions.allow")} onPress={onAllow} variant="secondary" />
+      <Text style={[yazi.title, { color: palet.yaziAna }]}>{title}</Text>
+      <Text style={[yazi.body, { color: palet.yaziSis }]}>{body}</Text>
+      {durum === "idle" ? (
+        <Button
+          label={t("auth.permissions.allow")}
+          onPress={onAllow}
+          varyant="ikincil"
+          style={styles.izinDugmesi}
+        />
       ) : null}
     </View>
   );
@@ -44,29 +75,29 @@ function PermissionCard({
 
 /**
  * Priming screen: asks for location and notification permission with
- * honest, specific copy about WHY (brief's explicit requirement) before
- * the OS prompt itself appears — an OS permission dialog with no context
- * has a much higher denial rate than one preceded by an explanation.
- * Neither permission blocks continuing: denial is handled gracefully
- * everywhere downstream (district picker on Discover, no push token
- * registered — see registerPushTokenIfPermitted's own doc comment).
+ * honest, specific copy about WHY before the OS prompt itself appears —
+ * an OS permission dialog with no context has a much higher denial rate
+ * than one preceded by an explanation. Neither permission blocks
+ * continuing: denial is handled gracefully everywhere downstream (the
+ * district picker on Keşfet and Ara, no push token registered — see
+ * registerPushTokenIfPermitted's own doc comment).
  */
 export default function PermissionsScreen() {
   const { t } = useTranslation();
   const router = useRouter();
-  const [locationState, setLocationState] = useState<PermissionCardState>("idle");
-  const [notificationsState, setNotificationsState] =
-    useState<PermissionCardState>("idle");
+  const palet = usePalet();
+  const [konumDurumu, setKonumDurumu] = useState<IzinDurumu>("idle");
+  const [bildirimDurumu, setBildirimDurumu] = useState<IzinDurumu>("idle");
 
   const handleAllowLocation = async () => {
     const result = await requestLocationPermission();
-    setLocationState(result === "granted" ? "granted" : "denied");
+    setKonumDurumu(result === "granted" ? "granted" : "denied");
   };
 
   const handleAllowNotifications = async () => {
     const { status } = await Notifications.requestPermissionsAsync();
     const granted = status === "granted";
-    setNotificationsState(granted ? "granted" : "denied");
+    setBildirimDurumu(granted ? "granted" : "denied");
     if (granted) {
       await registerPushTokenIfPermitted();
     }
@@ -78,22 +109,27 @@ export default function PermissionsScreen() {
 
   return (
     <Screen>
-      <View style={styles.content}>
-        <Text style={styles.title}>{t("auth.permissions.title")}</Text>
+      <ScrollView
+        contentContainerStyle={styles.icerik}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>
+          {t("auth.permissions.title")}
+        </Text>
 
-        <PermissionCard
+        <IzinKarti
           icon="location-outline"
           title={t("auth.permissions.locationTitle")}
           body={t("auth.permissions.locationBody")}
-          state={locationState}
+          durum={konumDurumu}
           onAllow={handleAllowLocation}
         />
 
-        <PermissionCard
+        <IzinKarti
           icon="notifications-outline"
           title={t("auth.permissions.notificationsTitle")}
           body={t("auth.permissions.notificationsBody")}
-          state={notificationsState}
+          durum={bildirimDurumu}
           onAllow={handleAllowNotifications}
         />
 
@@ -101,39 +137,27 @@ export default function PermissionsScreen() {
           label={t("auth.permissions.continue")}
           onPress={handleContinue}
           testID="permissions-continue"
+          style={styles.devam}
         />
-      </View>
+      </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    flex: 1,
+  icerik: {
+    flexGrow: 1,
     justifyContent: "center",
-    gap: spacing.lg,
+    paddingVertical: s.s6,
+    gap: s.s4,
   },
-  title: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.neutral[900],
-    textAlign: "center",
+  baslik: { textAlign: "center" },
+  kart: {
+    borderRadius: r.card,
+    padding: s.s4,
+    gap: s.s2,
+    elevation: 0,
   },
-  card: {
-    backgroundColor: colors.neutral[0],
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.neutral[100],
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  cardTitle: {
-    fontSize: typeScale.h3.size,
-    fontWeight: typeScale.h3.weight,
-    color: colors.neutral[900],
-  },
-  cardBody: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[600],
-  },
+  izinDugmesi: { marginTop: s.s2 },
+  devam: { marginTop: s.s2 },
 });

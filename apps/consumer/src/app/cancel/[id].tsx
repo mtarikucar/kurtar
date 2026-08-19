@@ -3,18 +3,30 @@ import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, typeScale } from "@kurtar/ui-tokens";
 import { Screen } from "../../components/Screen";
 import { Button } from "../../components/Button";
 import { LoadingState } from "../../components/LoadingState";
 import { EmptyState } from "../../components/EmptyState";
+import { usePalet } from "../../design/theme";
+import { r, s, yazi } from "../../design/tokens";
 import { useReservations, useCancelReservation } from "../../hooks/use-reservations";
 import { formatClockTime } from "../../lib/format";
 import { getErrorMessage } from "../../lib/errors";
 
+/**
+ * İPTAL — give a package back.
+ *
+ * Awning red appears exactly twice, and both times as a FILL with
+ * `#12181F` ink on it (§1.1's non-negotiable rule): the destructive CTA,
+ * and the note that says the deadline has passed. Red is never loose type
+ * on a surface here — at night it is 4.38:1 on a card, and by day the
+ * ground is the wrong surface for it, so a single red-text treatment
+ * cannot survive the phase inversion at all.
+ */
 export default function CancelScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const palet = usePalet();
   const { id } = useLocalSearchParams<{ id: string }>();
   const reservationsQuery = useReservations();
   const cancelReservation = useCancelReservation();
@@ -33,7 +45,12 @@ export default function CancelScreen() {
   if (!reservation) {
     return (
       <Screen>
-        <EmptyState icon="alert-circle-outline" title={t("errors.RESERVATION_NOT_FOUND")} />
+        <EmptyState
+          icon="alert-circle-outline"
+          title={t("errors.RESERVATION_NOT_FOUND")}
+          ctaLabel={t("common.back")}
+          onPressCta={() => router.back()}
+        />
       </Screen>
     );
   }
@@ -53,72 +70,89 @@ export default function CancelScreen() {
 
   return (
     <Screen>
-      <View style={styles.content}>
-        <Ionicons name="warning-outline" size={40} color={colors.semantic.warning[500]} />
-        <Text style={styles.title}>{t("cancel.title")}</Text>
-        <Text style={styles.body}>{t("cancel.body")}</Text>
+      <View style={styles.icerik}>
+        <Ionicons name="warning-outline" size={36} color={palet.yaziSisZemin} />
+        <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>
+          {t("cancel.title")}
+        </Text>
+        <Text style={[yazi.body, styles.govde, { color: palet.yaziSisZemin }]}>
+          {t("cancel.body")}
+        </Text>
 
         {deadlinePassed ? (
-          <Text style={styles.warning}>{t("cancel.notCancellable")}</Text>
+          <View style={[styles.uyari, { backgroundColor: palet.tenteDolgu }]}>
+            <Text
+              style={[yazi.data, styles.uyariYazisi, { color: palet.tenteMurekkep }]}
+              maxFontSizeMultiplier={1.3}
+            >
+              {t("cancel.notCancellable")}
+            </Text>
+          </View>
         ) : (
-          <>
-            <Text style={styles.note}>{t("cancel.refundNote")}</Text>
-            <Text style={styles.deadline}>
+          <View style={[styles.not, { backgroundColor: palet.yuzeyKaldirim }]}>
+            <Text
+              style={[yazi.data, styles.uyariYazisi, { color: palet.yaziAna }]}
+              maxFontSizeMultiplier={1.3}
+            >
+              {t("cancel.refundNote")}
+            </Text>
+            <Text
+              style={[yazi.data, styles.uyariYazisi, { color: palet.yaziSis }]}
+              maxFontSizeMultiplier={1.3}
+            >
               {t("cancel.deadlineNote", { time: formatClockTime(deadline) })}
             </Text>
-          </>
+          </View>
         )}
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        {!deadlinePassed ? (
-          <Button
-            label={t("cancel.cta")}
-            variant="danger"
-            onPress={handleCancel}
-            loading={cancelReservation.isPending}
-          />
+        {error ? (
+          <View style={[styles.uyari, { backgroundColor: palet.tenteDolgu }]}>
+            <Text
+              style={[yazi.data, styles.uyariYazisi, { color: palet.tenteMurekkep }]}
+              maxFontSizeMultiplier={1.3}
+            >
+              {error}
+            </Text>
+          </View>
         ) : null}
-        <Button label={t("cancel.keepCta")} variant="ghost" onPress={() => router.back()} />
+
+        <View style={styles.eylemler}>
+          {!deadlinePassed ? (
+            <Button
+              label={t("cancel.cta")}
+              varyant="tehlike"
+              onPress={handleCancel}
+              loading={cancelReservation.isPending}
+            />
+          ) : null}
+          <Button label={t("cancel.keepCta")} varyant="ikincil" onPress={() => router.back()} />
+        </View>
       </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
+  icerik: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    gap: spacing.md,
+    gap: s.s3,
   },
-  title: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.neutral[900],
+  baslik: { textAlign: "center" },
+  govde: { textAlign: "center" },
+  not: {
+    alignSelf: "stretch",
+    borderRadius: r.card,
+    padding: s.s3,
+    gap: 2,
   },
-  body: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[600],
-    textAlign: "center",
+  uyari: {
+    alignSelf: "stretch",
+    borderRadius: r.plaque,
+    paddingHorizontal: s.s3,
+    paddingVertical: s.s2,
   },
-  note: {
-    fontSize: typeScale.caption.size,
-    color: colors.secondary[700],
-    textAlign: "center",
-  },
-  deadline: {
-    fontSize: typeScale.caption.size,
-    color: colors.neutral[500],
-  },
-  warning: {
-    fontSize: typeScale.body.size,
-    color: colors.semantic.danger[500],
-    textAlign: "center",
-  },
-  error: {
-    fontSize: typeScale.caption.size,
-    color: colors.semantic.danger[500],
-    textAlign: "center",
-  },
+  uyariYazisi: { textAlign: "center" },
+  eylemler: { alignSelf: "stretch", marginTop: s.s4, gap: s.s2 },
 });

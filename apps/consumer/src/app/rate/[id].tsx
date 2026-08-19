@@ -1,21 +1,32 @@
 import { useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, radii, spacing, typeScale } from "@kurtar/ui-tokens";
 import { Screen } from "../../components/Screen";
 import { Button } from "../../components/Button";
 import { StarRating } from "../../components/StarRating";
 import { LoadingState } from "../../components/LoadingState";
 import { EmptyState } from "../../components/EmptyState";
+import { usePalet } from "../../design/theme";
+import { r, s, yazi } from "../../design/tokens";
 import { useReservations, useRateReservation } from "../../hooks/use-reservations";
 import { getErrorMessage } from "../../lib/errors";
 import { KurtarApiError } from "@kurtar/api-client";
 
+/**
+ * DEĞERLENDİR — rate a redeemed order.
+ *
+ * A rating is light, so the lit stars are sodium and the thanks screen is
+ * a sodium mark rather than a coloured tick; there is no green anywhere
+ * in this app (§5.9). The comment box is the same recessed slot every
+ * other input in the app is, on the card surface with the painted
+ * chassis — never a white sheet.
+ */
 export default function RateScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const palet = usePalet();
   const { id } = useLocalSearchParams<{ id: string }>();
   const reservationsQuery = useReservations();
   const rateReservation = useRateReservation();
@@ -62,11 +73,19 @@ export default function RateScreen() {
   if (submitted) {
     return (
       <Screen>
-        <View style={styles.centered}>
-          <Ionicons name="heart" size={56} color={colors.primary[500]} />
-          <Text style={styles.title}>{t("rate.thanksTitle")}</Text>
-          <Text style={styles.body}>{t("rate.thanksBody")}</Text>
-          <Button label={t("common.ok")} onPress={() => router.replace("/(tabs)/orders")} />
+        <View style={styles.ortalanmis}>
+          <Ionicons name="heart" size={48} color={palet.sodyumYazi} />
+          <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>
+            {t("rate.thanksTitle")}
+          </Text>
+          <Text style={[yazi.body, styles.govde, { color: palet.yaziSisZemin }]}>
+            {t("rate.thanksBody")}
+          </Text>
+          <Button
+            label={t("common.ok")}
+            onPress={() => router.replace("/(tabs)/orders")}
+            style={styles.tamButonu}
+          />
         </View>
       </Screen>
     );
@@ -75,7 +94,12 @@ export default function RateScreen() {
   if (alreadyRated) {
     return (
       <Screen>
-        <EmptyState icon="star" title={t("rate.alreadyRated")} />
+        <EmptyState
+          icon="star"
+          title={t("rate.alreadyRated")}
+          ctaLabel={t("common.ok")}
+          onPressCta={() => router.replace("/(tabs)/orders")}
+        />
       </Screen>
     );
   }
@@ -83,47 +107,76 @@ export default function RateScreen() {
   if (!reservation || reservation.status !== "REDEEMED") {
     return (
       <Screen>
-        <EmptyState icon="alert-circle-outline" title={t("errors.RATING_NOT_ELIGIBLE")} />
+        <EmptyState
+          icon="alert-circle-outline"
+          title={t("errors.RATING_NOT_ELIGIBLE")}
+          ctaLabel={t("common.back")}
+          onPressCta={() => router.back()}
+        />
       </Screen>
     );
   }
 
   return (
     <Screen>
-      <View style={styles.content}>
-        <Text style={styles.title}>{t("rate.title")}</Text>
+      <ScrollView
+        contentContainerStyle={styles.icerik}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={[yazi.title, styles.ustBaslik, { color: palet.yaziAnaZemin }]}>
+          {t("rate.title")}
+        </Text>
 
-        <View style={styles.starRow}>
-          <Text style={styles.starLabel}>{t("rate.overall")}</Text>
+        <YildizSatiri etiket={t("rate.overall")}>
           <StarRating value={overallStars} onChange={setOverallStars} label={t("rate.overall")} />
-        </View>
+        </YildizSatiri>
 
-        <View style={styles.starRow}>
-          <Text style={styles.starLabel}>{t("rate.foodQuality")}</Text>
+        <YildizSatiri etiket={t("rate.foodQuality")}>
           <StarRating
             value={foodQuality}
             onChange={setFoodQuality}
             size={24}
             label={t("rate.foodQuality")}
           />
-        </View>
+        </YildizSatiri>
 
-        <View style={styles.starRow}>
-          <Text style={styles.starLabel}>{t("rate.service")}</Text>
-          <StarRating value={service} onChange={setService} size={24} label={t("rate.service")} />
-        </View>
+        <YildizSatiri etiket={t("rate.service")}>
+          <StarRating
+            value={service}
+            onChange={setService}
+            size={24}
+            label={t("rate.service")}
+          />
+        </YildizSatiri>
 
         <TextInput
-          style={styles.commentInput}
+          style={[
+            yazi.body,
+            styles.yorum,
+            {
+              backgroundColor: palet.yuzeyKaldirim,
+              borderColor: palet.cizgiKil,
+              borderTopColor: palet.kartUstIsik,
+              borderBottomColor: palet.kartAltTemas,
+              color: palet.yaziAna,
+            },
+          ]}
           placeholder={t("rate.commentPlaceholder")}
-          placeholderTextColor={colors.neutral[400]}
+          placeholderTextColor={palet.yaziSis}
           value={comment}
           onChangeText={setComment}
           multiline
           accessibilityLabel={t("rate.commentPlaceholder")}
         />
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? (
+          <View style={[styles.uyari, { backgroundColor: palet.tenteDolgu }]}>
+            <Text style={[yazi.data, { color: palet.tenteMurekkep }]} maxFontSizeMultiplier={1.3}>
+              {error}
+            </Text>
+          </View>
+        ) : null}
 
         <Button
           label={t("rate.submit")}
@@ -131,56 +184,54 @@ export default function RateScreen() {
           disabled={overallStars === 0}
           loading={rateReservation.isPending}
         />
-        <Button label={t("rate.skip")} variant="ghost" onPress={() => router.back()} />
-      </View>
+        <Button label={t("rate.skip")} varyant="hayalet" onPress={() => router.back()} />
+      </ScrollView>
     </Screen>
   );
 }
 
+function YildizSatiri({ etiket, children }: { etiket: string; children: React.ReactNode }) {
+  const palet = usePalet();
+  return (
+    <View style={styles.yildizSatiri}>
+      <Text style={[yazi.label, { color: palet.yaziSisZemin }]} maxFontSizeMultiplier={1.4}>
+        {etiket}
+      </Text>
+      {children}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  content: {
-    flex: 1,
+  icerik: {
+    flexGrow: 1,
     justifyContent: "center",
-    gap: spacing.lg,
+    paddingVertical: s.s6,
+    gap: s.s4,
   },
-  centered: {
+  ortalanmis: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: spacing.md,
+    gap: s.s3,
   },
-  title: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.neutral[900],
-    textAlign: "center",
-  },
-  body: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[600],
-    textAlign: "center",
-  },
-  starRow: {
-    alignItems: "center",
-    gap: spacing.xs,
-  },
-  starLabel: {
-    fontSize: typeScale.label.size,
-    color: colors.neutral[600],
-  },
-  commentInput: {
+  ustBaslik: { textAlign: "center" },
+  baslik: { textAlign: "center" },
+  govde: { textAlign: "center" },
+  tamButonu: { marginTop: s.s4, alignSelf: "stretch" },
+  yildizSatiri: { alignItems: "center", gap: s.s1 },
+  yorum: {
     minHeight: 88,
     borderWidth: 1,
-    borderColor: colors.neutral[200],
-    borderRadius: radii.md,
-    padding: spacing.md,
-    fontSize: typeScale.body.size,
-    color: colors.neutral[900],
+    borderRadius: r.card,
+    padding: s.s4,
     textAlignVertical: "top",
+    elevation: 0,
   },
-  error: {
-    fontSize: typeScale.caption.size,
-    color: colors.semantic.danger[500],
-    textAlign: "center",
+  uyari: {
+    alignSelf: "center",
+    borderRadius: r.plaque,
+    paddingHorizontal: s.s3,
+    paddingVertical: s.s2,
   },
 });

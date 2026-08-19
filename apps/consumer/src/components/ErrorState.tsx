@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, typeScale } from "@kurtar/ui-tokens";
 import { useTranslation } from "react-i18next";
+import { usePalet } from "../design/theme";
+import { s, yazi } from "../design/tokens";
 import { Button } from "./Button";
 
 interface ErrorStateProps {
@@ -10,44 +11,42 @@ interface ErrorStateProps {
   onRetry?: () => void;
 }
 
-/** Shared error-state layout with a retry CTA — used whenever a query
- * fails outright (as opposed to a business-rule empty result, which uses
- * EmptyState instead). */
+/**
+ * A failed query, on the ground's own inks and with a retry that is the
+ * page's primary action — the user is stuck and the only thing worth
+ * offering is the way out. Used whenever a query fails outright, as
+ * opposed to a business-rule empty result, which uses EmptyState.
+ */
 export function ErrorState({ title, body, onRetry }: ErrorStateProps) {
   const { t } = useTranslation();
+  const palet = usePalet();
   return (
-    <View style={styles.container}>
-      <Ionicons name="cloud-offline-outline" size={40} color={colors.semantic.danger[500]} />
-      <Text style={styles.title}>{title ?? t("discover.errorTitle")}</Text>
-      <Text style={styles.body}>{body ?? t("discover.errorBody")}</Text>
+    <View style={styles.kap}>
+      <Ionicons name="cloud-offline-outline" size={36} color={palet.yaziSisZemin} />
+      <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>
+        {title ?? t("discover.errorTitle")}
+      </Text>
+      <Text style={[yazi.body, styles.govde, { color: palet.yaziSisZemin }]}>
+        {body ?? t("discover.errorBody")}
+      </Text>
       {onRetry ? (
-        <Button label={t("common.retry")} onPress={onRetry} style={styles.cta} />
+        <View style={styles.cta}>
+          <Button label={t("common.retry")} onPress={onRetry} />
+        </View>
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  kap: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing["2xl"],
-    gap: spacing.sm,
+    paddingHorizontal: s.s8,
+    gap: s.s2,
   },
-  title: {
-    fontSize: typeScale.h3.size,
-    fontWeight: typeScale.h3.weight,
-    color: colors.neutral[900],
-    textAlign: "center",
-    marginTop: spacing.sm,
-  },
-  body: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[600],
-    textAlign: "center",
-  },
-  cta: {
-    marginTop: spacing.md,
-  },
+  baslik: { textAlign: "center", marginTop: s.s2 },
+  govde: { textAlign: "center" },
+  cta: { marginTop: s.s4, alignSelf: "stretch" },
 });

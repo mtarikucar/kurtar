@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, typeScale } from "@kurtar/ui-tokens";
 import type { ComponentProps } from "react";
+import { usePalet } from "../design/theme";
+import { s, yazi } from "../design/tokens";
 import { Button } from "./Button";
 
 interface EmptyStateProps {
@@ -12,9 +13,21 @@ interface EmptyStateProps {
   onPressCta?: () => void;
 }
 
-/** Shared empty-state layout — every list screen (discovery, search,
- * favorites, orders) renders one of these instead of a blank view, always
- * with Turkish copy that tells the user what to do next. */
+/**
+ * An empty screen is an invitation to act, so every caller that HAS
+ * somewhere to send the user passes a CTA — a state that explains and
+ * then stops is the defect this component kept re-shipping.
+ *
+ * It draws its type on the STREET ground (`yaziAnaZemin`/`yaziSisZemin`),
+ * because `Screen` paints the phase's asphalt under it and the card inks
+ * do not survive there in every phase.
+ *
+ * Deliberately NOT the closed-shutter picture: that belongs to the street
+ * itself (`kesif/BosSokak`, `teslim/DurumEkrani`), where "nothing is
+ * open" is the actual fact. Here the fact is usually about the user — no
+ * favourites yet, nothing typed, already rated — and drawing a shuttered
+ * shopfront over it would say something untrue.
+ */
 export function EmptyState({
   icon = "leaf-outline",
   title,
@@ -22,44 +35,32 @@ export function EmptyState({
   ctaLabel,
   onPressCta,
 }: EmptyStateProps) {
+  const palet = usePalet();
   return (
-    <View style={styles.container}>
-      <Ionicons name={icon} size={40} color={colors.neutral[400]} />
-      <Text style={styles.title}>{title}</Text>
-      {body ? <Text style={styles.body}>{body}</Text> : null}
+    <View style={styles.kap}>
+      <Ionicons name={icon} size={36} color={palet.yaziSisZemin} />
+      <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>{title}</Text>
+      {body ? (
+        <Text style={[yazi.body, styles.govde, { color: palet.yaziSisZemin }]}>{body}</Text>
+      ) : null}
       {ctaLabel && onPressCta ? (
-        <Button
-          label={ctaLabel}
-          onPress={onPressCta}
-          variant="secondary"
-          style={styles.cta}
-        />
+        <View style={styles.cta}>
+          <Button label={ctaLabel} onPress={onPressCta} varyant="ikincil" />
+        </View>
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  kap: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: spacing["2xl"],
-    gap: spacing.sm,
+    paddingHorizontal: s.s8,
+    gap: s.s2,
   },
-  title: {
-    fontSize: typeScale.h3.size,
-    fontWeight: typeScale.h3.weight,
-    color: colors.neutral[900],
-    textAlign: "center",
-    marginTop: spacing.sm,
-  },
-  body: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[600],
-    textAlign: "center",
-  },
-  cta: {
-    marginTop: spacing.md,
-  },
+  baslik: { textAlign: "center", marginTop: s.s2 },
+  govde: { textAlign: "center" },
+  cta: { marginTop: s.s4, alignSelf: "stretch" },
 });

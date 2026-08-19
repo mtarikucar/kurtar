@@ -46,10 +46,24 @@ export interface Palet {
   readonly metalKoyu: string;
   readonly metalDudak: string;
 
-  /** All primary type. */
+  /** All primary type ON A CARD / PANEL surface (`yuzeyKaldirim`,
+   * `yuzeyYukselti`). */
   readonly yaziAna: string;
-  /** All secondary type. */
+  /** All secondary type on a card / panel surface. */
   readonly yaziSis: string;
+
+  /**
+   * The same two inks, for type drawn on the STREET GROUND (`bgAsfalt`,
+   * `bgDerin`) rather than on an object standing on it.
+   *
+   * Two grounds means two inks: a screen title, a field label or an empty
+   * state's body sits on the asphalt, not on a shopfront, and the phase
+   * that inverts the light source inverts which ink survives there.
+   * design-contrast.test.ts holds both to 4.5:1 against `bgAsfalt` in
+   * every phase.
+   */
+  readonly yaziAnaZemin: string;
+  readonly yaziSisZemin: string;
 
   /** Sodium as a FILL (CTA, value bar, lit dots) — the same #FFB23F in
    * every phase, because a lit sodium lamp is the same colour at noon. */
@@ -146,6 +160,10 @@ const GECE: Palet = Object.freeze({
   metalDudak: "#2A3330",
   yaziAna: "#F2E6CE",
   yaziSis: "#9FB0AC",
+  // At night the ground is the darkest thing on screen, so the card inks
+  // are already the ground inks: identical values, deliberately.
+  yaziAnaZemin: "#F2E6CE",
+  yaziSisZemin: "#9FB0AC",
   sodyumDolgu: "#FFB23F",
   sodyumYazi: "#FFB23F",
   sodyumMurekkep: "#12181F",
@@ -198,6 +216,8 @@ const GUNDUZ: Palet = Object.freeze({
   metalDudak: "#2A3330",
   yaziAna: "#12181F",
   yaziSis: "#4B5A58",
+  yaziAnaZemin: "#12181F",
+  yaziSisZemin: "#4B5A58",
   sodyumDolgu: "#FFB23F",
   sodyumYazi: "#8A4A05",
   sodyumMurekkep: "#12181F",
@@ -257,6 +277,11 @@ const ALACAKARANLIK: Palet = Object.freeze({
   metalDudak: "#2A3330",
   yaziAna: "#12181F",
   yaziSis: "#4B5A58",
+  // PLACEHOLDER. #4B5A58 is 1.93:1 on this ground, so twilight has no
+  // second ground ink at all and both roles collapse onto the primary
+  // one until the ground itself is re-measured.
+  yaziAnaZemin: "#12181F",
+  yaziSisZemin: "#12181F",
   sodyumDolgu: "#FFB23F",
   sodyumYazi: "#8A4A05",
   sodyumMurekkep: "#12181F",

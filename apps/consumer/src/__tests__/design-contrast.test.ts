@@ -1,4 +1,4 @@
-import { kontrastOrani } from "../design/kontrast";
+import { kontrastOrani, parlaklik } from "../design/kontrast";
 import { PALETLER, type Faz, type Palet } from "../design/tokens";
 
 /**
@@ -24,8 +24,18 @@ describe.each(FAZLAR)("%s palette floors", (ad) => {
 
   it.each([
     ["primary type on the card", () => kontrastOrani(p.yaziAna, p.yuzeyKaldirim)],
-    ["primary type on the ground", () => kontrastOrani(p.yaziAna, p.bgAsfalt)],
+    ["primary type on the ground", () => kontrastOrani(p.yaziAnaZemin, p.bgAsfalt)],
+    ["secondary type on the ground", () => kontrastOrani(p.yaziSisZemin, p.bgAsfalt)],
     ["secondary type on the card", () => kontrastOrani(p.yaziSis, p.yuzeyKaldirim)],
+    // The tab bar is the one chrome element on every screen (§1.1 puts it
+    // on `surface.yukselti` alongside the sheets and the sticky CTA bar).
+    ["the lit tab", () => kontrastOrani(p.sodyumYazi, p.yuzeyYukselti)],
+    ["an unlit tab", () => kontrastOrani(p.yaziSis, p.yuzeyYukselti)],
+    ["a sheet's own type", () => kontrastOrani(p.yaziAna, p.yuzeyYukselti)],
+    // A text field is the card surface cut into the street: what a user
+    // types, and the placeholder telling them what to type.
+    ["what you type in a field", () => kontrastOrani(p.yaziAna, p.yuzeyKaldirim)],
+    ["a field's placeholder", () => kontrastOrani(p.yaziSis, p.yuzeyKaldirim)],
     ["sodium type on the card", () => kontrastOrani(p.sodyumYazi, p.yuzeyKaldirim)],
     ["ink on a sodium fill", () => kontrastOrani(p.sodyumMurekkep, p.sodyumDolgu)],
     ["ink on an awning-red fill", () => kontrastOrani(p.tenteMurekkep, p.tenteDolgu)],
@@ -42,8 +52,24 @@ describe.each(FAZLAR)("%s palette floors", (ad) => {
   it.each([
     ["a lit stock square on the card", () => kontrastOrani(p.stokIsik, p.yuzeyKaldirim)],
     ["the shutter against the card", () => kontrastOrani(p.metalCinko, p.plakaZemin)],
+    // A focused field and an erroring field are DISCRETE state changes on
+    // the field's own border, never a glow (§1.3/§5.10) — so each one has
+    // to be visible as an object against the surface it rims.
+    ["a focused field's border", () => kontrastOrani(p.sodyumYazi, p.yuzeyKaldirim)],
+    ["an erroring field's border", () => kontrastOrani(p.tenteYazi, p.yuzeyKaldirim)],
   ])("%s clears 3:1", (_ad, olc) => {
     expect(olc()).toBeGreaterThanOrEqual(GRAFIK_TABANI);
+  });
+
+  it("separates the tab bar from the ground it sits over", () => {
+    // Same doctrine as the card, and for the same reason: the tab bar
+    // takes `surface.yukselti` and is told apart by a painted contact
+    // edge (`bg.derin`, the darkest thing in every phase), never by a
+    // shadow — so what has to hold is that the edge is genuinely darker
+    // than both the shelf and the street, not that the two surfaces
+    // differ loudly.
+    expect(parlaklik(p.bgDerin)).toBeLessThan(parlaklik(p.yuzeyYukselti));
+    expect(parlaklik(p.bgDerin)).toBeLessThanOrEqual(parlaklik(p.bgAsfalt));
   });
 
   it("separates the card from the ground it sits on", () => {
@@ -151,5 +177,60 @@ describe("no green anywhere in the palette (§1.1 / §5.9)", () => {
       const yesillik = g - Math.max(r, b);
       expect(yesillik).toBeLessThan(12);
     }
+  });
+});
+
+/**
+ * The street has two grounds and therefore two inks.
+ *
+ * `yaziAna`/`yaziSis` are the inks for type on a CARD or PANEL surface;
+ * `yaziAnaZemin`/`yaziSisZemin` are the inks for type drawn straight onto
+ * the asphalt — a screen title, a field's label, an empty state's body.
+ * Reading the card inks onto the ground is exactly what left the Ara and
+ * Favoriler titles as dark ink on a near-black street.
+ */
+describe("the ground inks", () => {
+  it.each(FAZLAR)("%s keeps the card ink and the ground ink separable roles", (ad) => {
+    const p = PALETLER[ad];
+    expect(kontrastOrani(p.yaziAnaZemin, p.bgAsfalt)).toBeGreaterThanOrEqual(YAZI_TABANI);
+    expect(kontrastOrani(p.yaziSisZemin, p.bgAsfalt)).toBeGreaterThanOrEqual(YAZI_TABANI);
+  });
+
+  it("changes nothing at night, where the ground is already the darkest thing on screen", () => {
+    const gece = PALETLER.gece;
+    expect(gece.yaziAnaZemin).toBe(gece.yaziAna);
+    expect(gece.yaziSisZemin).toBe(gece.yaziSis);
+  });
+
+  it("is a real fix and not a rename: the card ink genuinely fails on the ground", () => {
+    // Twilight is the phase that forced this: #4B5A58 on #7A868C is
+    // 1.93:1, i.e. invisible, and it is the ink every unconverted screen
+    // was drawing its secondary copy in.
+    const ara = PALETLER.alacakaranlik;
+    expect(kontrastOrani(ara.yaziSis, ara.bgAsfalt)).toBeLessThan(YAZI_TABANI);
+  });
+});
+
+/**
+ * §1.1's non-negotiable rule, applied to the surfaces this app puts an
+ * alarm on: awning red is a FILL with `#12181F` ink on it, so the
+ * erroring field's message, the passed cancel deadline and a failed
+ * mutation all read at full contrast in every phase — which loose red
+ * type cannot, because the one surface it is legal on moves between
+ * phases (`tenteYaziZemini`).
+ */
+describe("the alarm strip", () => {
+  it.each(FAZLAR)("%s reads at full contrast", (ad) => {
+    const p = PALETLER[ad];
+    expect(kontrastOrani(p.tenteMurekkep, p.tenteDolgu)).toBeGreaterThanOrEqual(YAZI_TABANI);
+  });
+
+  it("is a fill because loose red type cannot survive both grounds", () => {
+    expect(
+      kontrastOrani(PALETLER.gunduz.tenteYazi, PALETLER.gunduz.bgAsfalt),
+    ).toBeLessThan(YAZI_TABANI);
+    expect(
+      kontrastOrani(PALETLER.gece.tenteYazi, PALETLER.gece.yuzeyKaldirim),
+    ).toBeLessThan(YAZI_TABANI);
   });
 });

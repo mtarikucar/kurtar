@@ -142,7 +142,9 @@
     "emptyTitle": "Sonuç yok",
     "emptyBody": "\"{{query}}\" için bir şey bulamadık. Farklı bir kelime dene.",
     "prompt": "Ne aramak istersin?",
-    "promptBody": "Bir paket ya da mağaza adı yaz, ya da bir kategori seç."
+    "promptBody": "Bir paket ya da mağaza adı yaz, ya da bir kategori seç.",
+    "emptyCta": "Yakındaki paketlere bak",
+    "emptyKategoriBody": "Bu kategoride açık paket bulamadık. Başka bir kategori seç ya da bir ad yaz."
   },
   "favorites": {
     "title": "Favoriler",
@@ -153,7 +155,8 @@
     "removeConfirmTitle": "Favorilerden kaldır?",
     "removeConfirmBody": "{{name}} favorilerinden kaldırılacak.",
     "addedToast": "Favorilere eklendi",
-    "removedToast": "Favorilerden kaldırıldı"
+    "removedToast": "Favorilerden kaldırıldı",
+    "emptyCta": "Dükkânlara göz at"
   },
   "orders": {
     "title": "Siparişler",

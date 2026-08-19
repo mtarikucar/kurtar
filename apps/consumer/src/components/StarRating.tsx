@@ -1,48 +1,68 @@
 import { Pressable, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors } from "@kurtar/ui-tokens";
+import { usePalet } from "../design/theme";
+import { m, s } from "../design/tokens";
 
 interface StarRatingProps {
   value: number;
   onChange?: (value: number) => void;
   size?: number;
   label: string;
+  /** Set when the row sits on a card rather than on the street, so the
+   * unlit stars take the card's secondary ink instead of the ground's. */
+  kartUstunde?: boolean;
 }
 
-/** Interactive when `onChange` is passed (the rating screen), read-only
- * display otherwise (store profile / offer detail rating summary). Each
- * star is its own 44pt-tall touch target with a distinct accessibility
- * label ("2 yıldız ver") rather than one opaque 5-star strip. */
-export function StarRating({ value, onChange, size = 32, label }: StarRatingProps) {
-  const stars = [1, 2, 3, 4, 5];
+/**
+ * A rating is light: a lit star is sodium, an unlit one is the mist ink,
+ * and neither is ever a second hue. Interactive when `onChange` is passed
+ * (the rating screen), a read-only display otherwise (store profile).
+ *
+ * Each star is its own 44pt touch target with a distinct accessibility
+ * label ("2 yıldız ver") rather than one opaque 5-star strip.
+ */
+export function StarRating({
+  value,
+  onChange,
+  size = 32,
+  label,
+  kartUstunde = false,
+}: StarRatingProps) {
+  const palet = usePalet();
+  const yildizlar = [1, 2, 3, 4, 5];
+  const sonuk = kartUstunde ? palet.yaziSis : palet.yaziSisZemin;
+
   return (
     <View
-      style={styles.row}
+      style={styles.satir}
       accessibilityRole={onChange ? "adjustable" : "text"}
       accessibilityLabel={`${label}: ${value}/5`}
     >
-      {stars.map((star) =>
+      {yildizlar.map((yildiz) =>
         onChange ? (
           <Pressable
-            key={star}
-            onPress={() => onChange(star)}
+            key={yildiz}
+            onPress={() => onChange(yildiz)}
             accessibilityRole="button"
-            accessibilityLabel={`${star} yıldız ver`}
+            accessibilityLabel={`${yildiz} yıldız ver`}
             hitSlop={6}
-            style={styles.touchTarget}
+            style={({ pressed }) => [
+              styles.hedef,
+              pressed ? { opacity: m.pressOpacity } : null,
+            ]}
           >
             <Ionicons
-              name={star <= value ? "star" : "star-outline"}
+              name={yildiz <= value ? "star" : "star-outline"}
               size={size}
-              color={colors.primary[500]}
+              color={yildiz <= value ? palet.sodyumYazi : sonuk}
             />
           </Pressable>
         ) : (
           <Ionicons
-            key={star}
-            name={star <= value ? "star" : "star-outline"}
+            key={yildiz}
+            name={yildiz <= value ? "star" : "star-outline"}
             size={size}
-            color={colors.primary[500]}
+            color={yildiz <= value ? palet.sodyumYazi : sonuk}
           />
         ),
       )}
@@ -51,11 +71,8 @@ export function StarRating({ value, onChange, size = 32, label }: StarRatingProp
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    gap: 4,
-  },
-  touchTarget: {
+  satir: { flexDirection: "row", gap: s.s1 },
+  hedef: {
     minWidth: 44,
     minHeight: 44,
     alignItems: "center",

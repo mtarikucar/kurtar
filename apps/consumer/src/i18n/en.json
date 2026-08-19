@@ -142,7 +142,9 @@
     "emptyTitle": "No results",
     "emptyBody": "We couldn't find anything for \"{{query}}\". Try a different word.",
     "prompt": "What are you looking for?",
-    "promptBody": "Type a bag or store name, or pick a category."
+    "promptBody": "Type a bag or store name, or pick a category.",
+    "emptyCta": "Browse nearby packages",
+    "emptyKategoriBody": "No open packages in this category. Pick another one, or type a name."
   },
   "favorites": {
     "title": "Favorites",
@@ -153,7 +155,8 @@
     "removeConfirmTitle": "Remove from favorites?",
     "removeConfirmBody": "{{name}} will be removed from your favorites.",
     "addedToast": "Added to favorites",
-    "removedToast": "Removed from favorites"
+    "removedToast": "Removed from favorites",
+    "emptyCta": "Browse shops"
   },
   "orders": {
     "title": "Orders",

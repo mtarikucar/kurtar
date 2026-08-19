@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
-import { colors, spacing, typeScale } from "@kurtar/ui-tokens";
 import { Screen } from "../../components/Screen";
+import { GirisCephesi } from "../../components/GirisCephesi";
 import { TextField } from "../../components/TextField";
 import { Button } from "../../components/Button";
+import { usePalet } from "../../design/theme";
+import { r, s, yazi } from "../../design/tokens";
 import { useAuth } from "../../lib/auth-context";
 import { classifyOtpRequestError, getErrorMessage } from "../../lib/errors";
 import { KurtarApiError } from "@kurtar/api-client";
@@ -26,6 +28,7 @@ const RESEND_COOLDOWN_SECONDS = 60;
 export default function OtpScreen() {
   const { t } = useTranslation();
   const router = useRouter();
+  const palet = usePalet();
   const { phone: phoneParam } = useLocalSearchParams<{ phone: string }>();
   const phone = phoneParam ?? "";
   const { verifyOtp, requestOtp } = useAuth();
@@ -121,80 +124,116 @@ export default function OtpScreen() {
 
   return (
     <Screen>
-      <View style={styles.content}>
-        <Text style={styles.title}>{t("auth.otp.title")}</Text>
-        <Text style={styles.subtitle}>
+      <ScrollView
+        contentContainerStyle={styles.icerik}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <GirisCephesi />
+
+        <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>
+          {t("auth.otp.title")}
+        </Text>
+        <Text style={[yazi.body, { color: palet.yaziSisZemin }]}>
           {t("auth.otp.subtitle", { phone })}
         </Text>
 
-        <TextField
-          label={t("auth.otp.title")}
-          value={code}
-          onChangeText={(value) => {
-            setCode(value.replace(/\D/g, "").slice(0, 6));
-            if (verifyError) setVerifyError(null);
-          }}
-          keyboardType="number-pad"
-          autoComplete="sms-otp"
-          textContentType="oneTimeCode"
-          maxLength={6}
-          error={verifyError ?? undefined}
-          testID="otp-input"
-        />
+        <View style={styles.form}>
+          {/* The six digits are set in the same mono face, at the same
+              tracking, as the four the merchant reads off the redeem
+              screen — a code is a fact from a machine either way, and the
+              two screens are the only places in the app where digits are
+              the whole content. */}
+          <TextField
+            label={t("auth.otp.title")}
+            etiketGizli
+            value={code}
+            onChangeText={(value) => {
+              setCode(value.replace(/\D/g, "").slice(0, 6));
+              if (verifyError) setVerifyError(null);
+            }}
+            keyboardType="number-pad"
+            autoComplete="sms-otp"
+            textContentType="oneTimeCode"
+            maxLength={6}
+            error={verifyError ?? undefined}
+            style={styles.kodGirisi}
+            testID="otp-input"
+          />
 
-        <Button
-          label={t("auth.otp.verify")}
-          onPress={handleVerify}
-          loading={verifying}
-          disabled={code.length !== 6}
-          testID="otp-verify"
-        />
+          <Button
+            label={t("auth.otp.verify")}
+            onPress={handleVerify}
+            loading={verifying}
+            disabled={code.length !== 6}
+            testID="otp-verify"
+          />
+        </View>
 
-        {resendNotice ? <Text style={styles.notice}>{resendNotice}</Text> : null}
+        {/* A resend notice is information, not an alarm — so it is a
+            note on the card surface rather than a red fill, which this
+            app reserves for the thing that is actually running out. The
+            wrong-code case is the alarm, and it lives on the field. */}
+        {resendNotice ? (
+          <View style={[styles.not, { backgroundColor: palet.yuzeyKaldirim }]}>
+            <Text
+              style={[yazi.data, styles.notYazisi, { color: palet.yaziSis }]}
+              maxFontSizeMultiplier={1.3}
+            >
+              {resendNotice}
+            </Text>
+          </View>
+        ) : null}
 
-        <Button
-          label={
-            locked
-              ? t("auth.otp.lockout")
-              : canResend
-                ? t("auth.otp.resend")
-                : t("auth.otp.resendIn", { seconds: cooldownRemaining })
-          }
-          onPress={handleResend}
-          variant="ghost"
-          disabled={!canResend}
-          loading={resending}
-          testID="otp-resend"
-        />
+        <View style={styles.ikincilEylemler}>
+          <Button
+            label={
+              locked
+                ? t("auth.otp.lockout")
+                : canResend
+                  ? t("auth.otp.resend")
+                  : t("auth.otp.resendIn", { seconds: cooldownRemaining })
+            }
+            onPress={handleResend}
+            varyant="hayalet"
+            disabled={!canResend}
+            loading={resending}
+            testID="otp-resend"
+          />
 
-        <Button
-          label={t("auth.otp.changeNumber")}
-          onPress={() => router.back()}
-          variant="ghost"
-        />
-      </View>
+          <Button
+            label={t("auth.otp.changeNumber")}
+            onPress={() => router.back()}
+            varyant="hayalet"
+          />
+        </View>
+      </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    flex: 1,
+  icerik: {
+    flexGrow: 1,
     justifyContent: "center",
-    gap: spacing.lg,
+    paddingVertical: s.s6,
+    gap: s.s3,
   },
-  title: {
-    fontSize: typeScale.h1.size,
-    fontWeight: typeScale.h1.weight,
-    color: colors.neutral[900],
-  },
-  subtitle: {
-    fontSize: typeScale.body.size,
-    color: colors.neutral[600],
-  },
-  notice: {
-    fontSize: typeScale.caption.size,
-    color: colors.semantic.info[500],
+  baslik: { marginTop: s.s5 },
+  form: { marginTop: s.s3, gap: s.s4 },
+  kodGirisi: {
+    fontFamily: "ChivoMono_700Bold",
+    fontSize: 26,
+    lineHeight: 34,
+    letterSpacing: 8,
     textAlign: "center",
   },
+  not: {
+    alignSelf: "center",
+    borderRadius: r.plaque,
+    paddingHorizontal: s.s3,
+    paddingVertical: s.s2,
+  },
+  notYazisi: { textAlign: "center" },
+  ikincilEylemler: { marginTop: s.s2, gap: s.s2 },
 });
