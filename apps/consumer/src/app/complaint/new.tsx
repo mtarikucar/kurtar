@@ -56,7 +56,7 @@ export default function NewComplaintScreen() {
       <PanelScreen>
         <View style={styles.ortali}>
           <Ionicons name="checkmark-circle" size={56} color={palet.sodyumDolgu} />
-          <Text style={[yazi.body, styles.gonderildiMetni, { color: palet.yaziAna }]}>
+          <Text style={[yazi.body, styles.gonderildiMetni, { color: palet.yaziAnaZemin }]}>
             {t("complaint.submitted")}
           </Text>
           <PanelButton label={t("common.ok")} onPress={() => router.back()} />
@@ -75,7 +75,7 @@ export default function NewComplaintScreen() {
       />
 
       <ScrollView contentContainerStyle={styles.icerik}>
-        <Text style={[yazi.label, { color: palet.yaziSis }]}>{t("complaint.category")}</Text>
+        <Text style={[yazi.label, { color: palet.yaziSisZemin }]}>{t("complaint.category")}</Text>
         <View style={styles.cipSatiri}>
           {CATEGORIES.map((c) => (
             <PanelChip

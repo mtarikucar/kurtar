@@ -50,10 +50,10 @@ export default function VitrinIncelemeEkrani() {
     <SafeAreaView style={[styles.kok, { backgroundColor: gece.bgAsfalt }]} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.icerik}>
         <View style={styles.baslikAlani}>
-          <Text style={[yazi.tabelaXl, { color: gece.yaziAna }]}>
+          <Text style={[yazi.tabelaXl, { color: gece.yaziAnaZemin }]}>
             {t("vitrinInceleme.baslik")}
           </Text>
-          <Text style={[yazi.data, styles.altBaslik, { color: gece.yaziSis }]}>
+          <Text style={[yazi.data, styles.altBaslik, { color: gece.yaziSisZemin }]}>
             {t("vitrinInceleme.altBaslik")}
           </Text>
         </View>
@@ -86,7 +86,7 @@ function ParcaSeridi() {
             {desenler.map((desen) => (
               <View key={desen.ad} style={styles.tenteOrnek}>
                 <Tente genislik={96} yukseklik={10} desen={desen} />
-                <Text style={[yazi.micro, { color: palet.yaziSis }]}>{desen.ad}</Text>
+                <Text style={[yazi.micro, { color: palet.yaziSisZemin }]}>{desen.ad}</Text>
               </View>
             ))}
           </View>
@@ -132,8 +132,8 @@ function ParcaSeridi() {
 
           <AltEtiket metin={t("vitrinInceleme.cubuklar")} palet={palet} />
           <View style={styles.cubukAlani}>
-            <DegerCubugu oran={degerOrani(18000, 30000, 14900)} palet={palet} />
-            <DegerCubugu oran={degerOrani(15000, 22000, 6900)} palet={palet} />
+            <DegerCubugu oran={degerOrani(18000, 30000, 14900)} palet={palet} zemin="sokak" />
+            <DegerCubugu oran={degerOrani(15000, 22000, 6900)} palet={palet} zemin="sokak" />
           </View>
         </View>
       </ThemeProvider>
@@ -225,13 +225,13 @@ function anaGore(teklif: VitrinTeklifi, an: IncelemeAni): VitrinTeklifi {
 
 function Etiket({ metin, palet }: { metin: string; palet: Palet }) {
   return (
-    <Text style={[yazi.label, styles.etiket, { color: palet.yaziAna }]}>{metin}</Text>
+    <Text style={[yazi.label, styles.etiket, { color: palet.yaziAnaZemin }]}>{metin}</Text>
   );
 }
 
 function AltEtiket({ metin, palet }: { metin: string; palet: Palet }) {
   return (
-    <Text style={[yazi.data, styles.altEtiket, { color: palet.yaziSis }]}>{metin}</Text>
+    <Text style={[yazi.data, styles.altEtiket, { color: palet.yaziSisZemin }]}>{metin}</Text>
   );
 }
 

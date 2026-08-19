@@ -35,7 +35,7 @@ export function SokakSatiri({
       <View style={styles.spine}>
         {mesafeM !== null ? (
           <Text
-            style={[yazi.data, styles.etiket, { color: palet.yaziSis }]}
+            style={[yazi.data, styles.etiket, { color: palet.yaziSisZemin }]}
             numberOfLines={1}
             maxFontSizeMultiplier={1.3}
           >

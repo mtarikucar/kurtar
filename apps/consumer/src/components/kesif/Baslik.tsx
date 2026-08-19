@@ -36,14 +36,14 @@ export function Baslik({
         style={({ pressed }) => [styles.konum, pressed ? { opacity: 0.7 } : null]}
       >
         <Ionicons name="location" size={16} color={palet.sodyumDolgu} />
-        <Text style={[yazi.title, { color: palet.yaziAna }]} numberOfLines={1}>
+        <Text style={[yazi.title, { color: palet.yaziAnaZemin }]} numberOfLines={1}>
           {trUpper(bolgeAdi)}
         </Text>
-        <Ionicons name="chevron-down" size={14} color={palet.yaziSis} />
+        <Ionicons name="chevron-down" size={14} color={palet.yaziSisZemin} />
       </Pressable>
 
       <Text
-        style={[yazi.data, { color: palet.yaziSis }]}
+        style={[yazi.data, { color: palet.yaziSisZemin }]}
         maxFontSizeMultiplier={1.3}
         accessibilityLabel={formatClockTime(simdi)}
       >

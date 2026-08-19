@@ -22,7 +22,7 @@ export function BolumBasligi({ baslik }: { baslik: string }) {
         <View style={[styles.hairline, { backgroundColor: palet.cizgiKil }]} />
       </View>
       <Text
-        style={[yazi.label, styles.baslik, { color: palet.yaziSis }]}
+        style={[yazi.label, styles.baslik, { color: palet.yaziSisZemin }]}
         maxFontSizeMultiplier={1.3}
       >
         {baslik}

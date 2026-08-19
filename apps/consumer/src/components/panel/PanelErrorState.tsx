@@ -18,11 +18,11 @@ export function PanelErrorState({
   const palet = usePalet();
   return (
     <View style={styles.kap}>
-      <Ionicons name="cloud-offline-outline" size={36} color={palet.yaziSis} />
-      <Text style={[yazi.title, styles.baslik, { color: palet.yaziAna }]}>
+      <Ionicons name="cloud-offline-outline" size={36} color={palet.yaziSisZemin} />
+      <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>
         {title ?? t("discover.errorTitle")}
       </Text>
-      <Text style={[yazi.body, styles.govde, { color: palet.yaziSis }]}>
+      <Text style={[yazi.body, styles.govde, { color: palet.yaziSisZemin }]}>
         {body ?? t("discover.errorBody")}
       </Text>
       {onRetry ? (

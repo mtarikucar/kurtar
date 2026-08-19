@@ -131,51 +131,63 @@ describe.each(FAZLAR)("%s — the shop reads as lit", (ad) => {
 /**
  * The legibility budget.
  *
- * The floors are asserted CONDITIONALLY on the bare ground already
- * meeting them, and that is deliberate rather than lenient: `bg.derin` is
- * the one ground §1.1 never measures type against, and in the day and
- * twilight palettes `text.sis` is already under 4.5:1 on it before any
- * light is added (see the build log). The rule this light must obey is
- * that it is never the reason a floor is missed — and the pre-existing
- * hole is pinned by its own test below, so shrinking it is a visible
- * change rather than a silent one.
+ * These floors used to be asserted CONDITIONALLY on the bare ground
+ * already meeting them, because it did not: `bg.derin` is the one ground
+ * §1.1 never measures type against, and the day and twilight palettes
+ * both wrote `yaziSis`/`yaziAna` on it under 4.5:1 before any light was
+ * added. That hole is now closed at the palette — `bg.derin` has its own
+ * ink family (`yaziAnaCukur` / `yaziSisCukur` / `sodyumYaziCukur`) and
+ * the twilight recess has moved to the night side, see
+ * design-contrast.test.ts — so the assertions here are unconditional.
+ *
+ * What this file still owns is the LIGHT: it may never be the reason a
+ * floor is missed. Both directions matter, which is why the money row is
+ * here too — sodium over its own wash is the pair a "warm it up" change
+ * would break first.
  */
 describe.each(FAZLAR)("%s — the light is bounded by the type in front of it", (ad) => {
   const palet: Palet = PALETLER[ad];
 
   it.each(YAZI_DERINLIKLERI)("does not cost secondary type at depth %s", (oran) => {
-    const taban = kontrastOrani(palet.yaziSis, palet.bgDerin);
     const isikli = kontrastOrani(
-      palet.yaziSis,
+      palet.yaziSisCukur,
       isikAltindaZemin(palet, toplamAlfa(oran, ACIKLIK)),
     );
-    if (taban >= YAZI_TABANI) expect(isikli).toBeGreaterThanOrEqual(YAZI_TABANI);
+    expect(isikli).toBeGreaterThanOrEqual(YAZI_TABANI);
   });
 
   it.each(YAZI_DERINLIKLERI)("does not cost primary type at depth %s", (oran) => {
-    const taban = kontrastOrani(palet.yaziAna, palet.bgDerin);
     const isikli = kontrastOrani(
-      palet.yaziAna,
+      palet.yaziAnaCukur,
       isikAltindaZemin(palet, toplamAlfa(oran, ACIKLIK)),
     );
-    if (taban >= ANA_TABANI) expect(isikli).toBeGreaterThanOrEqual(ANA_TABANI);
+    expect(isikli).toBeGreaterThanOrEqual(ANA_TABANI);
+  });
+
+  it.each(YAZI_DERINLIKLERI)("does not cost the money line at depth %s", (oran) => {
+    const isikli = kontrastOrani(
+      palet.sodyumYaziCukur,
+      isikAltindaZemin(palet, toplamAlfa(oran, ACIKLIK)),
+    );
+    expect(isikli).toBeGreaterThanOrEqual(YAZI_TABANI);
   });
 });
 
-it("pins the grounds that fail their floor UNLIT — the light did not break these", () => {
+it("has no ground left that fails its floor UNLIT", () => {
   const kirik: string[] = [];
   for (const ad of FAZLAR) {
     const p = PALETLER[ad];
-    if (kontrastOrani(p.yaziSis, p.bgDerin) < YAZI_TABANI) kirik.push(`${ad}/yaziSis`);
-    if (kontrastOrani(p.yaziAna, p.bgDerin) < ANA_TABANI) kirik.push(`${ad}/yaziAna`);
+    if (kontrastOrani(p.yaziSisCukur, p.bgDerin) < YAZI_TABANI) kirik.push(`${ad}/yaziSisCukur`);
+    if (kontrastOrani(p.yaziAnaCukur, p.bgDerin) < ANA_TABANI) kirik.push(`${ad}/yaziAnaCukur`);
+    if (kontrastOrani(p.sodyumYaziCukur, p.bgDerin) < YAZI_TABANI) {
+      kirik.push(`${ad}/sodyumYaziCukur`);
+    }
   }
-  // Reported in docs/design/build-log-teslim.md: fixing it is a palette
-  // change, and the palette is not this branch's to change.
-  expect(kirik).toEqual([
-    "alacakaranlik/yaziSis",
-    "alacakaranlik/yaziAna",
-    "gunduz/yaziSis",
-  ]);
+  // Was ["alacakaranlik/yaziSis", "alacakaranlik/yaziAna", "gunduz/yaziSis"]
+  // and reported in docs/design/build-log-teslim.md as a palette change
+  // that branch could not make. It has now been made — see
+  // docs/design/build-log-alacakaranlik.md.
+  expect(kirik).toEqual([]);
 });
 
 describe("the sign gives way to the name (§4.5)", () => {

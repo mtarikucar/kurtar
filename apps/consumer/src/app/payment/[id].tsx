@@ -129,16 +129,17 @@ export default function OdemeEkrani() {
           etiket={t("common.close")}
           onPress={kapat}
           palet={palet}
+          zemin="sokak"
           testID="odeme-kapat"
         />
-        <Text style={[yazi.title, { color: palet.yaziAna }]} numberOfLines={1}>
+        <Text style={[yazi.title, { color: palet.yaziAnaZemin }]} numberOfLines={1}>
           {t("payment.title")}
         </Text>
         <View style={styles.ikonBosluk} />
       </View>
 
       <Text
-        style={[yazi.body, styles.bekleme, { color: palet.yaziSis }]}
+        style={[yazi.body, styles.bekleme, { color: palet.yaziSisZemin }]}
         maxFontSizeMultiplier={1.5}
       >
         {t("payment.waiting")}
@@ -146,10 +147,10 @@ export default function OdemeEkrani() {
 
       {webHatasi || !redirectUrl ? (
         <View style={styles.orta}>
-          <Text style={[yazi.body, styles.bekleme, { color: palet.yaziAna }]}>
+          <Text style={[yazi.body, styles.bekleme, { color: palet.yaziAnaZemin }]}>
             {t("payment.loadError")}
           </Text>
-          <Text style={[yazi.data, styles.bekleme, { color: palet.yaziSis }]}>
+          <Text style={[yazi.data, styles.bekleme, { color: palet.yaziSisZemin }]}>
             {t("payment.checking")}
           </Text>
         </View>

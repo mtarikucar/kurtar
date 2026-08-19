@@ -18,6 +18,8 @@ import { useReservations } from "../../hooks/use-reservations";
 import { useStoreNames } from "../../hooks/use-store-names";
 import { formatKg } from "../../lib/format";
 
+/** A row INSIDE the menu card (`styles.menu` paints `yuzeyKaldirim`), so
+ * this is the one place on this screen that keeps card type. */
 function MenuRow({
   icon,
   label,
@@ -90,16 +92,16 @@ export default function ProfileScreen() {
   return (
     <PanelScreen>
       <ScrollView contentContainerStyle={styles.icerik}>
-        <Text style={[yazi.title, { color: palet.yaziAna }]}>{t("profile.title")}</Text>
+        <Text style={[yazi.title, { color: palet.yaziAnaZemin }]}>{t("profile.title")}</Text>
         {user ? (
-          <Text style={[yazi.data, { color: palet.yaziSis }]}>
+          <Text style={[yazi.data, { color: palet.yaziSisZemin }]}>
             {t("profile.guestPhone", { phone: user.phone })}
           </Text>
         ) : null}
 
         <View style={styles.sokakBolumu}>
           <View style={styles.sokakBasligi}>
-            <Text style={[yazi.label, { color: palet.yaziAna }]}>{t("profile.sokakBaslik")}</Text>
+            <Text style={[yazi.label, { color: palet.yaziAnaZemin }]}>{t("profile.sokakBaslik")}</Text>
           </View>
 
           {reservationsQuery.isLoading ? (
@@ -129,19 +131,21 @@ export default function ProfileScreen() {
             <View style={[styles.metaBlok, { borderTopColor: palet.cizgiKil }]}>
               {enSikSaatDegeri ? (
                 <View style={styles.metaSatiri}>
-                  <Text style={[yazi.body, { color: palet.yaziSis }]}>
+                  <Text style={[yazi.body, { color: palet.yaziSisZemin }]}>
                     {t("profile.enSikSaatEtiket")}
                   </Text>
-                  <Text style={[yazi.dataLg, { color: palet.sodyumYazi }]}>{enSikSaatDegeri}</Text>
+                  <Text style={[yazi.dataLg, { color: palet.sodyumYaziZemin }]}>
+                    {enSikSaatDegeri}
+                  </Text>
                 </View>
               ) : null}
               {enCokGidilen ? (
                 <View style={styles.metaSutunu}>
-                  <Text style={[yazi.body, { color: palet.yaziSis }]}>
+                  <Text style={[yazi.body, { color: palet.yaziSisZemin }]}>
                     {t("profile.enCokGidilenDukkanEtiket")}
                   </Text>
                   <Text
-                    style={[yazi.dataLg, styles.metaDeger, { color: palet.sodyumYazi }]}
+                    style={[yazi.dataLg, styles.metaDeger, { color: palet.sodyumYaziZemin }]}
                     numberOfLines={1}
                   >
                     {t("profile.enCokGidilenDukkanDeger", {
@@ -155,7 +159,7 @@ export default function ProfileScreen() {
           ) : null}
         </View>
 
-        <Text style={[yazi.label, styles.menuBaslik, { color: palet.yaziSis }]}>
+        <Text style={[yazi.label, styles.menuBaslik, { color: palet.yaziSisZemin }]}>
           {t("profile.menuBaslik")}
         </Text>
         <View
@@ -203,10 +207,16 @@ function Istatistik({ deger, etiket }: { deger: string; etiket: string }) {
   const palet = usePalet();
   return (
     <View style={styles.istatistik}>
-      <Text style={[yazi.dataLg, { color: palet.sodyumYazi }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
+      <Text
+        style={[yazi.dataLg, { color: palet.sodyumYaziZemin }]}
+        numberOfLines={1}
+        maxFontSizeMultiplier={1.3}
+      >
         {deger}
       </Text>
-      <Text style={[yazi.data, styles.istatistikEtiket, { color: palet.yaziSis }]}>{etiket}</Text>
+      <Text style={[yazi.data, styles.istatistikEtiket, { color: palet.yaziSisZemin }]}>
+        {etiket}
+      </Text>
     </View>
   );
 }

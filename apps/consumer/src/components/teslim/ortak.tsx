@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import { m, r, s, yazi, type Palet } from "../../design/tokens";
+import { anaYazi, sisYazi, sodyumYazisi, type YaziZemini } from "../../design/zemin";
 
 /**
  * The chrome the three money-path screens share (spec §1.3, §4.3).
@@ -27,6 +28,7 @@ export function Dugme({
   ikincil = false,
   testID,
   erisimEtiketi,
+  zemin = "kart",
 }: {
   etiket: string;
   altEtiket?: string;
@@ -37,6 +39,13 @@ export function Dugme({
   ikincil?: boolean;
   testID?: string;
   erisimEtiketi?: string;
+  /** The surface under it. The sodium-filled variant inks from its own
+   * fill and does not care, but the outline variant and the sub-label
+   * both borrow the surface — and this button appears on all three: the
+   * sticky bar (`yuzeyYukselti`), the street (offer detail's two grey
+   * buttons, the four `DurumEkrani` states, `KapandiEkrani`) and the lit
+   * interior (redeem, confirmation). */
+  zemin?: YaziZemini;
 }) {
   return (
     <View>
@@ -59,7 +68,7 @@ export function Dugme({
         <Text
           style={[
             ikincil ? yazi.label : yazi.sticker,
-            { color: ikincil ? palet.yaziAna : palet.sodyumMurekkep },
+            { color: ikincil ? anaYazi(palet, zemin) : palet.sodyumMurekkep },
           ]}
           numberOfLines={1}
           maxFontSizeMultiplier={1.3}
@@ -69,7 +78,7 @@ export function Dugme({
       </Pressable>
       {altEtiket ? (
         <Text
-          style={[yazi.data, styles.altEtiket, { color: palet.yaziSis }]}
+          style={[yazi.data, styles.altEtiket, { color: sisYazi(palet, zemin) }]}
           numberOfLines={1}
           maxFontSizeMultiplier={1.3}
         >
@@ -86,22 +95,27 @@ export function BolumBasligi({
   etiket,
   palet,
   sag,
+  zemin = "sokak",
 }: {
   etiket: string;
   palet: Palet;
   sag?: string;
+  /** Every caller today (offer detail ×4, purchase ×2, `KapandiEkrani`)
+   * puts this label directly on the street, above the block it names
+   * rather than inside it — hence the default. */
+  zemin?: YaziZemini;
 }) {
   return (
     <View style={styles.bolumBasligi}>
       <Text
-        style={[yazi.label, { color: palet.yaziSis }]}
+        style={[yazi.label, { color: sisYazi(palet, zemin) }]}
         maxFontSizeMultiplier={1.4}
       >
         {etiket}
       </Text>
       {sag ? (
         <Text
-          style={[yazi.data, { color: palet.yaziSis }]}
+          style={[yazi.data, { color: sisYazi(palet, zemin) }]}
           maxFontSizeMultiplier={1.3}
         >
           {sag}
@@ -192,6 +206,7 @@ export function IkonDugmesi({
   palet,
   doldur = false,
   testID,
+  zemin = "sokak",
 }: {
   yol: string;
   etiket: string;
@@ -199,6 +214,11 @@ export function IkonDugmesi({
   palet: Palet;
   doldur?: boolean;
   testID?: string;
+  /** A 1.8pt stroke is a graphic, not type, so its floor is 3:1 — but it
+   * is still drawn on a ground and still has to change with it. Offer
+   * detail, purchase and payment put it on the street; redeem puts it on
+   * the recess. */
+  zemin?: YaziZemini;
 }) {
   return (
     <Pressable
@@ -215,7 +235,7 @@ export function IkonDugmesi({
       <Svg width={24} height={24}>
         <Path
           d={yol}
-          stroke={doldur ? palet.sodyumYazi : palet.yaziAna}
+          stroke={doldur ? sodyumYazisi(palet, zemin) : anaYazi(palet, zemin)}
           fill={doldur ? palet.sodyumDolgu : "none"}
           strokeWidth={1.8}
           strokeLinecap="round"

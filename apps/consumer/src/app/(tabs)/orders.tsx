@@ -57,7 +57,7 @@ export default function OrdersScreen() {
 
   return (
     <PanelScreen padded={false}>
-      <Text style={[yazi.title, styles.baslik, { color: palet.yaziAna }]}>
+      <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>
         {t("orders.title")}
       </Text>
 
@@ -87,7 +87,7 @@ export default function OrdersScreen() {
           }
           renderItem={({ item }) =>
             item.tur === "baslik" ? (
-              <Text style={[yazi.label, styles.bolumBasligi, { color: palet.yaziSis }]}>
+              <Text style={[yazi.label, styles.bolumBasligi, { color: palet.yaziSisZemin }]}>
                 {item.metin}
               </Text>
             ) : (

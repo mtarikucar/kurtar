@@ -12,6 +12,10 @@ import { fiyatMetni, kalanDakika, sureMetni, teklifDurumu, tenteDeseni } from ".
  * row and no gauge, so this reuses the tente hash and the Turkish
  * formatters without dragging in the shutter/light machinery three rows
  * inside a fixed 180pt sheet have no room for.
+ *
+ * Its one caller mounts it inside the map tab's bottom sheet, which paints
+ * `yuzeyYukselti` — so this row is card type, not street type, even though
+ * every other component in this folder is on the ground.
  */
 export function HaritaSatiri({
   dukkanId,

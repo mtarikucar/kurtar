@@ -51,12 +51,12 @@ export function BosSokak({
         <KapaliKart genislik={kartGenisligi} />
       </View>
 
-      <Text style={[yazi.title, styles.baslik, { color: palet.yaziAna }]}>{baslik}</Text>
+      <Text style={[yazi.title, styles.baslik, { color: palet.yaziAnaZemin }]}>{baslik}</Text>
       {govde ? (
-        <Text style={[yazi.body, styles.govde, { color: palet.yaziSis }]}>{govde}</Text>
+        <Text style={[yazi.body, styles.govde, { color: palet.yaziSisZemin }]}>{govde}</Text>
       ) : null}
       {tur === "gece" && geriSayimMetni ? (
-        <Text style={[yazi.data, styles.geriSayim, { color: palet.sodyumYazi }]}>
+        <Text style={[yazi.data, styles.geriSayim, { color: palet.sodyumYaziZemin }]}>
           {t("kesif.bosGeceGeriSayim", { sure: geriSayimMetni })}
         </Text>
       ) : null}
@@ -94,7 +94,7 @@ function Cta({
         pressed ? { opacity: 0.85 } : null,
       ]}
     >
-      <Text style={[yazi.bodyStrong, { color: palet.yaziAna }]}>{label}</Text>
+      <Text style={[yazi.bodyStrong, { color: palet.yaziAnaZemin }]}>{label}</Text>
     </Pressable>
   );
 }

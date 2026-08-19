@@ -136,7 +136,7 @@ function AySatiri({
       accessibilityLabel={aySozelOzeti(ay, sonAy, ziyaretSayilari, dukkanAdi, t)}
       style={styles.aySatiri}
     >
-      <Text style={[yazi.data, styles.ayEtiket, { color: palet.yaziSis }]} maxFontSizeMultiplier={1.3}>
+      <Text style={[yazi.data, styles.ayEtiket, { color: palet.yaziSisZemin }]} maxFontSizeMultiplier={1.3}>
         {ay.etiket}
       </Text>
       <Svg
@@ -304,7 +304,7 @@ function BosSokak() {
           return <KapaliDukkan key={i} x={x} metalCinko={palet.metalCinko} />;
         })}
       </Svg>
-      <Text style={[yazi.data, styles.bosMetin, { color: palet.yaziSis }]}>
+      <Text style={[yazi.data, styles.bosMetin, { color: palet.yaziSisZemin }]}>
         {t("profile.sokakBos")}
       </Text>
     </View>

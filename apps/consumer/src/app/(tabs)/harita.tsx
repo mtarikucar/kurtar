@@ -104,6 +104,9 @@ export default function HaritaEkrani() {
         />
       </View>
 
+      {/* A painted panel over the map, not part of the ground: the label
+          and the empty line inside it are card type, and the three rows
+          below them are too. */}
       <View
         style={[
           styles.altSayfa,

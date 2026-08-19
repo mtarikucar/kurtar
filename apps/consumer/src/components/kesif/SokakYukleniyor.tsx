@@ -46,7 +46,7 @@ export function SokakYukleniyor({
           <KapaliKart genislik={kartGenisligi} />
         </SokakSatiri>
       ))}
-      <Text style={[yazi.body, styles.altyazi, { color: palet.yaziSis }]}>
+      <Text style={[yazi.body, styles.altyazi, { color: palet.yaziSisZemin }]}>
         {t("kesif.yukleniyor")}
       </Text>
     </View>

@@ -112,13 +112,13 @@ export function KapandiEkrani({
 
       <View style={styles.govde}>
         <Text
-          style={[yazi.tabelaXl, styles.baslik, { color: palet.yaziAna }]}
+          style={[yazi.tabelaXl, styles.baslik, { color: palet.yaziAnaZemin }]}
           maxFontSizeMultiplier={1.4}
         >
           {t("purchase.kapandiBaslik")}
         </Text>
         <Text
-          style={[yazi.body, styles.aciklama, { color: palet.yaziSis }]}
+          style={[yazi.body, styles.aciklama, { color: palet.yaziSisZemin }]}
           maxFontSizeMultiplier={1.5}
         >
           {t("purchase.kapandiGovde")}
@@ -143,6 +143,7 @@ export function KapandiEkrani({
             onPress={onKesfet}
             palet={palet}
             ikincil={alternatif !== null}
+            zemin="sokak"
             testID="kapandi-kesfet"
           />
         </View>

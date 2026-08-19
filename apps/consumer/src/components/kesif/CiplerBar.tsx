@@ -59,7 +59,7 @@ export function CiplerBar({
             <Text
               style={[
                 yazi.label,
-                { color: aktif ? palet.sodyumMurekkep : palet.yaziSis },
+                { color: aktif ? palet.sodyumMurekkep : palet.yaziSisZemin },
               ]}
               maxFontSizeMultiplier={1.3}
             >

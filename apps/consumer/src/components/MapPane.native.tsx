@@ -34,18 +34,22 @@ function regionToBbox(region: MapRegion): [number, number, number, number] {
  * inverts with the day/night phase exactly like every other surface,
  * because it is the same three frozen objects, not a fourth hand-tuned
  * style.
+ *
+ * Every label takes STREET type: they are all drawn with a
+ * `labels.text.stroke` halo in `bgAsfalt`, so a label crossing water or a
+ * road is still on the ground colour as far as the eye is concerned.
  */
 function haritaStili(palet: Palet) {
   return [
     { elementType: "geometry", stylers: [{ color: palet.bgAsfalt }] },
-    { elementType: "labels.text.fill", stylers: [{ color: palet.yaziSis }] },
+    { elementType: "labels.text.fill", stylers: [{ color: palet.yaziSisZemin }] },
     { elementType: "labels.text.stroke", stylers: [{ color: palet.bgAsfalt }] },
     { elementType: "labels.icon", stylers: [{ visibility: "off" }] },
     { featureType: "poi", stylers: [{ visibility: "off" }] },
     { featureType: "transit", stylers: [{ visibility: "off" }] },
     { featureType: "administrative", elementType: "geometry", stylers: [{ visibility: "off" }] },
     { featureType: "road", elementType: "geometry", stylers: [{ color: palet.yuzeyKaldirim }] },
-    { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: palet.yaziSis }] },
+    { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: palet.yaziSisZemin }] },
     { featureType: "water", elementType: "geometry", stylers: [{ color: palet.bgDerin }] },
   ];
 }
@@ -61,6 +65,10 @@ function haritaStili(palet: Palet) {
  * `tracksViewChanges` true through any animation is the classic marker
  * flicker. Selection is therefore a discrete re-snapshot (one extra
  * `onLayout` when `secili` flips), never a continuous animation.
+ *
+ * The chip is FILLED with `bg.derin`, so its numeral is recess type — which
+ * is how §4.2's "data 12 ivory" survives into the two light phases, where
+ * the app's other primary ink is near-black.
  */
 function FiyatPini({ pin, secili, palet, onPress }: { pin: DiscoveryMapPin; secili: boolean; palet: Palet; onPress: () => void }) {
   const [izle, setIzle] = useState(true);
@@ -88,7 +96,7 @@ function FiyatPini({ pin, secili, palet, onPress }: { pin: DiscoveryMapPin; seci
         ]}
       >
         <Text
-          style={[yazi.data, { color: secili ? palet.sodyumMurekkep : palet.yaziAna }]}
+          style={[yazi.data, { color: secili ? palet.sodyumMurekkep : palet.yaziAnaCukur }]}
           numberOfLines={1}
         >
           {fiyatMetni(pin.minPriceCents)}

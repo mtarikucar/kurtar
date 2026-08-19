@@ -49,7 +49,7 @@ export function CanliSaat({
     <View style={styles.kap}>
       <Text
         testID="kepenk-saat"
-        style={[yazi.clock, { color: palet.yaziAna }]}
+        style={[yazi.clock, { color: palet.yaziAnaCukur }]}
         // Announced ON REQUEST, never as a polite live region every
         // second — a screen reader that reads the clock aloud once a
         // second is unusable at a counter (spec §4.5).
@@ -108,7 +108,7 @@ function NabizCubugu({
           styles.cubuk,
           {
             width: cubuk,
-            backgroundColor: palet.yaziAna,
+            backgroundColor: palet.yaziAnaCukur,
             transform: [
               {
                 translateX: x.interpolate({

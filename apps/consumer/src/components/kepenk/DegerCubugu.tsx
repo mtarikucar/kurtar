@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { s, yazi, type Palet } from "../../design/tokens";
+import { sodyumYazisi, type YaziZemini } from "../../design/zemin";
 import { degerDolulugu, katMetni } from "./olcum";
 
 /**
@@ -16,9 +17,14 @@ export function DegerCubugu({
   oran,
   palet,
   etiket = true,
+  zemin = "kart",
 }: {
   oran: number;
   palet: Palet;
+  /** Only the label reads this — the bar and its track are fills. Both
+   * shipping callers put the bar on a card with `etiket={false}`; the
+   * labelled form exists on the /vitrin review strip, which is street. */
+  zemin?: YaziZemini;
   /** On the offer card the number rides the price row, one line above,
    * so the bar itself spans the full width at its 4pt height. The
    * redundancy law is about the number being in a FIXED place next to the
@@ -40,7 +46,7 @@ export function DegerCubugu({
       </View>
       {etiket ? (
         <Text
-          style={[yazi.micro, styles.etiket, { color: palet.sodyumYazi }]}
+          style={[yazi.micro, styles.etiket, { color: sodyumYazisi(palet, zemin) }]}
           numberOfLines={1}
           maxFontSizeMultiplier={1.3}
         >

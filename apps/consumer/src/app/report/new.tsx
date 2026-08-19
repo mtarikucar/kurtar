@@ -52,7 +52,7 @@ export default function NewReportScreen() {
       <PanelScreen>
         <View style={styles.ortali}>
           <Ionicons name="checkmark-circle" size={56} color={palet.sodyumDolgu} />
-          <Text style={[yazi.body, styles.gonderildiMetni, { color: palet.yaziAna }]}>
+          <Text style={[yazi.body, styles.gonderildiMetni, { color: palet.yaziAnaZemin }]}>
             {t("report.submitted")}
           </Text>
           <PanelButton label={t("common.ok")} onPress={() => router.back()} />

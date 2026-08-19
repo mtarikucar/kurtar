@@ -29,8 +29,8 @@ function PreferenceRow({
   return (
     <View style={[styles.satir, { borderBottomColor: palet.cizgiKil }]}>
       <View style={styles.satirMetni}>
-        <Text style={[yazi.bodyStrong, { color: palet.yaziAna }]}>{title}</Text>
-        <Text style={[yazi.data, { color: palet.yaziSis }]}>{body}</Text>
+        <Text style={[yazi.bodyStrong, { color: palet.yaziAnaZemin }]}>{title}</Text>
+        <Text style={[yazi.data, { color: palet.yaziSisZemin }]}>{body}</Text>
       </View>
       <PanelToggle value={value} onValueChange={onChange} accessibilityLabel={title} />
     </View>
@@ -50,14 +50,14 @@ function SaatArtirici({
   const palet = usePalet();
   return (
     <View style={styles.saatSatiri}>
-      <Text style={[yazi.body, { color: palet.yaziAna }]}>{label}</Text>
+      <Text style={[yazi.body, { color: palet.yaziAnaZemin }]}>{label}</Text>
       <View style={styles.saatArtirici}>
         <SaatButonu
           ikon="remove"
           etiket={`${label} azalt`}
           onPress={() => onChange(value === null ? 22 : (value + 23) % 24)}
         />
-        <Text style={[yazi.dataLg, styles.saatDeger, { color: palet.yaziAna }]}>
+        <Text style={[yazi.dataLg, styles.saatDeger, { color: palet.yaziAnaZemin }]}>
           {value === null ? t("notificationPrefs.quietHoursOff") : `${value}:00`}
         </Text>
         <SaatButonu
@@ -70,6 +70,8 @@ function SaatArtirici({
   );
 }
 
+/** The +/- stepper paints its own `yuzeyKaldirim`, so its glyph is card
+ * type — while the value between the two buttons is on the ground. */
 function SaatButonu({
   ikon,
   etiket,
@@ -159,10 +161,10 @@ export default function NotificationPreferencesScreen() {
             value={nearbyEnabled}
             onChange={setNearbyEnabled}
           />
-          <Text style={[yazi.title, styles.bolumBasligi, { color: palet.yaziAna }]}>
+          <Text style={[yazi.title, styles.bolumBasligi, { color: palet.yaziAnaZemin }]}>
             {t("notificationPrefs.quietHours")}
           </Text>
-          <Text style={[yazi.data, { color: palet.yaziSis }]}>
+          <Text style={[yazi.data, { color: palet.yaziSisZemin }]}>
             {t("notificationPrefs.quietHoursBody")}
           </Text>
           <SaatArtirici
@@ -177,7 +179,7 @@ export default function NotificationPreferencesScreen() {
           />
 
           {saved ? (
-            <Text style={[yazi.data, styles.kaydedildi, { color: palet.sodyumYazi }]}>
+            <Text style={[yazi.data, styles.kaydedildi, { color: palet.sodyumYaziZemin }]}>
               {t("notificationPrefs.saved")}
             </Text>
           ) : null}
