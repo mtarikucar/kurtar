@@ -65,6 +65,12 @@ Measured on the frames:
 - **Tab bar**: a pure white slab across the bottom of every night screen —
   the single most jarring thing in any frame.
 
+In `gunduz` the same screens are legible but read as a different,
+generic app: white pills, no shutter language, no sodium, none of the
+mono utility face the rest of the app uses. So the conversion is not
+only a night fix — it is the redesign reaching the third of the app it
+never covered.
+
 Screens: `(auth)/phone`, `(auth)/otp`, `(auth)/permissions`,
 `(tabs)/_layout`, `(tabs)/search`, `(tabs)/favorites`, `store/[id]`,
 `rate/[id]`, `cancel/[id]`.
@@ -92,6 +98,35 @@ conversion is required before the redesign can be called done.
 4. **The phone number is raw E.164**: `+905551110004`.
 5. **Screen titles sit flush against the top edge** on Profil and
    Siparişler — check the top safe-area inset.
+
+## Traps that produce a FALSE verification
+
+- **`expo export -p web` caches inlined `EXPO_PUBLIC_*` values through
+  Metro.** If the source file did not change, a rebuild silently keeps the
+  PREVIOUS value. I rebuilt for `gunduz` three times and photographed the
+  night build each time, with the build log cheerfully printing
+  "Exported: dist". Always pass `--clear`, and prove which value landed
+  before trusting a frame:
+  `grep -c '2026-08-19T09:30' dist/_expo/static/js/web/*.js`.
+- **`EXPO_PUBLIC_API_BASE_URL` is the ORIGIN, with no `/api`** — the
+  client appends it. With the suffix every request becomes
+  `/api/api/...` and 404s, which surfaces only as "login did not
+  navigate".
+- **The session does not survive `page.goto()` on web.** Navigate by
+  clicking, or every frame after the first photographs the signed-out
+  phone screen. Four such frames are what sent me looking in the first
+  place.
+
+## Two false alarms I nearly filed
+
+Both were caught by measuring instead of reporting.
+
+- **"1 dükkân açık" above two closed cards.** In the contaminated frames
+  this was the two-clock artifact. In the clean midday frames it is
+  simply TRUE: a fourth seeded offer (Levent Fırın, 08:00–14:10) is open
+  and sits below the fold. My own `curl` had used an 8 km radius; the app
+  queries 12 km. The predicate is correct — leave it alone.
+- The `₺`/`Ł` glyph, below.
 
 ## Known false alarm — do NOT "fix"
 
