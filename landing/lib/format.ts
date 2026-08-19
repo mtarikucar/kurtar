@@ -43,3 +43,41 @@ export function formatKg(grams: number, locale: "tr" | "en"): string {
       : new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 1 });
   return formatter.format(kg);
 }
+
+/**
+ * kurtar's business instants are read against Turkey's clock, never the
+ * server's or the reader's — this site renders on a container whose TZ is
+ * whatever the image sets, and a pickup window printed two hours off is
+ * worse than no window at all. Mirrors apps/consumer/src/lib/format.ts,
+ * which pins the same zone for the same reason.
+ */
+const ISTANBUL_TIME_ZONE = "Europe/Istanbul";
+
+/** "18:30" from an ISO instant, İstanbul-local. 24-hour in both locales:
+ * a Turkish pickup window is never written "6:30 PM". */
+export function formatClockTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("tr-TR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: ISTANBUL_TIME_ZONE,
+  });
+}
+
+/** "18:30–21:00" — the pickup window, en dash, as the app prints it. */
+export function formatPickupWindow(startIso: string, endIso: string): string {
+  return `${formatClockTime(startIso)}–${formatClockTime(endIso)}`;
+}
+
+/** A rounded value band, "₺100–150" — the bag's contents are a range and
+ * there is no single struck-through "was" price to print instead. */
+export function formatValueBand(
+  minCents: number,
+  maxCents: number,
+  locale: "tr" | "en",
+): string {
+  const min = Math.round(minCents / 100);
+  const max = Math.round(maxCents / 100);
+  const int = locale === "en" ? "en-US" : "tr-TR";
+  if (min === max) return `~₺${min.toLocaleString(int)}`;
+  return `₺${min.toLocaleString(int)}–${max.toLocaleString(int)}`;
+}

@@ -304,7 +304,14 @@
     "openingApp": "Uygulama açılıyor…",
     "noApp": "Uygulama açılmadıysa aşağıdan indirebilirsiniz.",
     "downloadCta": "kurtar'ı indirin",
-    "webCta": "Web'de göz atmaya devam edin"
+    "webCta": "Web'de göz atmaya devam edin",
+    "previewPanelTitle": "SÜRPRİZ PAKET",
+    "previewPickupLabel": "Alım",
+    "previewValueLabel": "Değeri",
+    "previewPriceLabel": "Fiyatı",
+    "previewBody": "Bu paketi kurtar uygulamasından alabilirsin. Kalanı, dükkânın o günkü fazlasıdır — sürpriz olmasının sebebi bu.",
+    "previewMetaTitle": "{store} — kurtar'da bir sürpriz paket",
+    "previewMetaDescription": "{price} · {window} arası al · {district}"
   },
   "blog": {
     "meta": {

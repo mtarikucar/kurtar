@@ -304,7 +304,14 @@
     "openingApp": "Opening the app…",
     "noApp": "If the app didn't open, download it below.",
     "downloadCta": "Get kurtar",
-    "webCta": "Keep browsing on the web"
+    "webCta": "Keep browsing on the web",
+    "previewPanelTitle": "SURPRISE BAG",
+    "previewPickupLabel": "Pick up",
+    "previewValueLabel": "Worth",
+    "previewPriceLabel": "You pay",
+    "previewBody": "You can claim this bag in the kurtar app. What is inside is the shop's own surplus for the day — that is why it is a surprise.",
+    "previewMetaTitle": "{store} — a surprise bag on kurtar",
+    "previewMetaDescription": "{price} · pick up {window} · {district}"
   },
   "blog": {
     "meta": {
