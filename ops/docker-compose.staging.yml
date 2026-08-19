@@ -21,6 +21,20 @@
 # for scripts/backup-database.sh staging backups is 3 days (vs 14 for
 # prod) — staging data has no long-term recovery value.
 #
+# Two of those variables are NOT optional here just because this is not
+# production — staging is a deployed environment and the API treats it as
+# one:
+#   CORS_ALLOWED_ORIGINS — must list the real staging panel origins
+#     (merchant-web :4766, admin-web :4767, landing :4768, behind whatever
+#     hostnames front them). Unset means NO CORS at all, so every panel
+#     XHR is blocked and the app looks dead. It does NOT fall back to
+#     localhost — see backend/src/config/cors-origins.ts.
+#   REFRESH_COOKIE_SECURE — set to "true" once staging is served over
+#     TLS, so the long-lived refresh cookie carries Secure. Left unset
+#     while this stack terminates no TLS, because a Secure cookie over
+#     plain HTTP is a cookie the browser never sends back: sign-in would
+#     stop working entirely.
+#
 # IMAGE_TAG has no default (${IMAGE_TAG:?...}, not ${IMAGE_TAG:-current}) —
 # it must always be an explicit release version, the same tag release-
 # deploy.yml's build job actually pushed. (A prior draft of this file
