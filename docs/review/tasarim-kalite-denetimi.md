@@ -1146,3 +1146,65 @@ review-notes-tam-gezinti.md'de ne "verified good" ne de "false alarm" olarak kay
 DÜRÜSTLÜK NOTU — karşı delil: `src/__tests__/accessibility-i18n.test.tsx:10-23` (M22) tam da bu ilkeyi kayda geçiriyor: "must come from i18n, not from Turkish literals that happen to render identically today". Yani proje bu tercihi biliyor. Ama o test kapsamı erişilebilirlik etiketleri — görsel karşılığı OLMAYAN, ekran okuyucunun tek yolu olan dizeler. Buradaki hap görünür metin ve bugün doğru. Bu bir bakım/hijyen temizliği, kusur değil.
 
 KAPSAM DIŞI AMA KAYDA DEĞER (bu iddia değil, ayrı bir şey): HaritaSatiri `durum === "acilmadi"` dalını hiç ele almıyor (satır 46 yalnız "tukendi"yi eliyor). Henüz açılmamış bir dükkân için ZamanHapi "18:30 açılıyor" derken harita satırı alış BİTİŞİNE kalan süreyi hap olarak basıyor — kullanıcı kapalı dükkânı "3 sa" diye okuyabilir. Bunu bu iddianın parçası olarak saymıyorum; ayrıca doğrulanması gerekir.
+
+---
+
+# Closed out
+
+Every finding above is fixed and merged. Two more were found while fixing
+them and are also closed:
+
+- **The tab bar truncated its labels at a raised text scale** — "Favor…",
+  "Sipari…" — which loses the Turkish word exactly as the clipped cedilla
+  did, by a different route. The bar sizes from the scaled line box and
+  renders its own label so it can wrap.
+- **The discovery list computed scroll offsets from the 1x card height**,
+  so at a large text setting a map pin's `scrollToIndex` landed on the
+  wrong shop. Nothing looked wrong: FlatList lays rows out by flex and
+  only scrolling reads those numbers.
+
+And one that turned out to be a money hole rather than the UI symptom that
+surfaced it (finding 12's root cause):
+
+- **A no-show was never closed and never paid.** `CONFIRMED -> NO_SHOW`
+  was a declared edge nothing wrote, and settlement admitted only
+  `REDEEMED` — so a customer who paid and did not collect left the
+  merchant unpaid for ever, with the money sitting between them. A sweeper
+  now closes the window (1h grace, swept every 10 minutes — bounded above
+  by the 02:00 batch, since a NO_SHOW written after its batch leaves
+  CALCULATED is refused by `recomputeBatch` and would never settle at all)
+  and a no-show settles on the same terms as a collected bag, anchored to
+  the window it was not collected in.
+- **A no-show could not be refunded by any path**, including "the shop was
+  shut" — which ends in the same status, because the sweeper cannot tell
+  the two apart from the outside. The seeded demo's own
+  `STORE_CLOSED_NO_SHOW` complaint was unanswerable. An admin can now
+  refund one; no automatic or customer-initiated path can.
+- **The admin dashboard's GMV shared one query with the collected count**,
+  so it under-reported everything the platform settles on.
+
+## Still open — deliberately
+
+- **No `reservation.no-show.v1` event.** The customer is never told their
+  bag was closed out, there is no admin surface listing no-shows, and the
+  plan's ≤5% no-show KPI has nothing computing it. This is a feature, not
+  a defect, and it drags the DTO → OpenAPI → generated client → admin-web
+  chain behind it.
+- **`settlement_lines.redeemedAt` is a misnomer** for a no-show line. Not
+  renamed: it is the DTO, the OpenAPI schema and the generated client on
+  the platform's core money table, and no surface renders it. Documented
+  in place.
+- **The goodwill coupon** the plan names for a first no-show (§risk 2) is
+  unimplemented.
+- **Top safe-area inset on Profil and Siparişler** needs measuring on a
+  device; the web export cannot show it.
+
+## What the web export cannot verify, ever
+
+Recorded because three separate agents each rediscovered it:
+`react-native-web` hard-codes `Dimensions.fontScale = 1`, ignores
+`allowFontScaling`/`maxFontSizeMultiplier` entirely, and reports a screen
+reader as **always present**. So dynamic type, the drag-vs-press redeem
+handle, and any screen-reader-conditional branch cannot be photographed in
+a browser. Claims about those rest on unit specs, and a frame that appears
+to show them is showing something else.
