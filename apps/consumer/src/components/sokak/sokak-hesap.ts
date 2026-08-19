@@ -245,6 +245,34 @@ export function ayGenisligi(dukkanSayisi: number): number {
   return dukkanSayisi * DUKKAN_GENISLIK + (dukkanSayisi - 1) * DUKKAN_ARALIK;
 }
 
+/**
+ * How many unlit, un-rescued frontages continue the street past the most
+ * recent rescue — the growing edge you have not lit yet (review: "give the
+ * street somewhere to go"). Fixed regardless of how many real storefronts
+ * already stand, because the point is that the street keeps going, not how
+ * far; it is appended ONLY after the most recent (chronologically last)
+ * month, since that is the one growing edge — every earlier month is a
+ * settled block of real history, not a place still waiting to be lit.
+ */
+export const SOKAK_DEVAM_DUKKAN_SAYISI = 3;
+
+/** The closed-frontage placeholder's own height — deliberately BELOW
+ * `DUKKAN_TABAN_YUKSEKLIK` (a real single visit's floor), and with no
+ * awning at all (see `SeninSokagin.tsx`), so a placeholder cannot be
+ * mistaken for a real storefront at a glance or read as an achievement
+ * that has not happened. It must not lie: this is a place you have not
+ * rescued from. */
+export const KAPALI_DUKKAN_YUKSEKLIGI = 14;
+
+/** A month row's total width once the street's continuation is included
+ * — used for the last (most recent) month's `<Svg>` only. */
+export function ayGenisligiDevamli(
+  dukkanSayisi: number,
+  devamSayisi: number = SOKAK_DEVAM_DUKKAN_SAYISI,
+): number {
+  return ayGenisligi(dukkanSayisi + devamSayisi);
+}
+
 /** Fixed height for every month's `<Svg>` — tall enough for the tallest
  * possible storefront (a shop rescued four times or more), so no month's
  * row ever reflows the ones next to it. */

@@ -1,5 +1,6 @@
 import {
   ayGenisligi,
+  ayGenisligiDevamli,
   aylaraGrupla,
   dukkanParlakligi,
   dukkanPencereRengi,
@@ -10,6 +11,8 @@ import {
   enSikSaat,
   tenteYolu,
   KALDIRIM_Y,
+  KAPALI_DUKKAN_YUKSEKLIGI,
+  SOKAK_DEVAM_DUKKAN_SAYISI,
   SOKAK_SVG_YUKSEKLIGI,
   DUKKAN_GENISLIK,
   DUKKAN_ARALIK,
@@ -124,6 +127,37 @@ describe("ayGenisligi — one <Svg> per month, no per-shop node beyond a rect an
   it("sums storefront widths with gaps between, no trailing gap", () => {
     expect(ayGenisligi(1)).toBe(DUKKAN_GENISLIK);
     expect(ayGenisligi(3)).toBe(DUKKAN_GENISLIK * 3 + DUKKAN_ARALIK * 2);
+  });
+});
+
+describe("ayGenisligiDevamli — the street's growing edge past the most recent rescue", () => {
+  it("adds the fixed continuation width on top of the real storefronts", () => {
+    expect(ayGenisligiDevamli(0)).toBe(ayGenisligi(SOKAK_DEVAM_DUKKAN_SAYISI));
+    expect(ayGenisligiDevamli(1)).toBe(ayGenisligi(1 + SOKAK_DEVAM_DUKKAN_SAYISI));
+    expect(ayGenisligiDevamli(3)).toBe(ayGenisligi(3 + SOKAK_DEVAM_DUKKAN_SAYISI));
+  });
+
+  it("is always wider than the same month without its continuation", () => {
+    for (const adet of [1, 2, 3, 17]) {
+      expect(ayGenisligiDevamli(adet)).toBeGreaterThan(ayGenisligi(adet));
+    }
+  });
+
+  it("accepts an explicit continuation count, defaulting to the fixed one", () => {
+    expect(ayGenisligiDevamli(1, 0)).toBe(ayGenisligi(1));
+    expect(ayGenisligiDevamli(1, 5)).toBe(ayGenisligi(6));
+  });
+});
+
+describe("KAPALI_DUKKAN_YUKSEKLIGI — the closed-frontage placeholder", () => {
+  it("is shorter than a real single visit's own floor height", () => {
+    // A placeholder must never be mistaken for a genuine (if modest)
+    // rescue at a glance — see SeninSokagin.tsx's KapaliDukkan.
+    expect(KAPALI_DUKKAN_YUKSEKLIGI).toBeLessThan(DUKKAN_TABAN_YUKSEKLIK);
+  });
+
+  it("still fits under the street's fixed <Svg> height", () => {
+    expect(KALDIRIM_Y - KAPALI_DUKKAN_YUKSEKLIGI).toBeGreaterThanOrEqual(0);
   });
 });
 

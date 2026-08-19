@@ -8,6 +8,7 @@ import { s, yazi } from "../../design/tokens";
 import { tenteDeseni } from "../kepenk/tente-desen";
 import {
   ayGenisligi,
+  ayGenisligiDevamli,
   aylaraGrupla,
   dukkanParlakligi,
   dukkanPencereRengi,
@@ -19,6 +20,8 @@ import {
   DUKKAN_GENISLIK,
   DUKKAN_PENCERE_GENISLIK,
   KALDIRIM_Y,
+  KAPALI_DUKKAN_YUKSEKLIGI,
+  SOKAK_DEVAM_DUKKAN_SAYISI,
   SOKAK_SVG_YUKSEKLIGI,
   TENTE_TABAN,
   TENTE_YUKSEKLIK,
@@ -80,10 +83,11 @@ export function SeninSokagin({
         contentContainerStyle={styles.icerik}
         onContentSizeChange={acilisKaydirmasi}
       >
-        {aylar.map((ay) => (
+        {aylar.map((ay, i) => (
           <AySatiri
             key={ay.anahtar}
             ay={ay}
+            sonAy={i === aylar.length - 1}
             ziyaretSayilari={ziyaretSayilari}
             dukkanAdi={dukkanAdi}
             vitrinZemin={palet.vitrinZemin}
@@ -98,6 +102,7 @@ export function SeninSokagin({
 
 function AySatiri({
   ay,
+  sonAy,
   ziyaretSayilari,
   dukkanAdi,
   vitrinZemin,
@@ -105,6 +110,11 @@ function AySatiri({
   t,
 }: {
   ay: AySokagi;
+  /** Whether this is the most recent month — the street's one growing
+   * edge, where the continuation frontages belong (see `sokak-hesap.ts`'s
+   * `SOKAK_DEVAM_DUKKAN_SAYISI`). Every earlier month is settled history
+   * and renders exactly its own rescues, nothing more. */
+  sonAy: boolean;
   ziyaretSayilari: Map<string, number>;
   dukkanAdi: (storeId: string) => string | null;
   /** The phase's own unlit-shop-interior colour — a single-visit window's
@@ -115,13 +125,15 @@ function AySatiri({
   t: TFunction;
 }) {
   const palet = usePalet();
-  const genislik = ayGenisligi(ay.kayitlar.length);
+  const genislik = sonAy
+    ? ayGenisligiDevamli(ay.kayitlar.length)
+    : ayGenisligi(ay.kayitlar.length);
 
   return (
     <View
       accessible
       accessibilityRole="text"
-      accessibilityLabel={aySozelOzeti(ay, ziyaretSayilari, dukkanAdi, t)}
+      accessibilityLabel={aySozelOzeti(ay, sonAy, ziyaretSayilari, dukkanAdi, t)}
       style={styles.aySatiri}
     >
       <Text style={[yazi.data, styles.ayEtiket, { color: palet.yaziSis }]} maxFontSizeMultiplier={1.3}>
@@ -158,8 +170,35 @@ function AySatiri({
             />
           );
         })}
+        {sonAy
+          ? Array.from({ length: SOKAK_DEVAM_DUKKAN_SAYISI }, (_, j) => {
+              const x = (ay.kayitlar.length + j) * (DUKKAN_GENISLIK + DUKKAN_ARALIK);
+              return <KapaliDukkan key={`devam-${j}`} x={x} metalCinko={palet.metalCinko} />;
+            })
+          : null}
       </Svg>
     </View>
+  );
+}
+
+/**
+ * A closed, un-rescued frontage — the street's continuation past the most
+ * recent rescue (review: "unlit, un-rescued frontages ahead of the one you
+ * have lit"). Deliberately the SAME shape the fully-empty street already
+ * uses (`BosSokak`): a plain zinc block, shorter than a real storefront's
+ * floor, no awning and no lit window, because there is no shop identity to
+ * draw yet and nothing here has been rescued. One `<Rect>`, same budget as
+ * a real storefront's window.
+ */
+function KapaliDukkan({ x, metalCinko }: { x: number; metalCinko: string }) {
+  return (
+    <Rect
+      x={x}
+      y={KALDIRIM_Y - KAPALI_DUKKAN_YUKSEKLIGI}
+      width={DUKKAN_GENISLIK}
+      height={KAPALI_DUKKAN_YUKSEKLIGI}
+      fill={metalCinko}
+    />
   );
 }
 
@@ -218,9 +257,13 @@ function RectGroupDukkan({
 /** One composed label per month — a screen reader lands on this the same
  * way it lands on any list item, not on "scroll right to see more of a
  * canvas". Every rescue that month is accounted for by name (once a name
- * has loaded) and count. */
+ * has loaded) and count. On the most recent month, it also says — in
+ * words — what the sighted view now shows in pixels: the street keeps
+ * going past what you have lit. That is the parity a decorative-only
+ * `accessibilityElementsHidden` <Svg> cannot provide by itself. */
 function aySozelOzeti(
   ay: AySokagi,
+  sonAy: boolean,
   ziyaretSayilari: Map<string, number>,
   dukkanAdi: (storeId: string) => string | null,
   t: TFunction,
@@ -239,13 +282,14 @@ function aySozelOzeti(
     }
     return t("profile.sokakKurtarmaSayisi", { count: ayIciSayac });
   });
-  return t("profile.sokakAySozeti", { ay: ay.etiket, liste: parcalar.join(", ") });
+  const ozet = t("profile.sokakAySozeti", { ay: ay.etiket, liste: parcalar.join(", ") });
+  return sonAy ? `${ozet}. ${t("profile.sokakDevamIpucu")}` : ozet;
 }
 
 function BosSokak() {
   const { t } = useTranslation();
   const palet = usePalet();
-  const genislik = ayGenisligi(3);
+  const genislik = ayGenisligi(SOKAK_DEVAM_DUKKAN_SAYISI);
   return (
     <View accessible accessibilityRole="text" accessibilityLabel={t("profile.sokakBos")}>
       <Svg
@@ -255,18 +299,9 @@ function BosSokak() {
         importantForAccessibility="no-hide-descendants"
       >
         <Rect x={0} y={KALDIRIM_Y} width={genislik} height={1} fill={palet.cizgiKil} />
-        {[0, 1, 2].map((i) => {
+        {Array.from({ length: SOKAK_DEVAM_DUKKAN_SAYISI }, (_, i) => {
           const x = i * (DUKKAN_GENISLIK + DUKKAN_ARALIK);
-          return (
-            <Rect
-              key={i}
-              x={x}
-              y={KALDIRIM_Y - 14}
-              width={DUKKAN_GENISLIK}
-              height={14}
-              fill={palet.metalCinko}
-            />
-          );
+          return <KapaliDukkan key={i} x={x} metalCinko={palet.metalCinko} />;
         })}
       </Svg>
       <Text style={[yazi.data, styles.bosMetin, { color: palet.yaziSis }]}>

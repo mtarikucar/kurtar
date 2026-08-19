@@ -13,8 +13,10 @@ import type { KurtarmaKaydi } from "../components/sokak/sokak-hesap";
  * many storefronts across many months read as a STREET or degrade into a
  * bar chart. This fixture spans four months, six shops, and repeat
  * visits up to and past the taller/brighter cap, in all three palette
- * phases. Not linked from anywhere in the app; open it at
- * /sokak-inceleme.
+ * phases — plus a dedicated 0/1/2/3-rescue matrix in gece and gündüz,
+ * because the rich fixture alone says nothing about the state every
+ * single user actually starts in. Not linked from anywhere in the app;
+ * open it at /sokak-inceleme.
  */
 
 const FAZLAR: readonly Faz[] = ["gece", "alacakaranlik", "gunduz"];
@@ -74,9 +76,22 @@ const ZENGIN_KAYITLAR: readonly KurtarmaKaydi[] = [
   kayit("r17", DUKKANLAR.manavAli, "2026-08-19T17:20:00.000Z"),
 ];
 
-const TEK_KAYIT: readonly KurtarmaKaydi[] = [
-  kayit("tek-1", DUKKANLAR.caferaga, "2026-08-01T18:45:00.000Z"),
+/** The state every user actually passes through — review: "judge it at 0,
+ * 1, 2 and 3 rescues, not only at 17". Three distinct shops in one month,
+ * sliced to each count, so 2 and 3 stay a clean read of separate
+ * storefronts rather than exercising the taller/brighter repeat-visit
+ * scale (that scale has its own coverage in ZENGIN_KAYITLAR above). */
+const DUSUK_KAYIT_HAVUZU: readonly KurtarmaKaydi[] = [
+  kayit("dusuk-1", DUKKANLAR.caferaga, "2026-08-01T18:45:00.000Z"),
+  kayit("dusuk-2", DUKKANLAR.kadikoyMarket, "2026-08-06T17:50:00.000Z"),
+  kayit("dusuk-3", DUKKANLAR.besiktasKafe, "2026-08-12T18:10:00.000Z"),
 ];
+const DUSUK_SAYIMLAR = [0, 1, 2, 3] as const;
+/** Gece first — it is the app's primary case (review's verification gap:
+ * the street is described in terms of lit windows, which only mean
+ * something against a dark ground) — then gündüz, since the review's
+ * captured frames were day-only and never looked at night. */
+const DUSUK_FAZLAR: readonly Faz[] = ["gece", "gunduz"];
 
 export default function SokakIncelemeEkrani() {
   const gece = PALETLER.gece;
@@ -111,31 +126,39 @@ export default function SokakIncelemeEkrani() {
           </View>
         ))}
 
-        <Text style={[yazi.label, styles.altBaslik, { color: gece.yaziSis, marginTop: s.s8 }]}>
-          TEK KURTARMA — İLK GÜN
+        <Text style={[yazi.tabelaLg, styles.altBaslik, { color: gece.yaziAna, marginTop: s.s8 }]}>
+          DÜŞÜK SAYIM — 0 / 1 / 2 / 3 KURTARMA
         </Text>
-        <ClockProvider sabitZaman={new Date("2026-08-19T18:00:00.000Z")}>
-          <ThemeProvider fazZorla="gece">
-            <View style={[styles.kart, { backgroundColor: gece.bgAsfalt, borderColor: gece.cizgiKil }]}>
-              <SeninSokagin
-                kayitlar={TEK_KAYIT}
-                dukkanAdi={(id) => DUKKAN_ADLARI[id] ?? null}
-              />
-            </View>
-          </ThemeProvider>
-        </ClockProvider>
-
-        <Text style={[yazi.label, styles.altBaslik, { color: gece.yaziSis, marginTop: s.s8 }]}>
-          BOŞ SOKAK — HİÇ KURTARMA YOK
+        <Text style={[yazi.data, styles.altBaslik, { color: gece.yaziSis }]}>
+          Her kullanıcının fiilen geçtiği durum, gece ve gündüz — review
+          bulgusu: tek kurtarma tek başına bir 26pt kutuydu, sokak değildi.
         </Text>
-        <ClockProvider sabitZaman={new Date("2026-08-19T18:00:00.000Z")}>
-          <ThemeProvider fazZorla="gece">
-            <View style={[styles.kart, { backgroundColor: gece.bgAsfalt, borderColor: gece.cizgiKil }]}>
-              <SeninSokagin kayitlar={[]} dukkanAdi={() => null} />
-            </View>
-          </ThemeProvider>
-        </ClockProvider>
 
+        {DUSUK_FAZLAR.map((faz) => (
+          <View key={faz} style={styles.fazBlok}>
+            <Text style={[yazi.label, { color: gece.yaziSis }]}>{FAZ_ADI[faz]}</Text>
+            {DUSUK_SAYIMLAR.map((adet) => (
+              <ClockProvider key={adet} sabitZaman={new Date("2026-08-19T18:00:00.000Z")}>
+                <ThemeProvider fazZorla={faz}>
+                  <View
+                    style={[
+                      styles.kart,
+                      { backgroundColor: PALETLER[faz].bgAsfalt, borderColor: PALETLER[faz].cizgiKil },
+                    ]}
+                  >
+                    <Text style={[yazi.data, styles.dusukSayimEtiket, { color: PALETLER[faz].yaziSis }]}>
+                      {adet} KURTARMA
+                    </Text>
+                    <SeninSokagin
+                      kayitlar={DUSUK_KAYIT_HAVUZU.slice(0, adet)}
+                      dukkanAdi={(id) => DUKKAN_ADLARI[id] ?? null}
+                    />
+                  </View>
+                </ThemeProvider>
+              </ClockProvider>
+            ))}
+          </View>
+        ))}
       </ScrollView>
     </SafeAreaView>
   );
@@ -148,5 +171,8 @@ const styles = StyleSheet.create({
   fazBlok: { gap: s.s2 },
   kart: {
     paddingVertical: s.s2,
+  },
+  dusukSayimEtiket: {
+    marginBottom: s.s1,
   },
 });

@@ -268,6 +268,7 @@
     "sokakBaslik": "SENİN SOKAĞIN",
     "sokakBos": "Henüz bir kurtarman yok.",
     "sokakAySozeti": "{{ay}}: {{liste}}",
+    "sokakDevamIpucu": "Sokağın devamı henüz karanlık, kepenkler kapalı",
     "sokakDukkanTekrar": "{{ad}}, toplamda {{sayac}} kez",
     "sokakKurtarmaSayisi_one": "{{count}} kurtarma",
     "sokakKurtarmaSayisi_other": "{{count}} kurtarma",

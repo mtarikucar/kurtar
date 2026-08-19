@@ -268,6 +268,7 @@
     "sokakBaslik": "YOUR STREET",
     "sokakBos": "You haven't rescued anything yet.",
     "sokakAySozeti": "{{ay}}: {{liste}}",
+    "sokakDevamIpucu": "The rest of the street is still dark, shutters closed",
     "sokakDukkanTekrar": "{{ad}}, {{sayac}} times in total",
     "sokakKurtarmaSayisi_one": "{{count}} rescue",
     "sokakKurtarmaSayisi_other": "{{count}} rescues",
