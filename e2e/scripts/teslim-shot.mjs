@@ -10,6 +10,18 @@
  *
  * Run from the e2e workspace so @playwright/test resolves.
  *
+ * Every frame is shot ONCE PER PALETTE PHASE, into its own folder
+ * (`<out>/gunduz/…`, `<out>/gece/…`), because the phase is a pure
+ * function of the instant and this app's one hour of relevance is after
+ * sunset: shooting at whatever o'clock it happens to be means only ever
+ * seeing the daylight palette. `TESLIM_FAZ` picks the phases.
+ *
+ * `EXPO_PUBLIC_API_BASE_URL` at export time, the port the review server
+ * listens on, and `TESLIM_APP` here are ONE number and have to agree — if
+ * another review build is already holding 8082, export against a free
+ * port and pass it here, or the page will quietly fetch through somebody
+ * else's server and photograph somebody else's build.
+ *
  * Two things are stubbed and nothing else:
  *
  *  • **The session.** expo-secure-store has no web implementation (its web
@@ -28,6 +40,7 @@
  */
 import { chromium } from "@playwright/test";
 import fs from "node:fs";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Client as PgClient } from "pg";
 
@@ -83,6 +96,35 @@ function istanbulGunu(an) {
   }).format(an);
 }
 
+/** Istanbul is a fixed UTC+3 with no DST, so a local wall-clock time on
+ * the same Istanbul day as `an` is one subtraction. */
+function istanbulAni(an, saat, dakika = 0) {
+  const [yil, ay, gun] = istanbulGunu(an).split("-").map(Number);
+  return new Date(Date.UTC(yil, ay - 1, gun, saat - 3, dakika, 0, 0));
+}
+
+/**
+ * The palette phases to capture, and the Istanbul wall-clock time each
+ * one is shot at.
+ *
+ * This app's one hour of relevance is after sunset, so GECE is the
+ * primary case — and a phase is a pure function of the instant
+ * (`design/faz.ts`), which means the only way to see it in a browser at
+ * noon is to move the browser's clock. The page's `Date` is shifted by a
+ * constant offset rather than Playwright's fake timers, so `setTimeout`,
+ * `setInterval` and `requestAnimationFrame` stay native and every roll,
+ * flood and 1Hz tick runs at its real speed.
+ *
+ * Sunset in Istanbul is between 17:00 (December) and 20:45 (June), so
+ * 12:30 is daylight and 21:30 is night on every day of the year;
+ * twilight is the one phase whose window moves, and it is opt-in.
+ */
+const FAZ_SAATLERI = { gunduz: [12, 30], alacakaranlik: [19, 45], gece: [21, 30] };
+const FAZLAR = (process.env.TESLIM_FAZ ?? "gunduz,gece")
+  .split(",")
+  .map((ad) => ad.trim())
+  .filter(Boolean);
+
 async function girisYap() {
   const telefon = `+9055${Date.now().toString().slice(-8)}`;
   await api("/api/auth/otp/request", { yontem: "POST", govde: { phone: telefon } });
@@ -135,7 +177,12 @@ async function canliTeklifYayinla() {
   // (offer-window.rules.ts); eight seconds is comfortably past by the
   // time the browser opens anything, and the script waits out the rest.
   const baslangic = new Date(simdi.getTime() + 8_000);
-  const bitis = new Date(simdi.getTime() + 100 * 60_000);
+  // The window runs to the end of the Istanbul day rather than for a
+  // round hundred minutes, because the frames are captured at several
+  // clock times (see FAZLAR): the shutter must still be openable at
+  // 21:30 for the night palette, and the same rules forbid the window
+  // crossing midnight.
+  const bitis = istanbulAni(simdi, 23, 50);
   const teklif = await api("/api/offers", {
     yontem: "POST",
     token: giris.accessToken,
@@ -213,23 +260,47 @@ console.log(
 );
 
 const tarayici = await chromium.launch();
-const baglam = await tarayici.newContext({
-  viewport: { width: 390, height: 844 },
-  deviceScaleFactor: Number(process.env.TESLIM_DSF ?? 3),
-  // react-native-web's responder system (what PanResponder rides on) is
-  // touch-first; without this the page has no Touch constructor at all.
-  hasTouch: true,
-  isMobile: true,
-});
-await baglam.route(`${APP}/api/**`, async (yol) => {
-  const istek = yol.request();
-  await yol.continue({
-    headers: { ...istek.headers(), authorization: `Bearer ${oturum.token}` },
-  });
-});
-
 const hatalar = [];
-async function sayfa() {
+
+/**
+ * One context per palette phase: the clock offset is installed before any
+ * script runs, so the app computes its phase from the shifted instant on
+ * its very first frame and never sees a jump.
+ */
+async function fazBaglami(kayma) {
+  const b = await tarayici.newContext({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: Number(process.env.TESLIM_DSF ?? 3),
+    // react-native-web's responder system (what PanResponder rides on) is
+    // touch-first; without this the page has no Touch constructor at all.
+    hasTouch: true,
+    isMobile: true,
+  });
+  if (kayma !== 0) {
+    await b.addInitScript((ms) => {
+      const Gercek = Date;
+      class KaydirilmisDate extends Gercek {
+        constructor(...arg) {
+          if (arg.length === 0) super(Gercek.now() + ms);
+          else super(...arg);
+        }
+        static now() {
+          return Gercek.now() + ms;
+        }
+      }
+      window.Date = KaydirilmisDate;
+    }, kayma);
+  }
+  await b.route(`${APP}/api/**`, async (yol) => {
+    const istek = yol.request();
+    await yol.continue({
+      headers: { ...istek.headers(), authorization: `Bearer ${oturum.token}` },
+    });
+  });
+  return b;
+}
+
+async function sayfa(baglam) {
   const s = await baglam.newPage();
   s.on("console", (m) => {
     if (m.type() === "error") hatalar.push(m.text());
@@ -238,10 +309,10 @@ async function sayfa() {
   return s;
 }
 
-async function cek(s, ad, ms = 2200) {
+async function cek(klasor, s, ad, ms = 2200) {
   await bekle(ms);
-  await s.screenshot({ path: `${CIKTI}/${ad}.png` });
-  console.log("shot", ad);
+  await s.screenshot({ path: `${klasor}/${ad}.png` });
+  console.log("shot", `${path.basename(klasor)}/${ad}`);
 }
 
 /** react-native-web scrolls INSIDE a div, so the window never moves and
@@ -264,92 +335,118 @@ async function kaydir(s, y) {
   console.log("scroll:", sonuc);
 }
 
-try {
-  // ---- 1. TEKLİF DETAYI ----------------------------------------------
-  const detay = await sayfa();
-  await detay.goto(
-    `${APP}/offer/${teklif.offerId}?storeId=${teklif.store.id}&distanceM=${teklif.store.distanceM}`,
-    { waitUntil: "domcontentloaded" },
-  );
-  await cek(detay, "01-teklif-detayi-ust");
-  await kaydir(detay, 620);
-  await cek(detay, "02-teklif-detayi-orta", 900);
-  await kaydir(detay, 1300);
-  await cek(detay, "03-teklif-detayi-alt", 900);
+/**
+ * One full pass over the eleven frames, in one palette phase.
+ *
+ * Every phase gets its own context (its own clock offset) and its own
+ * output folder, so `gunduz/07-satin-alma-onayi.png` and
+ * `gece/07-satin-alma-onayi.png` are the same frame under the two
+ * lights and can be put side by side.
+ */
+async function gecis(faz) {
+  const [saat, dakika] = FAZ_SAATLERI[faz] ?? [];
+  if (saat === undefined) throw new Error(`unknown phase: ${faz}`);
+  const hedef = istanbulAni(new Date(), saat, dakika);
+  const kayma = hedef.getTime() - Date.now();
+  const klasor = `${CIKTI}/${faz}`;
+  fs.mkdirSync(klasor, { recursive: true });
+  console.log(`\n== ${faz} — the page's clock reads ${saat}:${String(dakika).padStart(2, "0")} Istanbul (${kayma >= 0 ? "+" : ""}${Math.round(kayma / 60000)} dk)`);
 
-  // ---- 2. SATIN ALMA -------------------------------------------------
-  const alim = await sayfa();
-  await alim.goto(`${APP}/purchase/${teklif.offerId}?storeId=${teklif.store.id}`, {
-    waitUntil: "domcontentloaded",
-  });
-  await cek(alim, "04-satin-alma");
+  const baglam = await fazBaglami(kayma);
+  try {
+    // ---- 1. TEKLİF DETAYI --------------------------------------------
+    const detay = await sayfa(baglam);
+    await detay.goto(
+      `${APP}/offer/${teklif.offerId}?storeId=${teklif.store.id}&distanceM=${teklif.store.distanceM}`,
+      { waitUntil: "domcontentloaded" },
+    );
+    await cek(klasor, detay, "01-teklif-detayi-ust");
+    await kaydir(detay, 620);
+    await cek(klasor, detay, "02-teklif-detayi-orta", 900);
+    await kaydir(detay, 1300);
+    await cek(klasor, detay, "03-teklif-detayi-alt", 900);
 
-  // ---- 3. AZ ÖNCE KAPANDI (§4.4's money-path failure) -----------------
-  const kapandi = await sayfa();
-  await kapandi.route(`${APP}/api/reservations`, async (yol) => {
-    if (yol.request().method() !== "POST") return yol.fallback();
-    await yol.fulfill({
-      status: 409,
-      contentType: "application/json",
-      body: JSON.stringify({
-        statusCode: 409,
-        errorCode: "OFFER_UNAVAILABLE",
-        message: "This offer is no longer available.",
-      }),
+    // ---- 2. SATIN ALMA -----------------------------------------------
+    const alim = await sayfa(baglam);
+    await alim.goto(`${APP}/purchase/${teklif.offerId}?storeId=${teklif.store.id}`, {
+      waitUntil: "domcontentloaded",
     });
-  });
-  await kapandi.goto(`${APP}/purchase/${teklif.offerId}?storeId=${teklif.store.id}`, {
-    waitUntil: "domcontentloaded",
-  });
-  await bekle(1800);
-  await kapandi.getByTestId("purchase-consent-checkbox").click();
-  await kapandi.getByTestId("purchase-confirm").click();
-  await cek(kapandi, "05-az-once-kapandi", 2600);
+    await cek(klasor, alim, "04-satin-alma");
 
-  // ---- 4. SATIN ALMA ONAYI (§4.4) ------------------------------------
-  const onay = await sayfa();
-  await onay.goto(
-    `${APP}/payment/${rezervasyon.reservationId}?redirectUrl=&code=${rezervasyon.code}`,
-    { waitUntil: "domcontentloaded" },
-  );
-  await cek(onay, "06-satin-alma-onayi-roll", 1700);
-  await cek(onay, "07-satin-alma-onayi", 1800);
+    // ---- 3. AZ ÖNCE KAPANDI (§4.4's money-path failure) ---------------
+    const kapandi = await sayfa(baglam);
+    await kapandi.route(`${APP}/api/reservations`, async (yol) => {
+      if (yol.request().method() !== "POST") return yol.fallback();
+      await yol.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          statusCode: 409,
+          errorCode: "OFFER_UNAVAILABLE",
+          message: "This offer is no longer available.",
+        }),
+      });
+    });
+    await kapandi.goto(`${APP}/purchase/${teklif.offerId}?storeId=${teklif.store.id}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await bekle(1800);
+    await kapandi.getByTestId("purchase-consent-checkbox").click();
+    await kapandi.getByTestId("purchase-confirm").click();
+    await cek(klasor, kapandi, "05-az-once-kapandi", 2600);
 
-  // ---- 5. KEPENK, both states ----------------------------------------
-  const kepenk = await sayfa();
-  await kepenk.goto(`${APP}/redeem/${rezervasyon.reservationId}`, {
-    waitUntil: "domcontentloaded",
-  });
-  await cek(kepenk, "08-kepenk-kapali", 2600);
+    // ---- 4. SATIN ALMA ONAYI (§4.4) ----------------------------------
+    const onay = await sayfa(baglam);
+    await onay.goto(
+      `${APP}/payment/${rezervasyon.reservationId}?redirectUrl=&code=${rezervasyon.code}`,
+      { waitUntil: "domcontentloaded" },
+    );
+    await cek(klasor, onay, "06-satin-alma-onayi-roll", 1700);
+    await cek(klasor, onay, "07-satin-alma-onayi", 1800);
 
-  // react-native-web's AccessibilityInfo reports a screen reader as
-  // ALWAYS present (it cannot detect one, so it assumes the accessible
-  // path), which means the browser gets §4.5's plain-button substitute
-  // rather than the drag. That is the substitution working, so it is what
-  // gets driven here; the 140pt threshold and its release behaviour are
-  // proven in teslim-perde.test.ts and teslim-kepenk-ekrani.test.tsx.
-  const dugme = kepenk.getByTestId("kepenk-kol-dugmesi");
-  const suruklenir = kepenk.getByTestId("kepenk-kol-suruklenir");
-  if ((await dugme.count()) > 0) {
-    console.log("handle: accessible button substitute");
-    await dugme.click();
-  } else {
-    console.log("handle: drag");
-    const kutu = await suruklenir.boundingBox();
-    if (!kutu) throw new Error("no handle on screen — is the pickup window open?");
-    const x = kutu.x + kutu.width / 2;
-    const y = kutu.y + kutu.height / 2;
-    await kepenk.mouse.move(x, y);
-    await kepenk.mouse.down();
-    for (let i = 1; i <= 12; i += 1) {
-      await kepenk.mouse.move(x, y - i * 15);
-      await bekle(16);
+    // ---- 5. KEPENK, both states --------------------------------------
+    const kepenk = await sayfa(baglam);
+    await kepenk.goto(`${APP}/redeem/${rezervasyon.reservationId}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await cek(klasor, kepenk, "08-kepenk-kapali", 2600);
+
+    // react-native-web's AccessibilityInfo reports a screen reader as
+    // ALWAYS present (it cannot detect one, so it assumes the accessible
+    // path), which means the browser gets §4.5's plain-button substitute
+    // rather than the drag. That is the substitution working, so it is
+    // what gets driven here; the 140pt threshold and its release
+    // behaviour are proven in teslim-perde.test.ts and
+    // teslim-kepenk-ekrani.test.tsx.
+    const dugme = kepenk.getByTestId("kepenk-kol-dugmesi");
+    const suruklenir = kepenk.getByTestId("kepenk-kol-suruklenir");
+    if ((await dugme.count()) > 0) {
+      console.log("handle: accessible button substitute");
+      await dugme.click();
+    } else {
+      console.log("handle: drag");
+      const kutu = await suruklenir.boundingBox();
+      if (!kutu) throw new Error("no handle on screen — is the pickup window open?");
+      const x = kutu.x + kutu.width / 2;
+      const y = kutu.y + kutu.height / 2;
+      await kepenk.mouse.move(x, y);
+      await kepenk.mouse.down();
+      for (let i = 1; i <= 12; i += 1) {
+        await kepenk.mouse.move(x, y - i * 15);
+        await bekle(16);
+      }
+      await kepenk.mouse.up();
     }
-    await kepenk.mouse.up();
+    await cek(klasor, kepenk, "09-kepenk-roll", 300);
+    await cek(klasor, kepenk, "10-kepenk-acik", 1400);
+    await cek(klasor, kepenk, "11-kepenk-acik-sonra", 1600);
+  } finally {
+    await baglam.close();
   }
-  await cek(kepenk, "09-kepenk-roll", 300);
-  await cek(kepenk, "10-kepenk-acik", 1400);
-  await cek(kepenk, "11-kepenk-acik-sonra", 1600);
+}
+
+try {
+  for (const faz of FAZLAR) await gecis(faz);
 
   console.log(JSON.stringify({ hatalar: [...new Set(hatalar)] }, null, 2));
 } finally {

@@ -14,15 +14,15 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { fiyatMetni } from "../../components/kepenk/olcum";
-import { tabelaGenisligi } from "../../components/kepenk/tabela-olcu";
 import { saatBulunma } from "../../components/kepenk/tr-saat";
 import {
   ACIK_KALMA_SN,
+  AcikDukkan,
   CanliSaat,
   DurumEkrani,
   Dugme,
+  HeroTabela,
   IKON,
   IkonDugmesi,
   INIS_SURESI,
@@ -45,7 +45,6 @@ import { useReduceMotion } from "../../design/reduce-motion";
 import { useSaniyeTiki } from "../../design/saat";
 import { usePalet } from "../../design/theme";
 import { m, r, s, yazi } from "../../design/tokens";
-import { trUpper } from "../../design/tr-upper";
 import { useOrderDetails } from "../../hooks/use-order-details";
 import { useRedeemReconciliation } from "../../hooks/use-redeem-reconciliation";
 import { client } from "../../lib/api-client";
@@ -298,7 +297,7 @@ export default function KepenkEkrani() {
       <View style={[styles.kok, { backgroundColor: palet.bgDerin }]}>
         <SafeAreaView style={styles.kok} edges={["top", "bottom", "left", "right"]}>
           <View style={styles.basariGovdesi}>
-            <Tabelasi
+            <HeroTabela
               ad={data.storeName}
               palet={palet}
               yanik
@@ -424,7 +423,7 @@ export default function KepenkEkrani() {
         {/* The sign is above the opening, architecturally, so the shutter
             can never reach it — the same rule the offer card obeys. It is
             unlit until the metal moves. */}
-        <Tabelasi
+        <HeroTabela
           ad={data.storeName}
           palet={palet}
           yanik={acik}
@@ -449,6 +448,15 @@ export default function KepenkEkrani() {
             );
           }}
         >
+          {/* The shop itself. It is drawn FIRST because everything else
+              in this box is inside it: the metal is in front of the room,
+              and the code is written on the light. */}
+          <AcikDukkan
+            genislik={vitrinOlcusu.width}
+            yukseklik={vitrinOlcusu.height}
+            palet={palet}
+          />
+
           {/* Everything below exists only once the shutter is up. It is
               mounted only then, so a screenshot of the closed state
               cannot contain it at all. */}
@@ -474,6 +482,12 @@ export default function KepenkEkrani() {
               <View style={styles.kodAlani}>
                 <Kod kod={rezervasyon.code} palet={palet} />
               </View>
+
+              {/* The depth of the shop. The two dense groups sit where
+                  the light is — the code held up in the lamp, the ticket
+                  down on the counter — and the slack between them is the
+                  room rather than a gap in a layout. */}
+              <View style={styles.derinlik} />
 
               <View style={[styles.ayrac, { backgroundColor: palet.cizgiKil }]} />
 
@@ -612,100 +626,6 @@ export default function KepenkEkrani() {
   );
 }
 
-/**
- * The sign, and the difference between a shut shop and an open one.
- *
- * This is the element a shop worker reads FIRST — "is this us?" — so on
- * this one screen it is set as large as the plaque will take it rather
- * than at the card's `tabela.lg`, and lighting it is a painted sodium
- * bloom rather than a colour swap: the sign does not change colour when
- * the shop opens, a lamp comes on behind it.
- *
- * Real RN `<Text>` over the plaque — never SVG `<Text>`, which Android
- * resolves through its own Typeface lookup and silently drops the Turkish
- * diacritics with (§5.5).
- */
-const HERO_EN_BUYUK = 44;
-const HERO_EN_KUCUK = 22;
-
-export function heroTabelaBoyutu(yazit: string, kullanilabilir: number): number {
-  for (let boyut = HERO_EN_BUYUK; boyut > HERO_EN_KUCUK; boyut -= 1) {
-    if (tabelaGenisligi(yazit, boyut) <= kullanilabilir) return boyut;
-  }
-  return HERO_EN_KUCUK;
-}
-
-function Tabelasi({
-  ad,
-  palet,
-  yanik,
-  genislik,
-}: {
-  ad: string;
-  palet: ReturnType<typeof usePalet>;
-  yanik: boolean;
-  genislik: number;
-}) {
-  const yazit = trUpper(ad);
-  const boyut = heroTabelaBoyutu(yazit, genislik - 2 * 6 - 6 - 12);
-
-  return (
-    <View style={styles.tabelaAlani}>
-      {/* The bloom the lamp throws around the sign. Ends at alpha 0,
-          never `'transparent'` (§5.7). */}
-      {yanik ? (
-        <LinearGradient
-          pointerEvents="none"
-          colors={[
-            `rgba(${palet.isikRgb},0.30)`,
-            `rgba(${palet.isikRgb},0.10)`,
-            `rgba(${palet.isikRgb},0)`,
-          ]}
-          locations={[0, 0.55, 1]}
-          style={[styles.hale, { width: genislik + 40 }]}
-        />
-      ) : null}
-      <View
-        style={[
-          styles.plaka,
-          {
-            width: genislik,
-            backgroundColor: palet.plakaZemin,
-            borderColor: yanik ? palet.sodyumDolgu : palet.plakaCizgi,
-          },
-        ]}
-        testID={yanik ? "kepenk-tabela-yanik" : "kepenk-tabela-sonuk"}
-      >
-        {/* Light landing ON the painted sign. */}
-        {yanik ? (
-          <LinearGradient
-            pointerEvents="none"
-            colors={[`rgba(${palet.isikRgb},0.34)`, `rgba(${palet.isikRgb},0.06)`]}
-            style={styles.plakaIsigi}
-          />
-        ) : null}
-        <View style={[styles.civata, { backgroundColor: palet.plakaBoltu }]} />
-        <Text
-          style={[
-            yazi.tabelaXl,
-            styles.tabelaYazisi,
-            {
-              fontSize: boyut,
-              lineHeight: boyut + 6,
-              color: yanik ? palet.plakaYazi : palet.plakaYaziSonuk,
-            },
-          ]}
-          numberOfLines={2}
-          maxFontSizeMultiplier={yazi.tabelaXl.maxFontSizeMultiplier}
-        >
-          {yazit}
-        </Text>
-        <View style={[styles.civata, { backgroundColor: palet.plakaBoltu }]} />
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   kok: { flex: 1 },
   ustCubuk: {
@@ -722,33 +642,6 @@ const styles = StyleSheet.create({
     paddingVertical: s.s1,
     flexShrink: 1,
   },
-  tabelaAlani: { alignItems: "center", alignSelf: "center" },
-  hale: {
-    position: "absolute",
-    top: -18,
-    bottom: -18,
-    borderRadius: r.card,
-  },
-  plakaIsigi: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    borderRadius: r.plaque,
-  },
-  plaka: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "center",
-    borderRadius: r.plaque,
-    borderWidth: 1.5,
-    paddingHorizontal: 6,
-    paddingVertical: s.s3,
-    overflow: "hidden",
-  },
-  civata: { width: 3, height: 3, borderRadius: 1.5 },
-  tabelaYazisi: { flex: 1, textAlign: "center", marginHorizontal: 6 },
   vitrin: { flex: 1, justifyContent: "flex-start", overflow: "hidden" },
   // The staff member's reading order runs top to bottom and the button is
   // the last thing in it, so the group fills the opening and the action
@@ -771,7 +664,8 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     textAlign: "center",
   },
-  eylem: { marginTop: "auto", paddingTop: s.s4, alignItems: "stretch" },
+  derinlik: { flexGrow: 1, flexShrink: 1 },
+  eylem: { paddingTop: s.s4, alignItems: "stretch" },
   geriAl: { alignSelf: "center", paddingVertical: s.s3, paddingHorizontal: s.s4 },
   kolYuvasi: { alignItems: "center" },
   basariGovdesi: {

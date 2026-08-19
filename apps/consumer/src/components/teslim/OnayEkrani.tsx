@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Platform,
@@ -12,9 +12,10 @@ import * as Haptics from "expo-haptics";
 import { useTranslation } from "react-i18next";
 import { egri, YERLI_SURUCU } from "../../design/motion";
 import { usePalet } from "../../design/theme";
-import { m, r, s, yazi } from "../../design/tokens";
-import { trUpper } from "../../design/tr-upper";
+import { m, s, yazi } from "../../design/tokens";
 import { fiyatMetni } from "../kepenk/olcum";
+import { AcikDukkan } from "./AcikDukkan";
+import { HeroTabela } from "./HeroTabela";
 import { Dugme } from "./ortak";
 import { TamKepenk } from "./TamKepenk";
 
@@ -63,10 +64,14 @@ export function OnayEkrani({
   const { width, height } = useWindowDimensions();
   const konum = useRef(new Animated.Value(0)).current;
   const fis = useRef(new Animated.Value(0)).current;
+  // The sign is dark until the metal has finished moving: §4.4's order is
+  // the roll, THEN the lit tabela settling, then the ticket.
+  const [yanik, setYanik] = useState(false);
 
   useEffect(() => {
     if (azaltHareket === null) return;
     const isikYandi = () => {
+      setYanik(true);
       if (Platform.OS !== "web") {
         void Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success,
@@ -110,24 +115,19 @@ export function OnayEkrani({
       style={[styles.kok, { backgroundColor: palet.bgDerin }]}
       testID="satin-alma-onayi"
     >
+      {/* The shop the shutter has just uncovered. Drawn first, because
+          everything on this screen is inside it. */}
+      <AcikDukkan genislik={width} yukseklik={height} palet={palet} />
+
       <SafeAreaView style={styles.kok} edges={["top", "bottom", "left", "right"]}>
         <View style={styles.govde}>
-          <View
-            style={[
-              styles.plaka,
-              { backgroundColor: palet.plakaZemin, borderColor: palet.sodyumDolgu },
-            ]}
-          >
-            <View style={[styles.civata, { backgroundColor: palet.plakaBoltu }]} />
-            <Text
-              style={[yazi.tabelaXl, styles.ad, { color: palet.plakaYazi }]}
-              numberOfLines={2}
-              maxFontSizeMultiplier={yazi.tabelaXl.maxFontSizeMultiplier}
-            >
-              {trUpper(dukkanAdi)}
-            </Text>
-            <View style={[styles.civata, { backgroundColor: palet.plakaBoltu }]} />
-          </View>
+          <HeroTabela
+            ad={dukkanAdi}
+            palet={palet}
+            yanik={yanik}
+            genislik={width - 2 * s.s5}
+            testIDOneki="onay"
+          />
 
           <Animated.View
             testID="onay-fisi"
@@ -209,24 +209,19 @@ export function OnayEkrani({
 
 const styles = StyleSheet.create({
   kok: { flex: 1 },
+  // The sign is at the TOP of a shopfront, above the opening, on every
+  // other surface in this app; a confirmation that centres it puts the
+  // shop's own architecture upside down and leaves the lintel empty.
+  // Sign, then the ticket under it, then the room, then the action on
+  // the counter.
   govde: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     paddingHorizontal: s.s5,
+    paddingTop: s.s8,
     gap: s.s6,
   },
-  plaka: {
-    flexDirection: "row",
-    alignItems: "center",
-    alignSelf: "stretch",
-    borderRadius: r.plaque,
-    borderWidth: 1.5,
-    paddingHorizontal: 6,
-    paddingVertical: s.s3,
-  },
-  civata: { width: 3, height: 3, borderRadius: 1.5 },
-  ad: { flex: 1, textAlign: "center", marginHorizontal: 6 },
   fis: { alignItems: "center", gap: s.s1 },
   satir: { textAlign: "center" },
   bosluk: { marginTop: s.s3 },
