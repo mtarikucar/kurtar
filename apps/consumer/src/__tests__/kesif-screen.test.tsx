@@ -109,7 +109,14 @@ describe("Keşif screen — loading / error / empty / list branches (spec §4.1 
     mockOffers.mockResolvedValue({ items: [offer()], total: 1, page: 1, pageSize: 50 });
     await renderKesif();
 
-    await waitFor(() => expect(screen.getByText("KADIKÖY")).toBeTruthy());
+    // The district name is drawn TWICE on this screen — once in the
+    // location chip at the top, once as the section header — so a bare
+    // text query is ambiguous the moment both have rendered, and which
+    // one wins is a matter of timing. This test is about the SECTION
+    // header, so it asks for that one.
+    await waitFor(() =>
+      expect(screen.getByTestId("kesif-bolum-basligi")).toHaveTextContent("KADIKÖY"),
+    );
     await waitFor(() => expect(screen.getByText("MODA FIRIN", GORUNUR)).toBeTruthy());
   });
 

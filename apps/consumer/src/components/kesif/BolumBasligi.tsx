@@ -26,6 +26,7 @@ export function BolumBasligi({ baslik }: { baslik: string }) {
         <View style={[styles.hairline, { backgroundColor: palet.cizgiKil }]} />
       </View>
       <Text
+        testID="kesif-bolum-basligi"
         style={[yazi.label, styles.baslik, { color: palet.yaziSisZemin }]}
         maxFontSizeMultiplier={1.3}
       >
