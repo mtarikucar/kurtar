@@ -55,17 +55,22 @@ export default function TabsLayout() {
           borderTopColor: palet.bgDerin,
           elevation: 0,
         },
-        // Font only — no height, no padding, no item margin. The bar
+        // Font only — no height, no padding, no item margin: the bar
         // computes its own height (plus the device's bottom inset) around
-        // the label's line box, and every point added to that box on top
-        // pushed the ş of "Keşfet" and "Siparişler" under the bar's own
-        // edge. The line height is ABSOLUTE, as everywhere else in this
-        // app, because at multiplied leading Android clips ğ/ş/ç and the
-        // İ dot (§1.2).
+        // the label's line box, and every point added to that box on TOP
+        // pushed the label down instead of growing the bar.
+        //
+        // The leading is the one thing that does grow the box from the
+        // inside. At micro's own 14pt the cedilla of "Keşfet" and
+        // "Siparişler" was shaved off and the tabs read "Kesfet" /
+        // "Siparisler" — the label was silently dropping Turkish. 17pt
+        // clears the descender at 11pt Archivo. It stays ABSOLUTE, as
+        // everywhere else in this app, because at multiplied leading
+        // Android clips ğ/ş/ç and the İ dot (§1.2).
         tabBarLabelStyle: {
           fontFamily: yazi.micro.fontFamily,
           fontSize: yazi.micro.fontSize,
-          lineHeight: yazi.micro.lineHeight,
+          lineHeight: 17,
           letterSpacing: yazi.micro.letterSpacing,
         },
       }}

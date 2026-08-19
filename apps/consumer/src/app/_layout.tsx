@@ -14,7 +14,7 @@ import { registerPushTokenIfPermitted, resolvePushDeepLink } from "../lib/push";
 import { useGlobalRedeemSync } from "../hooks/use-global-redeem-sync";
 import { useUygulamaFontlari } from "../design/fonts";
 import { ClockProvider } from "../design/saat";
-import { ThemeProvider } from "../design/theme";
+import { ThemeProvider, usePalet } from "../design/theme";
 import type { Faz } from "../design/tokens";
 
 /**
@@ -125,6 +125,18 @@ function RootNavigator() {
   );
 }
 
+/**
+ * The status bar's icons follow the phase. It used to be pinned to
+ * `dark`, which is right on the daylight street and wrong the moment the
+ * ground goes to night — the clock and battery went black on a black
+ * ground. It has to live INSIDE the theme provider to ask the question at
+ * all, which is why it is a component rather than a line.
+ */
+function FazaGoreDurumCubugu() {
+  const palet = usePalet();
+  return <StatusBar style={palet.faz === "gece" ? "light" : "dark"} />;
+}
+
 export default function RootLayout() {
   // Nothing renders type until the three families are in (spec §1.2); a
   // load FAILURE also releases the gate, falling back to the system face
@@ -140,11 +152,11 @@ export default function RootLayout() {
       }}
     >
       <AuthProvider>
-        <StatusBar style="dark" />
         {/* One clock for the whole app, one palette swapped whole on the
             solar phase change (spec §1.1 / §2). */}
         <ClockProvider sabitZaman={INCELEME_ZAMANI}>
           <ThemeProvider fazZorla={INCELEME_FAZI}>
+            <FazaGoreDurumCubugu />
             {fontlarHazir ? <RootNavigator /> : null}
           </ThemeProvider>
         </ClockProvider>

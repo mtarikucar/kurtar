@@ -6,6 +6,7 @@ import { usePalet } from "../../design/theme";
 import { s, yazi } from "../../design/tokens";
 import { PanelScreen } from "../../components/panel/PanelScreen";
 import { PanelEmptyState } from "../../components/panel/PanelEmptyState";
+import { PanelButton } from "../../components/panel/PanelButton";
 import { PanelErrorState } from "../../components/panel/PanelErrorState";
 import { PanelLoadingState } from "../../components/panel/PanelLoadingState";
 import { OrderRow } from "../../components/OrderRow";
@@ -16,7 +17,8 @@ const ACTIVE_STATUSES: ReservationItem["status"][] = ["PENDING_PAYMENT", "CONFIR
 
 type Satir =
   | { tur: "baslik"; anahtar: string; metin: string }
-  | { tur: "siparis"; anahtar: string; reservation: ReservationItem };
+  | { tur: "siparis"; anahtar: string; reservation: ReservationItem }
+  | { tur: "bosAktif"; anahtar: string };
 
 /**
  * SİPARİŞLER — spec §4.6. Two sections in ONE scrollable list, pre-
@@ -47,6 +49,13 @@ export default function OrdersScreen() {
     if (active.length > 0) {
       sonuc.push({ tur: "baslik", anahtar: "baslik-aktif", metin: t("orders.activeSection") });
       for (const r of active) sonuc.push({ tur: "siparis", anahtar: r.id, reservation: r });
+    } else if (past.length > 0) {
+      // Somebody who has rescued before and has nothing waiting used to
+      // get one card and then a screen of nothing. The AKTİF section is
+      // where the missing thing belongs, so it says what is missing and
+      // where to go — an empty screen is an invitation, not a hole.
+      sonuc.push({ tur: "baslik", anahtar: "baslik-aktif", metin: t("orders.activeSection") });
+      sonuc.push({ tur: "bosAktif", anahtar: "bos-aktif" });
     }
     if (past.length > 0) {
       sonuc.push({ tur: "baslik", anahtar: "baslik-gecmis", metin: t("orders.pastSection") });
@@ -90,6 +99,19 @@ export default function OrdersScreen() {
               <Text style={[yazi.label, styles.bolumBasligi, { color: palet.yaziSisZemin }]}>
                 {item.metin}
               </Text>
+            ) : item.tur === "bosAktif" ? (
+              <View style={styles.bosAktif}>
+                <Text style={[yazi.body, { color: palet.yaziSisZemin }]}>
+                  {t("orders.emptyActiveBody")}
+                </Text>
+                <View style={styles.bosAktifDugme}>
+                  <PanelButton
+                    varyant="hayalet"
+                    label={t("orders.browseCta")}
+                    onPress={() => router.push("/(tabs)")}
+                  />
+                </View>
+              </View>
             ) : (
               <View style={styles.satirAraligi}>
                 <OrderRow
@@ -120,6 +142,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: s.s4,
     paddingBottom: s.s10,
   },
+  bosAktif: { paddingHorizontal: s.s4, paddingBottom: s.s4 },
+  bosAktifDugme: { marginTop: s.s3, alignSelf: "flex-start" },
   bolumBasligi: {
     marginTop: s.s4,
     marginBottom: s.s2,

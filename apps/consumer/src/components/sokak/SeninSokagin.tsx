@@ -7,6 +7,8 @@ import { usePalet } from "../../design/theme";
 import { s, yazi } from "../../design/tokens";
 import { tenteDeseni } from "../kepenk/tente-desen";
 import {
+
+
   ayGenisligi,
   ayGenisligiDevamli,
   aylaraGrupla,
@@ -28,6 +30,23 @@ import {
   type AySokagi,
   type KurtarmaKaydi,
 } from "./sokak-hesap";
+
+/**
+ * The street is DRAWN in the geometry's own units and SHOWN at this
+ * multiple.
+ *
+ * At 1:1 a month of rescues was a 40pt strip of small blocks — the reward
+ * loop of the whole product rendering as something you would mistake for
+ * a progress bar. The shops have to be big enough that an awning reads as
+ * an awning and a lit window as a lit window; below that the drawing is
+ * saying nothing it took the trouble to draw.
+ *
+ * A `viewBox` rather than bigger constants: every coordinate in
+ * sokak-hesap.ts, and every test pinned to one, keeps its meaning, and
+ * the street already scrolls horizontally so a long month simply runs
+ * further down the road.
+ */
+export const SOKAK_OLCEGI = 2.2;
 
 /**
  * SENİN SOKAĞIN — spec §4.7, the reward loop of the whole product and the
@@ -140,8 +159,9 @@ function AySatiri({
         {ay.etiket}
       </Text>
       <Svg
-        width={genislik}
-        height={SOKAK_SVG_YUKSEKLIGI}
+        width={genislik * SOKAK_OLCEGI}
+        height={SOKAK_SVG_YUKSEKLIGI * SOKAK_OLCEGI}
+        viewBox={`0 0 ${genislik} ${SOKAK_SVG_YUKSEKLIGI}`}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >

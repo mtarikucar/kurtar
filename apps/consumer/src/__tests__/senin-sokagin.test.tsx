@@ -2,8 +2,9 @@ import { render, screen } from "@testing-library/react-native";
 import type { ReactTestRendererJSON } from "react-test-renderer";
 import { ClockProvider } from "../design/saat";
 import { ThemeProvider } from "../design/theme";
-import { SeninSokagin } from "../components/sokak/SeninSokagin";
+import { SeninSokagin, SOKAK_OLCEGI } from "../components/sokak/SeninSokagin";
 import {
+  SOKAK_SVG_YUKSEKLIGI,
   ayGenisligiDevamli,
   SOKAK_DEVAM_DUKKAN_SAYISI,
   type KurtarmaKaydi,
@@ -117,7 +118,12 @@ describe("SeninSokagin — the street", () => {
         const svgler = dugumleriTopla(agac, "RNSVGSvgView");
         // Exactly one month, so exactly one <Svg>.
         expect(svgler).toHaveLength(1);
-        expect(svgler[0]!.props.width).toBe(ayGenisligiDevamli(adet));
+        // The street is drawn in geometry units and SHOWN at SOKAK_OLCEGI
+        // (at 1:1 it read as a progress bar). The viewBox is what carries
+        // the geometry, so that is what the shop count has to agree with;
+        // the rendered width is that same number, scaled.
+        expect(svgler[0]!.props.vbWidth).toBe(ayGenisligiDevamli(adet));
+        expect(svgler[0]!.props.width).toBe(ayGenisligiDevamli(adet) * SOKAK_OLCEGI);
 
         const yollar = dugumleriTopla(agac, "RNSVGPath");
         // One scalloped awning per REAL rescue only — a placeholder
@@ -160,9 +166,9 @@ describe("SeninSokagin — the street", () => {
       const [haziranSvg, agustosSvg] = svgler as [ReactTestRendererJSON, ReactTestRendererJSON];
 
       // June (settled history): exactly its 2 rescues, no continuation.
-      expect(haziranSvg.props.width).toBe(58); // ayGenisligi(2) = 2*26 + 1*6
+      expect(haziranSvg.props.vbWidth).toBe(58); // ayGenisligi(2) = 2*26 + 1*6
       // August (the growing edge): 1 rescue + the fixed continuation.
-      expect(agustosSvg.props.width).toBe(ayGenisligiDevamli(1));
+      expect(agustosSvg.props.vbWidth).toBe(ayGenisligiDevamli(1));
 
       const haziranEtiket = screen.getByLabelText(/Haziran 2026:/, GORUNUR);
       expect(haziranEtiket.props.accessibilityLabel).not.toContain(

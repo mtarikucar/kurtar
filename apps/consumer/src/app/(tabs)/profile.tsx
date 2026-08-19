@@ -10,6 +10,7 @@ import { PanelLoadingState } from "../../components/panel/PanelLoadingState";
 import { PanelButton } from "../../components/panel/PanelButton";
 import { SeninSokagin } from "../../components/sokak/SeninSokagin";
 import type { KurtarmaKaydi } from "../../components/sokak/sokak-hesap";
+import { telefonuBicimle } from "../../lib/telefon";
 import { enCokGidilenDukkan, enSikSaat } from "../../components/sokak/sokak-hesap";
 import { fiyatMetni } from "../../components/kepenk/olcum";
 import { useAuth } from "../../lib/auth-context";
@@ -95,7 +96,7 @@ export default function ProfileScreen() {
         <Text style={[yazi.title, { color: palet.yaziAnaZemin }]}>{t("profile.title")}</Text>
         {user ? (
           <Text style={[yazi.data, { color: palet.yaziSisZemin }]}>
-            {t("profile.guestPhone", { phone: user.phone })}
+            {t("profile.guestPhone", { phone: telefonuBicimle(user.phone) })}
           </Text>
         ) : null}
 
@@ -196,7 +197,7 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.cikisAlani}>
-          <PanelButton varyant="tehlike" label={t("profile.logout")} onPress={handleLogout} />
+          <PanelButton varyant="hayalet" label={t("profile.logout")} onPress={handleLogout} />
         </View>
       </ScrollView>
     </PanelScreen>
