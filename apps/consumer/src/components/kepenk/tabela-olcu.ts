@@ -15,6 +15,17 @@ import { kis } from "./olcum";
  * from the font. `adjustsFontSizeToFit` would have been the lazy answer —
  * it is iOS-only in practice and silently does nothing on Android and
  * web, which is exactly where the truncation would then live.
+ *
+ * The fit is done at the size the type is actually DRAWN at, not at 1×.
+ * The plaque is a fixed object on a fixed Y (§3) and `allowFontScaling`
+ * is on (§1.2), so at a raised text size RN multiplies whatever size we
+ * hand it — fitting at 1× and drawing at 1.4× is how "YELDEĞİRMENİ
+ * PASTANESİ" came back as "YELDEĞİRMENİ PA…" for exactly the user who
+ * needed the name most. So the ceiling and the floor are both stated in
+ * DRAWN points: the sign grows with the user's text size wherever the
+ * plaque has the room ("MODA FIRIN" goes 20 → 28pt), and where it does
+ * not, the name wins and the size holds. A legibility floor that is not
+ * measured in drawn points is not a legibility floor.
  */
 
 export const TABELA_HARF_GENISLIKLERI: Readonly<Record<string, number>> = Object.freeze({
@@ -45,20 +56,47 @@ export function tabelaGenisligi(metin: string, boyut: number): number {
   return (birim / 1000) * boyut + aralik;
 }
 
+/** `tabela.lg`'s own dynamic-type ceiling (spec §1.2: "1.4 on the
+ * tabela"). The sign may grow this far and no further, which is also the
+ * multiplier RN itself will apply — so the fit and the drawing agree. */
+export const TABELA_OLCEK_TAVANI = 1.4;
+
 export interface TabelaOlcusu {
+  /** The `fontSize` to put in the style. RN multiplies it by the user's
+   * (capped) text scale, which is exactly how it becomes `cizilenBoyut`. */
   readonly boyut: number;
+  /** Absolute, never a multiplier — Android clips ğ/ş/ç and the İ dot at
+   * multiplied leading (§1.2). In style units, like `boyut`. */
   readonly satirYuksekligi: number;
+  /** What the reader actually sees, in points on glass. This is the
+   * number the 14pt floor and the 20pt ceiling are about. */
+  readonly cizilenBoyut: number;
 }
 
 /**
- * The largest whole point size at which the name fits, down to a 14pt
- * floor. Short names are untouched at 20pt — the sign only quietens for
- * the names that need it, which is the behaviour a signwriter would have.
+ * The largest whole DRAWN point size at which the name fits, between a
+ * 14pt floor and 20pt × the user's text scale. Short names are untouched
+ * at the ceiling — the sign only quietens for the names that need it,
+ * which is the behaviour a signwriter would have.
+ *
+ * `olcek` is `PixelRatio.getFontScale()`. At 1× this is byte-for-byte the
+ * old behaviour; below 1× (the small-text setting) the fit is still done
+ * at 1× and RN draws it smaller, which can only ever fit.
  */
-export function tabelaOlcusu(metin: string, kullanilabilir: number): TabelaOlcusu {
+export function tabelaOlcusu(
+  metin: string,
+  kullanilabilir: number,
+  olcek = 1,
+): TabelaOlcusu {
+  const carpan = kis(olcek, 1, TABELA_OLCEK_TAVANI);
   const birimGenislik = tabelaGenisligi(metin, 1000) / 1000; // pt per pt of size
   const aralik = Math.max(metin.length - 1, 0) * TABELA_ARALIK;
-  const ham = birimGenislik > 0 ? (kullanilabilir - aralik) / birimGenislik : TABELA_EN_BUYUK;
-  const boyut = kis(Math.floor(ham), TABELA_EN_KUCUK, TABELA_EN_BUYUK);
-  return { boyut, satirYuksekligi: boyut + 4 };
+  const tavan = TABELA_EN_BUYUK * carpan;
+  const ham = birimGenislik > 0 ? (kullanilabilir - aralik) / birimGenislik : tavan;
+  const cizilenBoyut = kis(Math.floor(ham), TABELA_EN_KUCUK, tavan);
+  return {
+    boyut: cizilenBoyut / carpan,
+    satirYuksekligi: (cizilenBoyut + 4) / carpan,
+    cizilenBoyut,
+  };
 }
