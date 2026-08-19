@@ -13,6 +13,27 @@ import {
 const POLL_INTERVAL_MS = 4000;
 
 /**
+ * Statuses a queued swipe can no longer be reconciled OUT of — the poll
+ * stops on any of them, not only on the happy one.
+ *
+ * Until the backend's no-show sweep shipped, `REDEEMED` was the only
+ * status a queued reservation could ever reach: an uncollected bag sat at
+ * CONFIRMED for ever, so "stop when it turns REDEEMED" and "stop when
+ * there is nothing left to wait for" were the same rule. They are not any
+ * more — a queued swipe that staff never reconciled at the counter is now
+ * swept to `NO_SHOW` an hour after its window closes, and polling every
+ * four seconds for a flip that can never come is just a battery drain
+ * behind a screen already telling the customer it is over.
+ */
+const KESINLESMIS_DURUMLAR = [
+  "REDEEMED",
+  "NO_SHOW",
+  "CANCELLED_BY_USER",
+  "CANCELLED_BY_MERCHANT",
+  "EXPIRED",
+] as const;
+
+/**
  * The redeem screen's state machine (see src/app/redeem/[id].tsx for the
  * screen itself, redeem-queue.ts for the offline fallback's own doc
  * comment). `POST /reservations/:id/redeem` accepts the CONSUMER owner
@@ -34,7 +55,9 @@ const POLL_INTERVAL_MS = 4000;
  *        `GET /reservations/mine` (the one consumer-reachable read, same
  *        one useGlobalRedeemSync uses in the background) until the
  *        reservation's status flips to REDEEMED — by staff acting on
- *        their side (a manual redeem from the merchant-web pickup list).
+ *        their side (a manual redeem from the merchant-web pickup list) —
+ *        or until it settles into some other terminal status, NO_SHOW
+ *        above all (see KESINLESMIS_DURUMLAR).
  *        There is deliberately no automatic retry of the direct call from
  *        here: once queued, this screen never re-offers the shutter handle
  *        (see redeem/[id].tsx) and neither this hook nor
@@ -102,7 +125,10 @@ export function useRedeemReconciliation(reservationId: string) {
     refetchInterval: (query) => {
       const items = query.state.data?.items ?? [];
       const mine = items.find((r) => r.id === reservationId);
-      return mine?.status === "REDEEMED" ? false : POLL_INTERVAL_MS;
+      const kesinlesti =
+        mine !== undefined &&
+        (KESINLESMIS_DURUMLAR as readonly string[]).includes(mine.status);
+      return kesinlesti ? false : POLL_INTERVAL_MS;
     },
   });
 

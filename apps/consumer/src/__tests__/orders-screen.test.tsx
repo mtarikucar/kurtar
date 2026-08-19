@@ -83,6 +83,32 @@ describe("OrdersScreen — sectioned AKTİF / GEÇMİŞ (spec §4.6)", () => {
     expect(await screen.findByText("İlk paketini kurtardığında burada görünecek.")).toBeTruthy();
   });
 
+  it("a NO_SHOW order belongs to GEÇMİŞ, not AKTİF, and offers no shortcut to open the shutter", async () => {
+    // The consumer-facing half of the no-show hole: while nothing ever
+    // wrote NO_SHOW, an uncollected bag stayed CONFIRMED and sat in AKTİF
+    // for ever. AKTİF is exactly {PENDING_PAYMENT, CONFIRMED}, so the
+    // sweeper writing a terminal status is what moves it — this pins that
+    // the two agree.
+    mockListMine.mockResolvedValue({
+      items: [reservation({ id: "r1", status: "NO_SHOW", redeemedAt: null })],
+      total: 1,
+      page: 1,
+      pageSize: 50,
+    });
+    await renderWithPanelProviders(<OrdersScreen />);
+    expect(await screen.findByText("GEÇMİŞ")).toBeTruthy();
+    expect(screen.getByText("AKTİF")).toBeTruthy(); // shown with its empty placeholder
+    expect(
+      screen.getByText("Keşfet'ten yeni bir paket bul.", {
+        includeHiddenElements: true,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Alınmadı", { includeHiddenElements: true }),
+    ).toBeTruthy();
+    expect(screen.queryByText("KEPENGİ AÇ")).toBeNull();
+  });
+
   it("navigates to the ticket when a row is pressed", async () => {
     mockListMine.mockResolvedValue({
       items: [reservation({ id: "r1", status: "CONFIRMED" })],

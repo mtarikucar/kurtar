@@ -284,6 +284,29 @@ d("redeem — one error code per refusal reason", () => {
     });
   });
 
+  it("a swept no-show -> RESERVATION_NO_SHOW, the one refusal code that had no writer until the sweeper shipped", async () => {
+    // REDEEM_REJECTION_BY_STATUS has carried this entry since Task 4 and
+    // it was unreachable: no code path wrote NO_SHOW. Now that
+    // no-show-sweeper.service.ts does, a customer swiping on an order the
+    // sweep already closed gets the specific reason instead of the
+    // catch-all "Bu sipariş şu anda teslim alınamıyor".
+    const { reservation } = await seed({
+      status: "CONFIRMED",
+      startsInMs: -60 * 60 * 1000,
+      endsInMs: -30 * 60 * 1000,
+    });
+    await prisma.reservation.update({
+      where: { id: reservation.id },
+      data: { status: "NO_SHOW" },
+    });
+    const err = (await refusalFor(reservation.id)) as ConflictException;
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.getResponse()).toMatchObject({
+      statusCode: 409,
+      errorCode: "RESERVATION_NO_SHOW",
+    });
+  });
+
   it("GET /reservations/mine carries the offer's real pickup window on every row", async () => {
     const { reservation, pickupStartAt, pickupEndAt } = await seed({
       status: "CONFIRMED",

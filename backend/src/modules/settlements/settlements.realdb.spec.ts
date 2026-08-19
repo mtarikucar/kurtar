@@ -158,6 +158,34 @@ async function seedOffer(
   });
 }
 
+/** [No-show] An offer whose pickup window sits on a NAMED Europe/Istanbul
+ * day, rather than seedOffer's fixed 2026-08-01. A no-show's settlement
+ * anchor is its window's CLOSE, so a scenario that needs several days of
+ * no-shows needs a window per day — and `@@unique([bagTemplateId,
+ * offerDate])` lets one template carry them all. 10:00-12:00Z is 13:00-
+ * 15:00 Istanbul, comfortably inside the same calendar day, which is what
+ * offer-window.rules.ts guarantees for real offers. */
+async function seedOfferForDay(
+  prisma: PrismaClient,
+  bagTemplateId: string,
+  storeId: string,
+  qtyTotal: number,
+  dayKey: string,
+) {
+  return prisma.dailyOffer.create({
+    data: {
+      bagTemplateId,
+      storeId,
+      offerDate: new Date(`${dayKey}T00:00:00.000Z`),
+      qtyTotal,
+      pickupStartAt: new Date(`${dayKey}T10:00:00.000Z`),
+      pickupEndAt: new Date(`${dayKey}T12:00:00.000Z`),
+      status: "PUBLISHED",
+      publishedAt: new Date(),
+    },
+  });
+}
+
 let userCounter = 0;
 let reservationCounter = 0;
 
@@ -199,6 +227,52 @@ async function seedRedeemedPaidReservation(
       amountCents: totalCents,
       status: "PAID",
       idempotencyKey: `${SETTLEMENTS_TEST_TAG}-IDEMP-${Date.now()}-${rn}`,
+      paidAt: new Date(),
+    },
+  });
+  return { reservation, payment, totalCents, userId: user.id };
+}
+
+/** [No-show] The same fixture with the ONE difference that matters: the
+ * bag was paid for and never collected. No `redeemedAt`, no
+ * `redeemedBy*` — a NO_SHOW row's only timestamp is its offer's pickup
+ * window, which is exactly what `settlementAnchorOf` reads. */
+async function seedNoShowPaidReservation(
+  prisma: PrismaClient,
+  params: {
+    storeId: string;
+    offerId: string;
+    qty: number;
+    unitPriceCents: number;
+  },
+) {
+  const n = userCounter++;
+  const user = await prisma.user.create({
+    data: { phoneE164: `+9055521${n.toString().padStart(6, "0")}` },
+  });
+  const rn = reservationCounter++;
+  const totalCents = params.unitPriceCents * params.qty;
+  const reservation = await prisma.reservation.create({
+    data: {
+      code: `${SETTLEMENTS_TEST_TAG}-N-${Date.now()}-${rn}`,
+      userId: user.id,
+      offerId: params.offerId,
+      storeId: params.storeId,
+      qty: params.qty,
+      unitPriceCents: params.unitPriceCents,
+      totalCents,
+      status: "NO_SHOW",
+      cancelDeadlineAt: new Date(Date.now() + 3_600_000),
+    },
+  });
+  const payment = await prisma.payment.create({
+    data: {
+      reservationId: reservation.id,
+      provider: "MOCK",
+      merchantOid: `${SETTLEMENTS_TEST_TAG}-NOID-${Date.now()}-${rn}`,
+      amountCents: totalCents,
+      status: "PAID",
+      idempotencyKey: `${SETTLEMENTS_TEST_TAG}-NIDEMP-${Date.now()}-${rn}`,
       paidAt: new Date(),
     },
   });
@@ -2466,5 +2540,220 @@ d("Settlement engine — real DB concurrency + arithmetic proofs", () => {
         })
       ).status,
     ).toBe("SENT");
+  }, 30000);
+
+  it("[p] [No-show] a NO_SHOW bag settles to the merchant on EXACTLY the same terms as a REDEEMED one — same batch, same day, same kuruş, fee and %1 withholding included", async () => {
+    const { batchBuilder, payout, settlements, mockProvider } =
+      buildHarness(prisma);
+
+    // Merchant A sells two bags on 2026-08-01: one collected, one not.
+    const merchantA = await seedMerchant(prisma);
+    merchantIds.push(merchantA.id);
+    const storeA = await seedStore(prisma, merchantA.id);
+    const templateA = await seedBagTemplate(prisma, storeA.id, 15000);
+    const offerA = await seedOfferForDay(
+      prisma,
+      templateA.id,
+      storeA.id,
+      10,
+      "2026-08-01",
+    );
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: storeA.id,
+      offerId: offerA.id,
+      qty: 1,
+      unitPriceCents: 15000,
+      redeemedAt: new Date("2026-08-01T11:00:00.000Z"),
+    });
+    const noShow = await seedNoShowPaidReservation(prisma, {
+      storeId: storeA.id,
+      offerId: offerA.id,
+      qty: 1,
+      unitPriceCents: 15000,
+    });
+
+    // Merchant B is the CONTROL: the same two bags, both collected.
+    const merchantB = await seedMerchant(prisma);
+    merchantIds.push(merchantB.id);
+    const storeB = await seedStore(prisma, merchantB.id);
+    const templateB = await seedBagTemplate(prisma, storeB.id, 15000);
+    const offerB = await seedOfferForDay(
+      prisma,
+      templateB.id,
+      storeB.id,
+      10,
+      "2026-08-01",
+    );
+    for (const at of ["11:00", "11:30"]) {
+      await seedRedeemedPaidReservation(prisma, {
+        storeId: storeB.id,
+        offerId: offerB.id,
+        qty: 1,
+        unitPriceCents: 15000,
+        redeemedAt: new Date(`2026-08-01T${at}:00.000Z`),
+      });
+    }
+
+    await batchBuilder.runNightlyCycle(new Date("2026-08-02T02:00:00.000Z"));
+
+    const batchA = await prisma.settlementBatch.findFirstOrThrow({
+      where: { merchantId: merchantA.id },
+    });
+    const batchB = await prisma.settlementBatch.findFirstOrThrow({
+      where: { merchantId: merchantB.id },
+    });
+
+    // Hand-computed, per line: gross 15000, bagFee 2500, KDV 500,
+    // withholding base 15000-2500-500 = 12000 -> round(12000/100) = 120.
+    // Two lines: gross 30000, bagFee 5000, vat 1000, withholding 240,
+    // net 30000-5000-1000-240 = 23760.
+    expect({
+      gross: batchA.grossCents,
+      bagFee: batchA.bagFeeCents,
+      vat: batchA.bagFeeVatCents,
+      withholding: batchA.withholdingCents,
+      net: batchA.netPayoutCents,
+    }).toEqual({
+      gross: 30000,
+      bagFee: 5000,
+      vat: 1000,
+      withholding: 240,
+      net: 23760,
+    });
+
+    // ...and the same thing said as an EQUIVALENCE rather than as
+    // arithmetic this test could have got wrong in both places: the
+    // mixed batch and the all-redeemed control are byte-identical in
+    // every derived money column, and land on the same period and the
+    // same 5-business-day due date.
+    expect(moneySnapshot(batchA)).toEqual(moneySnapshot(batchB));
+    expect(batchA.periodStart).toEqual(batchB.periodStart);
+    expect(batchA.dueAt).toEqual(batchB.dueAt);
+
+    // The no-show's own line: anchored at the moment its pickup window
+    // CLOSED, not at a redemption it never had.
+    const noShowLine = await prisma.settlementLine.findUniqueOrThrow({
+      where: { reservationId: noShow.reservation.id },
+    });
+    expect(noShowLine.batchId).toBe(batchA.id);
+    expect(noShowLine.redeemedAt).toEqual(new Date("2026-08-01T12:00:00.000Z"));
+    expect({
+      gross: noShowLine.grossCents,
+      bagFee: noShowLine.bagFeeCents,
+      vat: noShowLine.bagFeeVatCents,
+      withholding: noShowLine.withholdingCents,
+    }).toEqual({ gross: 15000, bagFee: 2500, vat: 500, withholding: 120 });
+    // The reservation itself still tells the truth — nothing fabricated a
+    // redemption to make the settlement work.
+    expect(
+      await prisma.reservation.findUniqueOrThrow({
+        where: { id: noShow.reservation.id },
+      }),
+    ).toMatchObject({ status: "NO_SHOW", redeemedAt: null });
+
+    // And the batch is genuinely PAYABLE, not merely computed: the
+    // merchant actually gets the money for the bag nobody came for.
+    await settlements.adminApprove(
+      batchA.id,
+      ADMIN_ACTOR,
+      new Date("2026-08-02T03:00:00.000Z"),
+    );
+    await payout.executeOne(batchA.id);
+    const paid = mockProvider.getPayoutLog().filter((p) => p.ref === batchA.id);
+    expect(paid).toHaveLength(1);
+    expect(paid[0].amountCents).toBe(23760);
+    expect(
+      (
+        await prisma.settlementBatch.findUniqueOrThrow({
+          where: { id: batchA.id },
+        })
+      ).status,
+    ).toBe("SENT");
+
+    await expectClawbackLedgerConsistent(prisma, merchantA.id);
+    await expectClawbackLedgerConsistent(prisma, merchantB.id);
+  }, 30000);
+
+  it("[q] [No-show] a merchant's queued days still process oldest-earning-first when the oldest day is a NO_SHOW — the membership offset rolls forward day by day", async () => {
+    // The ordering key is the point. `orderBy: { redeemedAt: "asc" }`
+    // cannot express "coalesce a redemption time with a pickup-window
+    // close", so the scan sorts on `settlementAnchorOf` in memory; this
+    // proves the resulting day order is chronological for a MIXED
+    // population, which is what makes a membership balance draw down in
+    // the right order.
+    //
+    // bagFeeCentsOverride 0 and gross 101 isolate the offset arithmetic
+    // exactly as test [d] does: withholding = round(101/100) = 1, leaving
+    // 100 kuruş available per day. A 150-kuruş membership balance is
+    // deliberately NOT a multiple of that, so the two days' offsets differ
+    // (100 then 50) and a reversed order would produce the mirror image.
+    const { batchBuilder } = buildHarness(prisma);
+    const merchant = await seedMerchant(prisma, { bagFeeCentsOverride: 0 });
+    merchantIds.push(merchant.id);
+    const store = await seedStore(prisma, merchant.id);
+    const bagTemplate = await seedBagTemplate(prisma, store.id, 101);
+
+    await prisma.membershipSubscription.create({
+      data: {
+        merchantId: merchant.id,
+        anchorDate: new Date("2026-01-01T00:00:00.000Z"),
+        currentPeriodStart: new Date("2026-01-01T00:00:00.000Z"),
+        currentPeriodEnd: new Date("2027-01-01T00:00:00.000Z"),
+        priceCents: 150,
+        status: "TRIAL",
+        outstandingCents: 150,
+      },
+    });
+
+    // Day 1: nobody came. Day 2: collected. Seeded in that order in the
+    // database would be no proof at all, so the NO_SHOW is inserted
+    // SECOND — only the anchor sort can put it first.
+    const day2Offer = await seedOfferForDay(
+      prisma,
+      bagTemplate.id,
+      store.id,
+      10,
+      "2026-08-11",
+    );
+    await seedRedeemedPaidReservation(prisma, {
+      storeId: store.id,
+      offerId: day2Offer.id,
+      qty: 1,
+      unitPriceCents: 101,
+      redeemedAt: new Date("2026-08-11T11:00:00.000Z"),
+    });
+    const day1Offer = await seedOfferForDay(
+      prisma,
+      bagTemplate.id,
+      store.id,
+      10,
+      "2026-08-10",
+    );
+    await seedNoShowPaidReservation(prisma, {
+      storeId: store.id,
+      offerId: day1Offer.id,
+      qty: 1,
+      unitPriceCents: 101,
+    });
+
+    await batchBuilder.runNightlyCycle(new Date("2026-08-12T02:00:00.000Z"));
+
+    const batches = await prisma.settlementBatch.findMany({
+      where: { merchantId: merchant.id },
+      orderBy: { periodStart: "asc" },
+    });
+    expect(
+      batches.map((b) => b.periodStart.toISOString().slice(0, 10)),
+    ).toEqual(["2026-08-10", "2026-08-11"]);
+    // The older (no-show) day drew first: 100, leaving 50 for the next.
+    expect(batches.map((b) => b.membershipOffsetCents)).toEqual([100, 50]);
+    expect(batches.map((b) => b.netPayoutCents)).toEqual([0, 50]);
+    expect(
+      (
+        await prisma.membershipSubscription.findFirstOrThrow({
+          where: { merchantId: merchant.id },
+        })
+      ).outstandingCents,
+    ).toBe(0);
   }, 30000);
 });

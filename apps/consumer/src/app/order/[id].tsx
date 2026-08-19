@@ -174,16 +174,20 @@ function SiparisDurumBolumu({
     return (
       <View style={styles.durumBlok}>
         {/*
-          "BUGÜN" is a claim, and nothing ever moves a CONFIRMED
-          reservation off CONFIRMED — no NO_SHOW writer exists, and
-          EXPIRED is only reachable from PENDING_PAYMENT — so a bag
-          nobody collected on Tuesday still read "BUGÜN 18:30–21:00 arası
-          al" on Friday, over a live-looking KEPENGİ AÇ. It is also wrong
-          forward: discovery filters on pickupEndAt alone, so a bag
-          published today for tomorrow's window is listed and buyable. The
-          day is named unless it really is today, and named through
-          trUpper() — `formatShortDate` returns "19 Ağu"/"3 Eyl", and
-          toUpperCase() would print "NIS" for Nisan.
+          "BUGÜN" is a claim, so the day is named unless it really is
+          today — discovery filters on pickupEndAt alone, so a bag
+          published today for tomorrow's window is listed and buyable, and
+          this line has to survive that. Named through trUpper():
+          `formatShortDate` returns "19 Ağu"/"3 Eyl", and toUpperCase()
+          would print "NIS" for Nisan.
+
+          This branch used to be the whole story for an uncollected bag
+          too: nothing wrote NO_SHOW, so a bag nobody collected on Tuesday
+          still read "BUGÜN 18:30–21:00 arası al" on Friday, over a
+          live-looking KEPENGİ AÇ. It no longer can — the no-show sweep
+          (backend reservations/no-show-sweeper.service.ts) moves the
+          reservation off CONFIRMED an hour after its window closes, and
+          the NO_SHOW branch below is where it lands.
         */}
         <Text style={[yazi.data, { color: palet.yaziSis }]}>
           {t(
@@ -235,6 +239,38 @@ function SiparisDurumBolumu({
           varyant="hayalet"
           label={t("orders.rateCta")}
           onPress={() => router.push({ pathname: "/rate/[id]", params: { id: reservation.id } })}
+        />
+      </View>
+    );
+  }
+
+  if (reservation.status === "NO_SHOW") {
+    // The bag was paid for and never collected. Say BOTH halves of that
+    // out loud: an uncollected bag is not refunded (plan §4.3 — it counts
+    // as a normal sale, which is what makes the perishable-food carve-out
+    // and the offline-redeem tolerance work), and the money went to the
+    // store rather than nowhere. A softer word here would just move the
+    // surprise to the bank statement. The complaint route stays open —
+    // "the shop was shut when I got there" is a real thing that happens,
+    // and it is the only recourse there is — but nothing here promises a
+    // refund, because no path grants one.
+    return (
+      <View style={styles.durumBlok}>
+        <PanelPill label={t("orders.status.NO_SHOW")} />
+        <Text style={[yazi.body, { color: palet.yaziSis }]}>
+          {t("orders.noShowAciklama", {
+            fiyat: fiyatMetni(reservation.totalCents),
+          })}
+        </Text>
+        <PanelButton
+          varyant="hayalet"
+          label={t("orders.noShowSikayetCta")}
+          onPress={() =>
+            router.push({
+              pathname: "/complaint/new",
+              params: { reservationId: reservation.id },
+            })
+          }
         />
       </View>
     );

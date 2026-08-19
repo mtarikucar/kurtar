@@ -131,6 +131,42 @@ describe("PickupListSection — the real per-reservation pickup list (M20: no ma
     ).toBeInTheDocument();
   });
 
+  // [No-show] NO_SHOW was a declared-but-unwritten status until the
+  // backend's no-show sweep shipped: this tone and label existed in
+  // reservationStatus.ts / today.json but nothing could ever produce a row
+  // carrying them. Now that a row genuinely arrives in this list an hour
+  // after its window closes, the pill and the absent "Teslim et" are a
+  // real contract rather than dead configuration.
+  it("shows a swept no-show as Gelinmedi with no redeem action", async () => {
+    listForMerchant.mockResolvedValue({
+      items: [
+        {
+          id: "resv-9",
+          storeId: "store-1",
+          offerId: "offer-1",
+          code: "K-9N0S",
+          qty: 1,
+          status: "NO_SHOW",
+          pickupStartAt: "2026-08-15T16:00:00.000Z",
+          pickupEndAt: "2026-08-15T18:00:00.000Z",
+          redeemedAt: null,
+          customerFirstName: "Can",
+        },
+      ],
+      total: 1,
+      page: 1,
+      pageSize: 20,
+    });
+
+    renderSection();
+
+    expect(await screen.findByText("K-9N0S")).toBeInTheDocument();
+    expect(screen.getByText("Gelinmedi")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Teslim et" }),
+    ).not.toBeInTheDocument();
+  });
+
   // [M20 fix] The manual by-id fallback asked for a "Rezervasyon kimliği"
   // (reservation id) that no surface in this app ever shows the merchant —
   // only the 6-char code is rendered anywhere. It's gone; the per-row

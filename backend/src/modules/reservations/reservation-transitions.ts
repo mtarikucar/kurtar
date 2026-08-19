@@ -7,9 +7,15 @@ import { ReservationStatus } from "@prisma/client";
  * is a fresh row, not a transition; PENDING_PAYMENT/CONFIRMED -> CANCELLED_BY_USER
  * is the cancel endpoint; PENDING_PAYMENT -> CONFIRMED/EXPIRED is the
  * webhook/sweeper settle path; CONFIRMED -> REDEEMED is the redeem
- * endpoint) — CANCELLED_BY_MERCHANT and NO_SHOW have no endpoint yet, but
- * are still valid FUTURE edges from CONFIRMED per the schema's enum, so
- * they're declared here rather than left implicit.
+ * endpoint) — CANCELLED_BY_MERCHANT is written by the merchant-cancel /
+ * suspend kill-switch fan-out, and CONFIRMED -> NO_SHOW by
+ * no-show-sweeper.service.ts once a pickup window has been closed for
+ * longer than its grace period. NO_SHOW is not merely cosmetic: a NO_SHOW
+ * reservation with a PAID payment settles to the merchant on exactly the
+ * same terms as a REDEEMED one (plan §4.3 — a no-show is not refunded and
+ * counts as a normal sale), so this edge is a MONEY edge. Nothing may
+ * write it with a bare `update`; the sweeper derives its guard from
+ * `allowedFromStatusesFor("NO_SHOW")` like every other writer here.
  *
  * Every terminal status transitions to nothing — once a reservation is
  * REDEEMED / CANCELLED_* / NO_SHOW / EXPIRED, it never moves again.

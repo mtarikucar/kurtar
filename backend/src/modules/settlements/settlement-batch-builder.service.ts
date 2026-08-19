@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
-import { Prisma, SettlementBatch } from "@prisma/client";
+import { Prisma, ReservationStatus, SettlementBatch } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   istanbulDateKey,
@@ -39,11 +39,80 @@ export interface NightlyCycleFailure {
  * comment for the orphaning bug that boundary closes. */
 export interface PendingSettlementLine {
   reservationId: string;
+  /** The `settlementAnchorOf` instant — NOT necessarily a redemption. The
+   * `settlement_lines.redeemedAt` column keeps its original name (renaming
+   * a column on the platform's core money table, plus its DTO, its
+   * OpenAPI schema and the generated client, is a far larger blast radius
+   * than this defect warrants); what it has always MEANT, and still
+   * means, is "when this bag was earned". Nothing renders it to a
+   * merchant or an admin (SettlementDetail.tsx does not read it), so the
+   * name misleads only a reader of this file — which this comment is
+   * for. */
   redeemedAt: Date;
   grossCents: number;
   bagFeeCents: number;
   bagFeeVatCents: number;
   withholdingCents: number;
+}
+
+/** The columns `settlementAnchorOf` and `compareBySettlementAnchor` need
+ * — the eligibility scan's `select` is a superset of this. */
+export interface SettlementAnchored {
+  id: string;
+  status: ReservationStatus;
+  redeemedAt: Date | null;
+  offer: { pickupEndAt: Date };
+}
+
+/**
+ * WHEN A BAG WAS EARNED — the single ordering/grouping key of the
+ * eligibility scan, for both settleable statuses.
+ *
+ *   - REDEEMED: the redemption itself. Unchanged; no redeemed bag's batch
+ *     assignment moves because of the no-show work.
+ *   - NO_SHOW:  the moment its pickup window CLOSED — deliberately not the
+ *     moment NoShowSweeperService happened to notice.
+ *
+ * Why `pickupEndAt` and not the sweep time. Three properties fall out of
+ * it, and none of them survives using the sweep instant:
+ *
+ *  1. A no-show lands in the SAME batch as the bags that WERE collected
+ *     from the same window. `redeem()` only permits a redemption between
+ *     `pickupStartAt` and `pickupEndAt`, and `offer-window.rules.ts`
+ *     forces that whole window onto the offer's own Europe/Istanbul day —
+ *     so `istanbulDateKey(redeemedAt)` and `istanbulDateKey(pickupEndAt)`
+ *     are provably the same day key for one offer. A window closing at
+ *     23:59 Istanbul with a sweep at 01:00 the next morning would
+ *     otherwise be billed to the wrong day.
+ *  2. `dueAt` (≤5 business days) is derived from that day key, so the
+ *     merchant's payout obligation clock starts when the merchant earned
+ *     the money — never when a cron ran. Sweeper downtime cannot postpone
+ *     a payout.
+ *  3. It is deterministic: re-running the nightly cycle, or catching up a
+ *     week of no-shows at once, assigns every line to the same batch it
+ *     would have had on the night it was earned.
+ */
+export function settlementAnchorOf(reservation: SettlementAnchored): Date {
+  return reservation.status === "REDEEMED"
+    ? reservation.redeemedAt!
+    : reservation.offer.pickupEndAt;
+}
+
+/** The eligibility scan's ordering, as a pure function — extracted from
+ * the scan rather than left inline specifically so it can be pinned by a
+ * deterministic unit test (settlement-anchor.spec.ts). A real-DB test
+ * cannot pin an ordering: a query with no ORDER BY may return rows in the
+ * right order by accident, so "the days came out chronologically" there
+ * proves nothing about the comparator. `id` is the tiebreak so two bags
+ * earned in the same millisecond still have a deterministic order rather
+ * than an arbitrary one. */
+export function compareBySettlementAnchor(
+  a: SettlementAnchored,
+  b: SettlementAnchored,
+): number {
+  const delta =
+    settlementAnchorOf(a).getTime() - settlementAnchorOf(b).getTime();
+  return delta !== 0 ? delta : a.id.localeCompare(b.id);
 }
 
 /** One settlement line this recompute has LOCKED and is responsible for
@@ -254,40 +323,70 @@ export class SettlementBatchBuilderService {
   ): Promise<{ batchIds: string[]; failures: NightlyCycleFailure[] }> {
     const touched = new Set<string>();
 
+    // [No-show] A NO_SHOW reservation settles on EXACTLY the same terms as
+    // a REDEEMED one — same gross, same per-bag fee, same %1 withholding,
+    // no refund (plan §4.3: "No-show: iade yok, normal satış sayılır",
+    // Too Good To Go parity, and the thing that makes §4.6's offline-
+    // redeem tolerance financially safe). Before this, `status:
+    // "REDEEMED"` was the ONLY thing standing between a paid-for bag and
+    // a payout, so once NoShowSweeperService started writing NO_SHOW the
+    // merchant would simply never have been paid for it: the customer's
+    // money collected, settled to nobody, for ever.
+    //
+    // The `redeemedAt: { not: null }` guard is preserved verbatim for the
+    // REDEEMED half (a REDEEMED row without a timestamp is a data-
+    // invariant violation, and `settlementAnchorOf` would have nothing to
+    // group it by); the NO_SHOW half has no such column to guard — its
+    // anchor comes from the offer's pickup window instead. Both halves
+    // still require a PAID payment.
     const eligible = await this.prisma.reservation.findMany({
       where: {
-        status: "REDEEMED",
-        redeemedAt: { not: null },
         settlementLine: null,
         payment: { status: "PAID" },
+        OR: [
+          { status: "REDEEMED", redeemedAt: { not: null } },
+          { status: "NO_SHOW" },
+        ],
       },
-      // Oldest redemption first — this is what makes a merchant with
-      // several eligible days queued up (a catch-up after downtime, or a
-      // test seeding multiple days at once) process those days in
-      // chronological order within ONE runNightlyCycle call: each day's
-      // group is recomputed (and, for membership, offsets applied)
-      // strictly before the next, so a subscription's outstandingCents
-      // rolls forward day-by-day rather than in an unspecified order.
-      orderBy: { redeemedAt: "asc" },
       select: {
         id: true,
+        status: true,
         redeemedAt: true,
         totalCents: true,
         qty: true,
+        offer: { select: { pickupEndAt: true } },
         store: { select: { merchantId: true } },
       },
     });
+
+    // Oldest EARNING first — sorted here rather than by the database
+    // because the key is now a coalesce across two columns (one of them
+    // on a joined row), which `orderBy` cannot express. This is what makes
+    // a merchant with several eligible days queued up (a catch-up after
+    // downtime, or a test seeding multiple days at once) process those
+    // days in chronological order within ONE runNightlyCycle call: each
+    // day's group is recomputed (and, for membership, offsets applied)
+    // strictly before the next, so a subscription's outstandingCents rolls
+    // forward day-by-day rather than in an unspecified order.
+    //
+    // What the ordering actually has to deliver is that a merchant's DAYS
+    // come out chronologically, and `settlementAnchorOf`'s Istanbul
+    // calendar day is BY CONSTRUCTION the same as the group's dayKey below
+    // for both statuses — so ordering by the anchor orders the days
+    // correctly for a mixed redeemed/no-show population.
+    eligible.sort(compareBySettlementAnchor);
 
     type Group = {
       merchantId: string;
       dayKey: string;
       lines: SettlementInputLine[];
-      redeemedAtByReservation: Map<string, Date>;
+      earnedAtByReservation: Map<string, Date>;
     };
     const groups = new Map<string, Group>();
     for (const r of eligible) {
       const merchantId = r.store.merchantId;
-      const dayKey = istanbulDateKey(r.redeemedAt!);
+      const earnedAt = settlementAnchorOf(r);
+      const dayKey = istanbulDateKey(earnedAt);
       const groupKey = `${merchantId}:${dayKey}`;
       let group = groups.get(groupKey);
       if (!group) {
@@ -295,7 +394,7 @@ export class SettlementBatchBuilderService {
           merchantId,
           dayKey,
           lines: [],
-          redeemedAtByReservation: new Map(),
+          earnedAtByReservation: new Map(),
         };
         groups.set(groupKey, group);
       }
@@ -304,7 +403,7 @@ export class SettlementBatchBuilderService {
         grossCents: r.totalCents,
         qty: r.qty,
       });
-      group.redeemedAtByReservation.set(r.id, r.redeemedAt!);
+      group.earnedAtByReservation.set(r.id, earnedAt);
     }
 
     const merchantsWithFreshLines = new Set<string>();
@@ -345,7 +444,7 @@ export class SettlementBatchBuilderService {
           group.merchantId,
           group.dayKey,
           group.lines,
-          group.redeemedAtByReservation,
+          group.earnedAtByReservation,
         );
         await this.recomputeBatch(batchId, now, pendingLines);
         touched.add(batchId);
@@ -473,7 +572,7 @@ export class SettlementBatchBuilderService {
     merchantId: string,
     dayKey: string,
     lines: SettlementInputLine[],
-    redeemedAtByReservation: Map<string, Date>,
+    earnedAtByReservation: Map<string, Date>,
   ): Promise<{ batchId: string; pendingLines: PendingSettlementLine[] }> {
     const periodStart = offerDateToDbDate(dayKey);
     const periodEnd = new Date(periodStart.getTime() + 24 * 60 * 60 * 1000);
@@ -532,7 +631,7 @@ export class SettlementBatchBuilderService {
       batchId,
       pendingLines: perLine.map((pl) => ({
         reservationId: pl.reservationId,
-        redeemedAt: redeemedAtByReservation.get(pl.reservationId)!,
+        redeemedAt: earnedAtByReservation.get(pl.reservationId)!,
         grossCents: pl.grossCents,
         bagFeeCents: pl.bagFeeCents,
         bagFeeVatCents: pl.bagFeeVatCents,
