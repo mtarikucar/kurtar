@@ -3,6 +3,7 @@ import {
   HARITA_DARALTILMIS,
   HARITA_ISTIRAHAT,
   HARITA_KAYDIRMA_ESIGI,
+  MESAFE_KADEME_M,
   baskinBolge,
   eslesiyorMu,
   haritaKaydirmaY,
@@ -109,18 +110,45 @@ describe("sokakListesi — distance-tier grouping + closing-time sort", () => {
     ]);
   });
 
-  it("sorts offers within a district by closing time ascending, not by price or distance", () => {
+  it("MESAFE_KADEME_M is the documented 500 m band", () => {
+    expect(MESAFE_KADEME_M).toBe(500);
+  });
+
+  it("distance ascends BETWEEN tiers even when the farther offer closes sooner (review fix #1)", () => {
+    // Reproduces the exact reviewed defect: a 399 m offer and a 1277 m
+    // offer in the same district, same closing time bucket order reversed
+    // by price/time alone would print "1,3 km, then 399 m". Different 500 m
+    // bands now win over closing time.
+    const near = teklif({
+      offerId: "near-399m",
+      pickupEndAt: "2026-08-19T18:00:00.000Z",
+      store: { id: "s1", name: "A", district: "Kadıköy", distanceM: 399 },
+    });
+    const far = teklif({
+      offerId: "far-1277m-closes-sooner",
+      pickupEndAt: "2026-08-19T16:10:00.000Z", // closes far sooner than `near`
+      store: { id: "s2", name: "B", district: "Kadıköy", distanceM: 1277 },
+    });
+    const satirlar = sokakListesi([far, near], simdi);
+    const teklifler = satirlar.filter((s) => s.tip === "teklif");
+    expect(teklifler.map((s) => (s.tip === "teklif" ? s.teklif.teklifId : null))).toEqual([
+      "near-399m",
+      "far-1277m-closes-sooner",
+    ]);
+  });
+
+  it("closing time governs WITHIN one 500 m band, not price or the raw metre count", () => {
     const closesLater = teklif({
       offerId: "far-close",
       template: { ...teklif().template, priceCents: 1000 },
       pickupEndAt: "2026-08-19T20:00:00.000Z",
-      store: { id: "s1", name: "A", district: "Kadıköy", distanceM: 100 },
+      store: { id: "s1", name: "A", district: "Kadıköy", distanceM: 100 }, // band 0
     });
     const closesSoon = teklif({
       offerId: "near-close",
       template: { ...teklif().template, priceCents: 99900 },
       pickupEndAt: "2026-08-19T16:20:00.000Z",
-      store: { id: "s2", name: "B", district: "Kadıköy", distanceM: 900 },
+      store: { id: "s2", name: "B", district: "Kadıköy", distanceM: 400 }, // band 0 too
     });
     const satirlar = sokakListesi([closesLater, closesSoon], simdi);
     const teklifler = satirlar.filter((s) => s.tip === "teklif");

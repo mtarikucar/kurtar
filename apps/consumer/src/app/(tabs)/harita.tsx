@@ -84,7 +84,15 @@ export default function HaritaEkrani() {
   }, [offersQuery.data, simdi]);
 
   return (
-    <Screen padded={false} edges={["top", "left", "right"]}>
+    <Screen
+      padded={false}
+      edges={["top", "left", "right"]}
+      // Same fix as Keşfet (index.tsx) — `Screen`'s own background is a
+      // fixed light colour; this screen needs the phase's ground colour
+      // underneath the full-screen map so a slow tile load or a narrow
+      // safe-area sliver never shows a hardcoded-light seam in gece.
+      style={{ backgroundColor: palet.bgAsfalt }}
+    >
       <View style={styles.harita}>
         <MapPane
           pins={mapQuery.data ?? []}

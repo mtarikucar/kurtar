@@ -20,7 +20,7 @@ import { Baslik } from "../../components/kesif/Baslik";
 import { BolumBasligi } from "../../components/kesif/BolumBasligi";
 import { BosSokak } from "../../components/kesif/BosSokak";
 import { CiplerBar } from "../../components/kesif/CiplerBar";
-import { kartGenisligiHesapla } from "../../components/kesif/duzen";
+import { KESIF_SAG_KENAR, KESIF_SOL_KENAR, kartGenisligiHesapla } from "../../components/kesif/duzen";
 import { HaritaMini } from "../../components/kesif/HaritaMini";
 import { HataSokagi } from "../../components/kesif/HataSokagi";
 import { SokakSatiri } from "../../components/kesif/SokakSatiri";
@@ -204,7 +204,18 @@ export default function KesifEkrani() {
   const gorunenBolgeAdi = manuelBolgeAdi ?? (gercekKonum ? baskinBolgeAdi : null) ?? KADIKOY_ADI;
 
   return (
-    <Screen padded={false} edges={["top", "left", "right"]}>
+    <Screen
+      padded={false}
+      edges={["top", "left", "right"]}
+      // `Screen`'s own background is a fixed light `neutral[50]` — right
+      // for every OTHER route, but this one screen lives under the
+      // day/night phase system (spec §1.1) and must show the phase's own
+      // ground colour, not a hardcoded light one. Invisible in gündüz,
+      // where the two happen to be close; a stark light band behind the
+      // header and the empty/loading text in gece, where they are not —
+      // found by actually looking at the night frames (see build log).
+      style={{ backgroundColor: palet.bgAsfalt }}
+    >
       <Baslik bolgeAdi={gorunenBolgeAdi} onBolgeDegistir={() => setBolgePickerAcik(true)} />
 
       <HaritaMini
@@ -318,7 +329,15 @@ const styles = StyleSheet.create({
   ciplerSarici: { paddingVertical: s.s2 },
   doluAlan: { flex: 1 },
   doluAlanIcerik: { flexGrow: 1, paddingBottom: s.s10 },
-  liste: { paddingHorizontal: s.s4, paddingBottom: s.s10 },
+  // Asymmetric on purpose: the spine reads as the street's own left edge
+  // (see duzen.ts), so the list's left inset is the spine's, not another
+  // s4 gutter on top of it — the right edge keeps s4 so it still lines up
+  // with the header and the filter chips above.
+  liste: {
+    paddingLeft: KESIF_SOL_KENAR,
+    paddingRight: KESIF_SAG_KENAR,
+    paddingBottom: s.s10,
+  },
   konumBanner: {
     flexDirection: "row",
     alignItems: "center",

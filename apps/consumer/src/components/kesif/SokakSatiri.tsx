@@ -14,25 +14,36 @@ import {
  * "A 1pt line.hairline rule down the left gutter with mono distance
  * labels … pinned beside each card. Scrolling down is walking away from
  * where you stand." One `View` + one `Text` per card, exactly as costed.
+ *
+ * `mesafeM: null` renders the same column with the hairline but no
+ * number — the loading placeholder's frame (spec §4.8: "no distance
+ * spine … a distance is real data this frame does not have yet"). The
+ * GEOMETRY still has to match the loaded row exactly, or the list
+ * reflows the moment data lands (reviewed and fixed — see build log);
+ * only the number, which would be a lie, is withheld.
  */
 export function SokakSatiri({
   mesafeM,
   children,
 }: {
-  mesafeM: number;
+  mesafeM: number | null;
   children: React.ReactNode;
 }) {
   const palet = usePalet();
   return (
     <View style={styles.satir}>
       <View style={styles.spine}>
-        <Text
-          style={[yazi.data, styles.etiket, { color: palet.yaziSis }]}
-          numberOfLines={1}
-          maxFontSizeMultiplier={1.3}
-        >
-          {mesafeMetni(mesafeM)}
-        </Text>
+        {mesafeM !== null ? (
+          <Text
+            style={[yazi.data, styles.etiket, { color: palet.yaziSis }]}
+            numberOfLines={1}
+            maxFontSizeMultiplier={1.3}
+          >
+            {mesafeMetni(mesafeM)}
+          </Text>
+        ) : (
+          <View style={styles.etiket} />
+        )}
         <View style={[styles.hairline, { backgroundColor: palet.cizgiKil }]} />
       </View>
       <View style={styles.kart}>{children}</View>

@@ -113,6 +113,37 @@ export type KesifSatiri =
   | { readonly tip: "teklif"; readonly anahtar: string; readonly teklif: VitrinTeklifi };
 
 /**
+ * The width of one distance tier down the spine (spec §4.1: "the street
+ * spine ... scrolling down is walking away from where you stand", against
+ * "sort by closing time ascending within distance tiers, not by price").
+ *
+ * Those two instructions collide the moment "tier" is read as "district":
+ * a district can span kilometres, so sorting its offers by closing time
+ * alone lets the spine's own numbers run backwards mid-scroll — reviewed
+ * and confirmed on real data: Kadıköy holds a 399 m offer and a 1277 m
+ * offer that close at the same minute, and district-then-time can print
+ * them 1,3 km then 399 m.
+ *
+ * Resolved by making the tiers real: every offer is additionally bucketed
+ * into a 500 m band of its OWN absolute distance (not relative to its
+ * district), the district's offers are sorted by that band ascending
+ * first, and closing time only breaks ties inside one band. 500 m is
+ * about six minutes on foot (`YURUME_HIZI_M_DK`) — short enough that two
+ * offers sharing a band read as "about as far", so the spine still
+ * ascends band to band while the scarce resource (time) still governs
+ * offers that are genuinely interchangeable by distance. District
+ * grouping itself is unchanged (spec §3 build log: districts stand in for
+ * the neighbourhood field the API doesn't have) — this only fixes the
+ * order INSIDE a district's cards. See build log for the two readings
+ * considered and why this one was picked over silencing the spine.
+ */
+export const MESAFE_KADEME_M = 500;
+
+function mesafeKademesi(metre: number): number {
+  return Math.floor(metre / MESAFE_KADEME_M);
+}
+
+/**
  * Groups OPEN offers by `store.district` — the distance tier this app
  * actually has data for (the API gives district, not neighbourhood; the
  * spec's "YELDEĞİRMENİ" / "BEŞİKTAŞ · vapurla 20 dk" mock is illustrative
@@ -120,9 +151,12 @@ export type KesifSatiri =
  * neighbourhood field or a travel-mode estimate this app has any honest
  * way to compute, so this reads district names, not fabricated transit
  * times; see build log §4). Districts are ordered by their own nearest
- * offer ascending — the tier closest to the user leads — and every
- * district's offers are sorted by closing time ascending inside it: the
- * scarce resource is time, not price.
+ * offer ascending — the tier closest to the user leads.
+ *
+ * Inside a district, offers are sorted by their 500 m distance band
+ * ascending first (see `MESAFE_KADEME_M`), then by closing time ascending
+ * inside a band — the scarce resource is time, but only among offers the
+ * spine already reads as "about as far".
  *
  * Sold-out offers never sit inside a district group — spec §3: they sink
  * to a trailing "KAÇIRDIKLARIN" section, most-recently-closed first, so
@@ -160,12 +194,16 @@ export function sokakListesi(
   const satirlar: KesifSatiri[] = [];
   for (const [bolge, liste] of siraliBolgeler) {
     satirlar.push({ tip: "bolum", anahtar: `bolum-${bolge}`, tur: "bolge", bolge });
-    const kapanmayaGore = [...liste].sort(
-      (a, b) =>
+    const kademeSonraKapanma = [...liste].sort((a, b) => {
+      const kademeFarki =
+        mesafeKademesi(a.store.distanceM) - mesafeKademesi(b.store.distanceM);
+      if (kademeFarki !== 0) return kademeFarki;
+      return (
         kalanDakika(simdi, new Date(a.pickupEndAt)) -
-        kalanDakika(simdi, new Date(b.pickupEndAt)),
-    );
-    for (const offer of kapanmayaGore) {
+        kalanDakika(simdi, new Date(b.pickupEndAt))
+      );
+    });
+    for (const offer of kademeSonraKapanma) {
       satirlar.push({ tip: "teklif", anahtar: offer.offerId, teklif: teklifeCevir(offer) });
     }
   }
