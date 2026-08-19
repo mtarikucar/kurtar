@@ -3,6 +3,7 @@ import {
   Animated,
   FlatList,
   Linking,
+  PixelRatio,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,6 +17,7 @@ import { useTranslation } from "react-i18next";
 import { Screen } from "../../components/Screen";
 import { DistrictPicker } from "../../components/DistrictPicker";
 import { VitrinKarti } from "../../components/kepenk";
+import { kartOlculeri } from "../../components/kepenk/kart-olcu";
 import { Baslik } from "../../components/kesif/Baslik";
 import { BolumBasligi } from "../../components/kesif/BolumBasligi";
 import { BosSokak } from "../../components/kesif/BosSokak";
@@ -159,10 +161,15 @@ export default function KesifEkrani() {
     [scrollY],
   );
 
-  // --- The street spine's cumulative row offsets (fixed-height rows —
-  // spec §3's card height never changes with width, only with font
-  // scale, so this is stable across every card in a list). ---
-  const satirYuksekligi = kart.yukseklik + kart.aralik;
+  // --- The street spine's cumulative row offsets. The card's height is
+  // stable across a list but NOT across text sizes, so this has to ask
+  // the same measurement the card itself uses. Assuming the 1x height
+  // here left the scroll math ~68pt short per row at a large text
+  // setting: the list still LOOKED right, because FlatList lays rows out
+  // by flex and only scrolling reads these numbers — so a map pin's
+  // scrollToIndex quietly landed on the wrong shop. ---
+  const satirYuksekligi =
+    kartOlculeri(PixelRatio.getFontScale()).yukseklik + kart.aralik;
   const duzen = useMemo(() => {
     let ofset = 0;
     return gorunenSatirlar.map((satir) => {

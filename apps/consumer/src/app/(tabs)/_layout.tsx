@@ -1,3 +1,4 @@
+import { useContext } from "react";
 import { Redirect, Tabs } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
@@ -6,7 +7,8 @@ import { LoadingState } from "../../components/LoadingState";
 import { Screen } from "../../components/Screen";
 import { usePalet } from "../../design/theme";
 import { s, yazi } from "../../design/tokens";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaInsetsContext } from "react-native-safe-area-context";
+import { PixelRatio, Text } from "react-native";
 
 /**
  * The tab bar is the one piece of chrome on every screen in the app, so
@@ -25,14 +27,47 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
  * card's mist ink. One tab is on; the rest are shut. That is the same
  * sentence the rest of the app speaks.
  */
-/** Icon + label line box + the padding above and below them. */
-const SEKME_YUKSEKLIGI = 70;
+/** The tab icon's own drawn size — it does not scale with type. */
+const SEKME_IKON = 24;
+/** Absolute leading for the label, as everywhere else in this app: at
+ * multiplied leading Android shaves the cedilla off ğ/ş/ç and the dot off
+ * İ (spec §1.2). */
+const SEKME_SATIR = 17;
+
+/**
+ * Icon + label line box + the padding above and below them, measured at
+ * the user's own text size.
+ *
+ * A constant here was wrong twice over. Too small and the bar silently
+ * drops its labels; large enough at 1x and the labels truncate the moment
+ * someone raises their text size — "Favor…", "Sipari…", which is the
+ * same loss of Turkish as the clipped cedilla, arriving by a different
+ * route.
+ */
+function sekmeYuksekligi(olcek: number, satirSayisi: number): number {
+  return SEKME_IKON + SEKME_SATIR * olcek * satirSayisi + s.s2 * 2 + s.s1;
+}
+
+/**
+ * Above this text scale the longest label ("Favoriler", "Siparişler") no
+ * longer fits one line of a six-tab bar on a 390pt phone, and the bar
+ * silently truncates it to "Favor…". Wrapping keeps the whole word: a
+ * person who raised their text size asked for MORE readable words, not
+ * fewer of them.
+ */
+const IKI_SATIR_ESIGI = 1.15;
 
 export default function TabsLayout() {
   const { t } = useTranslation();
   const { status } = useAuth();
   const palet = usePalet();
-  const altBosluk = useSafeAreaInsets().bottom;
+  // The CONTEXT rather than `useSafeAreaInsets()`: that hook throws
+  // without a provider, and this layout is one of the first things the
+  // app mounts. A missing inset should cost a few points of padding, not
+  // a crashed shell.
+  const altBosluk = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
+  const yaziOlcegi = PixelRatio.getFontScale();
+  const satirSayisi = yaziOlcegi > IKI_SATIR_ESIGI ? 2 : 1;
 
   if (status === "loading") {
     return (
@@ -66,7 +101,7 @@ export default function TabsLayout() {
           borderTopWidth: 1,
           borderTopColor: palet.bgDerin,
           elevation: 0,
-          height: SEKME_YUKSEKLIGI + altBosluk,
+          height: sekmeYuksekligi(yaziOlcegi, satirSayisi) + altBosluk,
           paddingTop: s.s2,
           paddingBottom: altBosluk + s.s2,
         },
@@ -85,9 +120,24 @@ export default function TabsLayout() {
         tabBarLabelStyle: {
           fontFamily: yazi.micro.fontFamily,
           fontSize: yazi.micro.fontSize,
-          lineHeight: 17,
+          lineHeight: SEKME_SATIR,
           letterSpacing: yazi.micro.letterSpacing,
         },
+        // The label is rendered here rather than left to the navigator so
+        // it can wrap. The navigator's own label is single-line and
+        // ellipsises, which turns "Favoriler" into "Favor…" the moment
+        // the text scale rises.
+        tabBarLabel: ({ color, children }) => (
+          <Text
+            numberOfLines={satirSayisi}
+            style={[
+              yazi.micro,
+              { lineHeight: SEKME_SATIR, color, textAlign: "center" },
+            ]}
+          >
+            {children}
+          </Text>
+        ),
       }}
     >
       <Tabs.Screen

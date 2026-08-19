@@ -610,14 +610,19 @@ export const yazi = Object.freeze({
 export const kart = Object.freeze({
   genislik: 358,
   yukseklik: 196,
-  yukseklikBuyuk: 232,
   tente: 6,
   band: 68,
   bandBuyuk: 78,
   tabela: 40,
   tabelaBuyuk: 48,
   aralik: s.s3,
-  /** FlashList estimatedItemSize = card + gap. */
-  satirYuksekligi: 196 + s.s3,
+  // `yukseklikBuyuk: 232` and `satirYuksekligi: 196 + gap` used to live
+  // here and are gone. Both stated the card's grown height as a constant,
+  // and the constant was wrong: measured from the tokens the card needs
+  // ~265pt at a 1.3x text scale, not 232. Anything that needs the height
+  // asks `kartOlculeri(fontScale)` (components/kepenk/kart-olcu.ts), which
+  // derives it — including the list's own row offsets, which had been
+  // computing scroll positions from the 1x number and landing a map pin's
+  // scrollToIndex on the wrong shop.
   buyumeEsigi: 1.3,
 } as const);
