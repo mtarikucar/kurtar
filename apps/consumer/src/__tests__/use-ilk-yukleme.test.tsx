@@ -1,10 +1,22 @@
 import { act } from "@testing-library/react-native";
 import { useIlkYuklemeKademesi } from "../components/kesif/use-ilk-yukleme";
+import { erisimAzaltmayiAyarla } from "../test-utils/erisim";
 import { renderHookWithProviders } from "../test-utils/render";
 
 describe("useIlkYuklemeKademesi — the loading list's 40ms stagger", () => {
-  beforeEach(() => jest.useFakeTimers());
-  afterEach(() => jest.useRealTimers());
+  let hareketiGeriAl: () => void;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    // The ladder only runs on an explicit "reduce motion is OFF"; without
+    // pinning it, jest-expo's AccessibilityInfo mock leaves the answer at
+    // `null` and nothing moves.
+    hareketiGeriAl = erisimAzaltmayiAyarla(false);
+  });
+  afterEach(() => {
+    hareketiGeriAl();
+    jest.useRealTimers();
+  });
 
   it("reveals nothing before hazir is true", async () => {
     const { result } = await renderHookWithProviders(() => useIlkYuklemeKademesi(5, false));
@@ -50,5 +62,32 @@ describe("useIlkYuklemeKademesi — the loading list's 40ms stagger", () => {
     // stagger the second time, the new count is reflected at once.
     await rerender({ satirSayisi: 6 });
     expect(result.current).toBe(6);
+  });
+});
+
+/**
+ * FINDING #30. §2 Degradation reads "shutters render at their final
+ * position; no entry roll, no stagger". Each card's own roll was already
+ * suppressed, so a vestibular user got the half of the sentence nobody
+ * implemented: silent shutters under rows still popping into the street
+ * one at a time over ~400ms.
+ */
+describe("reduced motion — the street is already there (finding #30)", () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it("shows every row the moment it is ready, with no timer to advance", async () => {
+    const geriAl = erisimAzaltmayiAyarla(true);
+    const { result } = await renderHookWithProviders(() => useIlkYuklemeKademesi(8, true));
+    expect(result.current).toBe(8);
+    geriAl();
+  });
+
+  it("still shows every row while the platform has not answered yet", async () => {
+    // `useReduceMotion` reports `null` until the query resolves. Movement
+    // needs an explicit yes; CONTENT does not — holding the rows back
+    // would leave an empty list with no empty-state under it.
+    const { result } = await renderHookWithProviders(() => useIlkYuklemeKademesi(8, true));
+    expect(result.current).toBe(8);
   });
 });

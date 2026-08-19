@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   Linking,
+  PixelRatio,
   Platform,
   ScrollView,
   Share,
@@ -55,6 +56,11 @@ const IPTAL_SAATI = CANCEL_DEADLINE_BEFORE_PICKUP_MS / (60 * 60 * 1000);
  * nowhere. */
 const SITE = process.env.EXPO_PUBLIC_SITE_URL ?? "https://kurtar.app";
 
+/** The button interior a 390pt phone hands each of the two secondary
+ * actions at 1×, and the width the longest shipped label was drawn
+ * against. Below it the pair stacks. */
+const DUGME_ICI_TABANI = 141;
+
 /**
  * TEKLİF DETAYI — spec §4.3.
  *
@@ -77,6 +83,17 @@ export default function TeklifDetayiEkrani() {
   const simdi = useSimdi();
   const azaltHareket = useReduceMotion();
   const { width } = useWindowDimensions();
+  // The two quiet actions sit side by side only while a label measurably
+  // fits on one line inside half the row. `yazi.label` is Archivo 500 12
+  // with +0.9 tracking and `Dugme` clips at `numberOfLines={1}`, so
+  // "HARİTADA GÖSTER" is 128pt against the 141pt interior a 390pt phone
+  // gives at 1× — no margin at all, and none of it survives the text
+  // scale (162pt at the label's own 1.3 ceiling) or a 360pt phone
+  // (126pt of interior). Where the row cannot hold a label, the row is
+  // what gives: stacked, each button gets the full content width, which
+  // is roughly twice what the longest label in any locale asks for.
+  const dugmeIci = (width - 2 * s.s4 - s.s3) / 2 - 2 * s.s4;
+  const yanYana = PixelRatio.getFontScale() <= 1 && dugmeIci >= DUGME_ICI_TABANI;
   const { id, storeId, distanceM } = useLocalSearchParams<{
     id: string;
     storeId: string;
@@ -365,7 +382,7 @@ export default function TeklifDetayiEkrani() {
           >
             {dukkan.address}
           </Text>
-          <View style={styles.ikiDugme}>
+          <View style={[styles.ikiDugme, yanYana ? null : styles.dugmelerDik]}>
             <View style={styles.esnek}>
               <Dugme
                 etiket={t("dugme.haritadaGoster")}
@@ -457,4 +474,7 @@ const styles = StyleSheet.create({
   fiyatSatiri: { flexDirection: "row", alignItems: "center", gap: s.s3 },
   cubukYuvasi: { flex: 1 },
   ikiDugme: { flexDirection: "row", gap: s.s3, marginTop: s.s2 },
+  /** Same gap, one under the other — each label gets the full content
+   * width instead of half of it. */
+  dugmelerDik: { flexDirection: "column" },
 });

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useReduceMotion } from "../../design/reduce-motion";
 
 /**
  * Staggers the FIRST reveal of the list once it loads (spec §4.8: "As
@@ -13,17 +14,31 @@ import { useEffect, useRef, useState } from "react";
  * filter change, the list simply re-rendering on the minute tick) shows
  * every row immediately — replaying the entry roll on cards that are
  * already sitting on screen would be noise, not information.
+ *
+ * Under reduced motion there is no ladder at all: §2 Degradation reads
+ * "shutters render at their final position; no entry roll, no stagger",
+ * and each card's own roll is already suppressed in `Kepenk`. Without
+ * this half, a vestibular user got the worst of both — silent shutters
+ * under rows still popping into the street one at a time.
  */
 const KADEME_MS = 40;
 const KADEME_USTU = 10;
 
 export function useIlkYuklemeKademesi(satirSayisi: number, hazir: boolean): number {
   const [gorunenSatir, setGorunenSatir] = useState(0);
+  const azaltHareket = useReduceMotion();
   const oynatildi = useRef(false);
 
   useEffect(() => {
     if (!hazir) return;
-    if (oynatildi.current) {
+    // Movement starts only on an explicit `false`; `null` (the platform
+    // has not answered yet) also means no ladder. But the CONTENT never
+    // waits on that answer — holding the rows back would leave an empty
+    // list area with no `BosSokak` under it, so an unresolved
+    // accessibility query would read as "there is nothing here".
+    // Permission is required to move, not to inform.
+    if (azaltHareket !== false || oynatildi.current) {
+      oynatildi.current = true;
       setGorunenSatir(satirSayisi);
       return;
     }
@@ -43,7 +58,7 @@ export function useIlkYuklemeKademesi(satirSayisi: number, hazir: boolean): numb
     return () => {
       for (const zamanlayici of zamanlayicilar) clearTimeout(zamanlayici);
     };
-  }, [hazir, satirSayisi]);
+  }, [hazir, satirSayisi, azaltHareket]);
 
   return gorunenSatir;
 }

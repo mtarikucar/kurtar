@@ -1,5 +1,13 @@
-import { useState } from "react";
-import { StyleSheet, Text, TextInput, View, type TextInputProps } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  AccessibilityInfo,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type TextInputProps,
+} from "react-native";
 import { usePalet } from "../design/theme";
 import { r, s, yazi } from "../design/tokens";
 
@@ -35,6 +43,13 @@ interface TextFieldProps extends TextInputProps {
  * with `#12181F` ink on it (§1.1's non-negotiable rule), so the message
  * lands on a red strip under the field and the border turns red with it —
  * the redundancy law, one fact in two places.
+ *
+ * And it is SPOKEN. A wrong OTP code that only changes pixels is silence
+ * to a screen-reader user, who retries the same code until the backend's
+ * 24h lockout closes the front door — so the strip is a live region with
+ * the `alert` role (Android + RN Web read it as `aria-live`), and on iOS,
+ * which has no live-region concept at all, the message is announced
+ * directly. Platform-guarded, so Android never says it twice.
  */
 export function TextField({
   label,
@@ -47,6 +62,12 @@ export function TextField({
 }: TextFieldProps) {
   const palet = usePalet();
   const [odakli, setOdakli] = useState(false);
+
+  useEffect(() => {
+    if (error && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(`${label}: ${error}`);
+    }
+  }, [error, label]);
 
   const kenar = error
     ? palet.tenteYazi
@@ -87,7 +108,13 @@ export function TextField({
         ]}
       />
       {error ? (
-        <View style={[styles.uyari, { backgroundColor: palet.tenteDolgu }]}>
+        <View
+          accessible
+          accessibilityRole="alert"
+          accessibilityLiveRegion="assertive"
+          testID="textfield-hata"
+          style={[styles.uyari, { backgroundColor: palet.tenteDolgu }]}
+        >
           <Text
             style={[yazi.data, { color: palet.tenteMurekkep }]}
             maxFontSizeMultiplier={1.3}

@@ -9,6 +9,7 @@ import { kart, m, r, s, yazi, type Palet } from "../../design/tokens";
 import { formatClockTime, formatPickupWindow } from "../../lib/format";
 import { DegerCubugu } from "./DegerCubugu";
 import { glyphSec } from "./glyphs";
+import { kartOlculeri } from "./kart-olcu";
 import { Kepenk } from "./Kepenk";
 import { StokCipi } from "./StokCipi";
 import { Tabela } from "./Tabela";
@@ -76,11 +77,17 @@ export function VitrinKarti({
   const azaltHareket = useReduceMotion();
 
   // The gauge recomputes from `band`, so it stays honest at every text
-  // size (spec §1.2 Dynamic type).
-  const buyuk = PixelRatio.getFontScale() >= kart.buyumeEsigi;
-  const band = buyuk ? kart.bandBuyuk : kart.band;
-  const tabelaYuksekligi = buyuk ? kart.tabelaBuyuk : kart.tabela;
-  const kartYuksekligi = buyuk ? kart.yukseklikBuyuk : kart.yukseklik;
+  // size (spec §1.2 Dynamic type). The card's height is measured from the
+  // pavement's own type rather than stepped to a constant, because a
+  // constant is what let `overflow: 'hidden'` eat the meta rail — see
+  // kart-olcu.ts.
+  const {
+    buyuk,
+    band,
+    tabela: tabelaYuksekligi,
+    metaSatirSayisi,
+    yukseklik: kartYuksekligi,
+  } = kartOlculeri(PixelRatio.getFontScale());
 
   const baslangic = new Date(teklif.alisBaslangic);
   const bitis = new Date(teklif.alisBitis);
@@ -96,17 +103,24 @@ export function VitrinKarti({
   const pencere = formatPickupWindow(teklif.alisBaslangic, teklif.alisBitis);
   const yurumeDk = yurumeDakikasi(teklif.mesafeM);
 
+  const metaParcalari = [
+    pencere,
+    mesafeMetni(teklif.mesafeM),
+    teklif.mesafeM <= YURUME_UST_SINIRI_M ? t("vitrin.kalanDk", { dk: yurumeDk }) : null,
+  ].filter((parca): parca is string => parca !== null);
+
   const metaMetni = tukendi
     ? t("vitrin.yarinAcilis", { saat: acilisSaati })
-    : [
-        pencere,
-        mesafeMetni(teklif.mesafeM),
-        teklif.mesafeM <= YURUME_UST_SINIRI_M
-          ? t("vitrin.kalanDk", { dk: yurumeDk })
-          : null,
-      ]
-        .filter((parca): parca is string => parca !== null)
-        .join(" · ");
+    : buyuk
+      ? // At the large step the rail is two lines, so it has to be told
+        // WHERE to break. Left to plain spaces it split "1,3 km" across
+        // the turn and opened the second line with a bare "·". Binding
+        // every space inside a segment, and every separator to the
+        // segment before it, leaves exactly one kind of break
+        // opportunity: between segments — a number never leaves its unit
+        // and no line starts on punctuation.
+        metaParcalari.map(bagla).join("\u00A0· ")
+      : metaParcalari.join(" · ");
 
   return (
     <Pressable
@@ -227,10 +241,10 @@ export function VitrinKarti({
 
         <DegerCubugu oran={oran} palet={palet} etiket={false} />
 
-        <View style={styles.metaSatiri}>
+        <View style={[styles.metaSatiri, buyuk ? styles.metaSatiriBuyuk : null]}>
           <Text
             style={[yazi.data, styles.meta, { color: palet.yaziSis }]}
-            numberOfLines={1}
+            numberOfLines={metaSatirSayisi}
             maxFontSizeMultiplier={1.3}
           >
             {metaMetni}
@@ -248,6 +262,12 @@ export function VitrinKarti({
       {tukendi ? <TukendiStickeri palet={palet} etiket={t("vitrin.tukendi")} /> : null}
     </Pressable>
   );
+}
+
+/** Every space inside one meta segment becomes a no-break space: "1,3 km"
+ * and "16 dk" are single facts, not two words each. */
+function bagla(parca: string): string {
+  return parca.replace(/ /g, "\u00A0");
 }
 
 /**
@@ -353,8 +373,13 @@ const styles = StyleSheet.create({
   /**
    * The pavement block, on §3's rhythm: paket 20 · price 28 · bar 4 ·
    * meta 18, with the 4/2/4 gaps the zone map spends between them. It
-   * fills the 80pt left under the tabela exactly, and `space-between`
-   * re-spends the slack at 1.3× and 1.6× text rather than clipping a ş.
+   * fills the 80pt left under the tabela exactly at the default text
+   * size (78 after its own bottom padding), and `space-between` re-spends
+   * the slack. Past that the CARD
+   * grows to whatever this block needs (kart-olcu.ts) — `space-between`
+   * in a box too small silently behaves like flex-start and hands the
+   * overflow to `overflow: 'hidden'`, which is how the meta rail
+   * disappeared instead of complaining.
    */
   kaldirim: {
     flex: 1,
@@ -377,6 +402,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
+  // At 1.3× the rail wraps to two lines; the chip stays pinned to the
+  // first one, beside the pickup window, rather than floating in the
+  // middle of a two-line block.
+  metaSatiriBuyuk: { alignItems: "flex-start" },
   meta: { flexShrink: 1, marginRight: s.s2 },
   sonuk: { opacity: 0.45 },
   sticker: {

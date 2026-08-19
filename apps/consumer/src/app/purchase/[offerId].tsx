@@ -244,6 +244,13 @@ export default function SatinAlmaEkrani() {
         <View style={styles.bolum}>
           <BolumBasligi etiket={t("purchase.preContractTitle")} palet={palet} />
           <Blok palet={palet}>
+            {/* These two are a legal obligation, not decoration — the
+                consent box directly below requires the user to have read
+                them. As a 30pt text target with no slop, a one-handed tap
+                that missed vertically landed in the 8pt gap and did
+                nothing, which reads as a link that is broken. The target
+                is the Pressable now, at the app's own 44pt floor, with
+                the text centred in it so the visual gap is unchanged. */}
             <Pressable
               onPress={() =>
                 router.push({
@@ -252,9 +259,13 @@ export default function SatinAlmaEkrani() {
                 })
               }
               accessibilityRole="link"
-              style={({ pressed }) => (pressed ? { opacity: m.pressOpacity } : null)}
+              testID="purchase-obf-link"
+              style={({ pressed }) => [
+                styles.baglanti,
+                pressed ? { opacity: m.pressOpacity } : null,
+              ]}
             >
-              <Text style={[yazi.bodyStrong, styles.baglanti, { color: palet.sodyumYazi }]}>
+              <Text style={[yazi.bodyStrong, { color: palet.sodyumYazi }]}>
                 {t("purchase.preContractObf")}
               </Text>
             </Pressable>
@@ -266,9 +277,13 @@ export default function SatinAlmaEkrani() {
                 })
               }
               accessibilityRole="link"
-              style={({ pressed }) => (pressed ? { opacity: m.pressOpacity } : null)}
+              testID="purchase-mss-link"
+              style={({ pressed }) => [
+                styles.baglanti,
+                pressed ? { opacity: m.pressOpacity } : null,
+              ]}
             >
-              <Text style={[yazi.bodyStrong, styles.baglanti, { color: palet.sodyumYazi }]}>
+              <Text style={[yazi.bodyStrong, { color: palet.sodyumYazi }]}>
                 {t("purchase.preContractMss")}
               </Text>
             </Pressable>
@@ -419,7 +434,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: s.s3,
   },
-  baglanti: { paddingVertical: s.s1 },
+  baglanti: { minHeight: 44, justifyContent: "center" },
   onaySatiri: { flexDirection: "row", gap: s.s3, marginTop: s.s2 },
   kutucuk: {
     width: 24,
