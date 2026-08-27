@@ -1,5 +1,23 @@
 # Build log — Phase 2, Track B: detay → satın alma → kepenk
 
+> **The frames these notes cite are not in this repository.** Every
+> screenshot named below (`02-kesif-liste-gece.png` and its siblings) was
+> written to a scratch directory under `/tmp` by the scripts in
+> `e2e/scripts/`, and `/tmp` does not survive a reboot. They were not
+> committed: they are hundreds of near-identical 2x PNGs of a UI that
+> keeps changing, and a stale frame in a repo is worse than no frame,
+> because it looks like current evidence.
+>
+> So a filename here is a record of what was looked at, not something a
+> later reader can open. To see any of it again, re-run the script named
+> in the section — the build flags that pin the clock and the palette
+> (`EXPO_PUBLIC_INCELEME_ZAMANI`, `EXPO_PUBLIC_FAZ_ZORLA`) exist precisely
+> so the same frame can be reproduced on demand rather than archived. See
+> `docs/consumer-on-a-phone.md` for the traps that make a rebuild
+> photograph something other than what you think.
+
+
+
 Scope: `docs/design/consumer-app-spec.md` §4.3, §4.4, §4.5. Nothing else.
 Phase 1's components and tokens are consumed, never edited — nothing under
 `src/design/` or `src/components/kepenk/` is touched by this branch.
