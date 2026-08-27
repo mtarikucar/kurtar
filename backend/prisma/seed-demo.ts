@@ -369,14 +369,61 @@ export async function teardownDemo(
   await client.complaintTicket.deleteMany({ where: byPrefix });
 
   await client.commissionInvoice.deleteMany({ where: byPrefix });
-  await client.settlementLine.deleteMany({ where: byPrefix });
+  // Settlement lines are keyed by reservationId, and a settled demo bag's
+  // line survives a prefix-only delete for the same reason its reservation
+  // does. Allocations cascade from the line.
+  await client.settlementLine.deleteMany({
+    where: {
+      OR: [
+        byPrefix,
+        {
+          reservation: {
+            OR: [
+              { offerId: { startsWith: PREFIX } },
+              { storeId: { startsWith: PREFIX } },
+            ],
+          },
+        },
+      ],
+    },
+  });
   await client.settlementBatch.deleteMany({ where: byPrefix });
 
-  await client.rating.deleteMany({ where: byPrefix });
-  await client.impactLedger.deleteMany({ where: byPrefix });
-  await client.refund.deleteMany({ where: byPrefix });
-  await client.payment.deleteMany({ where: byPrefix });
-  await client.reservation.deleteMany({ where: byPrefix });
+  // Everything below is keyed on WHICH RESERVATIONS BELONG TO THE DEMO,
+  // not on whose id happens to carry the prefix.
+  //
+  // A reservation made by USING the demo — the whole point of seeding it —
+  // gets a generated cuid, so a prefix-only teardown left it behind and the
+  // offer delete then died on `reservations_offerId_fkey`. In other words
+  // the seed could be torn down only until somebody actually used it. A
+  // reservation against a demo offer IS demo data by definition, so it is
+  // in scope; nothing here can reach a row that hangs off a real offer.
+  const demoRezervasyonlar = await client.reservation.findMany({
+    where: {
+      OR: [
+        byPrefix,
+        { offerId: { startsWith: PREFIX } },
+        { storeId: { startsWith: PREFIX } },
+      ],
+    },
+    select: { id: true },
+  });
+  const rezervasyonIdleri = demoRezervasyonlar.map((r) => r.id);
+  const rezervasyonda = { reservationId: { in: rezervasyonIdleri } };
+
+  await client.rating.deleteMany({ where: { OR: [byPrefix, rezervasyonda] } });
+  await client.impactLedger.deleteMany({
+    where: { OR: [byPrefix, rezervasyonda] },
+  });
+  // Refund hangs off Payment, which hangs off Reservation — so it is
+  // reached through the payments of those reservations, not directly.
+  await client.refund.deleteMany({
+    where: { OR: [byPrefix, { payment: { is: rezervasyonda } }] },
+  });
+  await client.payment.deleteMany({ where: { OR: [byPrefix, rezervasyonda] } });
+  await client.reservation.deleteMany({
+    where: { OR: [byPrefix, { id: { in: rezervasyonIdleri } }] },
+  });
 
   await client.dailyOffer.deleteMany({ where: byPrefix });
   await client.bagTemplate.deleteMany({ where: byPrefix });

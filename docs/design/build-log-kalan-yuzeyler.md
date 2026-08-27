@@ -12,8 +12,20 @@
 > later reader can open. To see any of it again, re-run the script named
 > in the section — the build flags that pin the clock and the palette
 > (`EXPO_PUBLIC_INCELEME_ZAMANI`, `EXPO_PUBLIC_FAZ_ZORLA`) exist precisely
-> so the same frame can be reproduced on demand rather than archived. See
-> `docs/consumer-on-a-phone.md` for the traps that make a rebuild
+> so the same frame can be reproduced on demand rather than archived.
+>
+> **Re-seed first, and pin the clock to the day you seeded.** The demo
+> bags are day-scoped: `npm run seed:demo -w backend` writes them onto
+> *today's* Istanbul date, so a week-old seed leaves discovery genuinely
+> empty and the walk stops at the first tap with a locator timeout. The
+> pinned instant in these notes (`2026-08-19T17:35:00.000Z`) is 20:35 on
+> the day THIS review ran; use your own seeded date with the same
+> 17:35 UTC / 20:35 Istanbul time, which is inside the 19:00–21:00 pickup
+> window every seeded bag uses. I found this by re-running the walk eight
+> days later and watching it fail — a reproduce instruction nobody has
+> re-run is a claim, not an instruction.
+>
+> See `docs/consumer-on-a-phone.md` for the traps that make a rebuild
 > photograph something other than what you think.
 
 

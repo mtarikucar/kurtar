@@ -114,7 +114,9 @@ All demo accounts share the password **`KurtarDemo123!`**.
 
 Every other seeded merchant/consumer is listed in `backend/prisma/seed-demo.ts`'s own doc comment. Consumer accounts sign in via phone-OTP; the mock SMS provider never sends a real SMS — the 6-digit code is logged to the backend's own console (`kurtar dogrulama kodunuz: XXXXXX`), never echoed in the HTTP response (a deliberate anti-account-takeover choice — see `backend/src/modules/otp/otp.service.ts`).
 
-The seed is **idempotent and reversible**: re-running `npm run seed:demo -w backend` tears down and recreates the exact same dataset (never duplicates rows); `npm run seed:demo:down -w backend` removes every row it created — by fixed `kd-demo-*` ids — and touches nothing else (never an operator's real merchants/consumers/settlements).
+The seed is **idempotent and reversible**: re-running `npm run seed:demo -w backend` tears down and recreates the exact same dataset (never duplicates rows); `npm run seed:demo:down -w backend` removes every row it created and touches nothing else (never an operator's real merchants/consumers/settlements). The teardown reaches rows by fixed `kd-demo-*` ids **and** by what they point at — a reservation made by *using* the demo gets a generated cuid, so a prefix-only delete left it behind and the offer delete then failed on its foreign key, i.e. the seed was reversible only until somebody used it. Scope in the other direction is pinned by `src/modules/seed/seed-demo-teardown.realdb.spec.ts`.
+
+The demo bags are **day-scoped**: they land on today's Istanbul date with a 19:00–21:00 pickup window, so a seed from an earlier day leaves discovery correctly empty. Re-seed before a review run, and see [`docs/consumer-on-a-phone.md`](docs/consumer-on-a-phone.md) for pinning the clock to that day.
 
 ## Running tests
 
