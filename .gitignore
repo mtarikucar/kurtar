@@ -32,3 +32,16 @@ CLAUDE.md
 AGENTS.md
 **/CLAUDE.md
 **/AGENTS.md
+
+# Tool scratch output. A browser-automation tool drops page snapshots into
+# the repo root as it goes; screenshot and review scripts write PNGs beside
+# them. None of it is source, and none of it should ever reach a commit.
+#
+# Ignoring it is the point: when `git add -A` is unsafe, the advice becomes
+# "never use the obvious command", and a repo whose safe path is a rule
+# everybody has to remember will eventually commit something nobody wanted.
+# Make the obvious command safe instead.
+.playwright-mcp/
+/*.png
+/*.jpg
+/*.jpeg
