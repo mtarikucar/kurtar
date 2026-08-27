@@ -124,3 +124,21 @@ all of which have already caught someone on this project:
 - **On web the session does not survive a page reload** (`expo-secure-store`
   has no web implementation, so the refresh token lives in memory for the
   tab's life). Navigate by tapping, not by reloading.
+
+## 6. The walk fails loudly, and that is the point
+
+`e2e/scripts/tam-gezinti.mjs` used to print the page's console errors and
+exit 0 regardless, so "13 shots taken" read as success while the app was
+logging failures underneath. It did exactly that once: a run printed four
+401s and the frames looked right, so nobody looked further.
+
+It now classifies. Two error shapes are named as expected — the
+`expo-notifications` web shim (no web implementation exists) and the
+cold-start 401 (the bootstrap asking who you are before you sign in, which
+is the signed-out path working) — plus one 400 per submit the script
+itself watched fail and retry, which is the OTP resend cooldown. Anything
+else is unexplained and the run exits **2**.
+
+The exit code carries a distinction worth keeping: a run that did not
+verify is not a run that verified. If the page threw something nobody has
+explained, the screenshots are evidence of nothing until it is explained.

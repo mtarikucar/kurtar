@@ -79,6 +79,72 @@ const hatalar = [];
 page.on("console", (m) => m.type() === "error" && hatalar.push(m.text()));
 page.on("pageerror", (e) => hatalar.push(String(e)));
 
+/**
+ * A walk that took every screenshot is NOT a walk that found nothing
+ * wrong. This script used to print the page's console errors and exit 0
+ * regardless, so "13 shots" read as success while the app was logging
+ * failures underneath — and it did: I watched a run print four 401s and
+ * moved on, because the frames looked right.
+ *
+ * So the errors are classified. The two below are genuine properties of
+ * running a native app in a browser and of the app's own cold start; they
+ * are named, not silently swallowed. Anything else is unexplained, and an
+ * unexplained error means this run did not verify what it looks like it
+ * verified — exit 2, never 0.
+ */
+const BEKLENEN = [
+  // expo-notifications has no web implementation; the module throws on
+  // any call. Native builds never take this path.
+  /ExpoNotifications\.\w+ is not available on web/,
+  // The cold-start bootstrap asks the API who it is before anyone has
+  // signed in and is correctly refused. It is the signed-out path working.
+  /Failed to load resource.*401/,
+];
+
+/**
+ * The OTP resend cooldown's 400 is expected — but ONLY when this script
+ * actually watched a submit fail and retried. Blanket-allowing 400 would
+ * hide every other bad request the app makes; tying the allowance to the
+ * retry the script itself performed keeps it honest, and a 400 in a run
+ * that never retried still fails.
+ */
+let beklemeDenemesi = 0;
+
+function bitir(ek = {}) {
+  let kalanBekleme = beklemeDenemesi;
+  const aciklanmayan = hatalar.filter((h) => {
+    if (BEKLENEN.some((re) => re.test(h))) return false;
+    // One 400 per submit this script saw fail and retried — the cooldown.
+    if (kalanBekleme > 0 && /Failed to load resource.*400/.test(h)) {
+      kalanBekleme -= 1;
+      return false;
+    }
+    return true;
+  });
+  console.log(
+    JSON.stringify(
+      {
+        faz: FAZ,
+        ...ek,
+        kare: i,
+        beklenenHata: hatalar.length - aciklanmayan.length,
+        aciklanmayanHata: aciklanmayan,
+      },
+      null,
+      2,
+    ),
+  );
+  if (aciklanmayan.length > 0) {
+    console.error(
+      `\n${aciklanmayan.length} açıklanmayan konsol hatası — bu koşu doğrulama SAYILMAZ.\n` +
+        `Kareler alındı ama sayfa hata veriyordu; önce onu açıkla, sonra karelere bak.`,
+    );
+    return 2;
+  }
+  return 0;
+}
+
+
 let i = 0;
 async function cek(ad) {
   i += 1;
@@ -103,6 +169,7 @@ for (let d = 0; d < 4 && !girdi; d += 1) {
     girdi = true;
   } catch {
     console.log(`phone submit ${d + 1} did not navigate; url=${page.url()}`);
+    beklemeDenemesi += 1;
     await page.waitForTimeout(15000);
   }
 }
@@ -194,9 +261,9 @@ await cek("teklif-detay");
 // makes it useless for the one thing a before/after comparison needs,
 // namely two frames that differ only by the change under review. ----
 if (process.env.GEZINTI_SATIN_ALMA === "0") {
-  console.log(JSON.stringify({ faz: FAZ, hatalar, satinAlma: "atlandı" }, null, 2));
+  const kod = bitir({ satinAlma: "atlandı" });
   await browser.close();
-  process.exit(0);
+  process.exit(kod);
 }
 
 await page.getByTestId("offer-buy-cta").click();
@@ -303,5 +370,6 @@ await cikis.screenshot({ path: `${CIKTI}/${String(i).padStart(2, "0")}-telefon-$
 console.log("shot: telefon");
 await cikis.close();
 
-console.log(JSON.stringify({ faz: FAZ, hatalar }, null, 2));
+const cikisKodu = bitir();
 await browser.close();
+process.exit(cikisKodu);
