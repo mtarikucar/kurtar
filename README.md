@@ -145,6 +145,15 @@ npm run generate:api-client       # regenerates packages/api-client/src/generate
 npm run build -w @kurtar/api-client  # rebuilds dist/ — every app resolves the package through its "main": "dist/index.js", not the TS source
 ```
 
+**`npm install` builds the shared packages for you.** Both `@kurtar/ui-tokens`
+and `@kurtar/api-client` resolve through their compiled `dist/`, which is
+gitignored — so on a fresh clone they do not exist, and before this was wired
+up `npm test` failed in 40 of the consumer's 63 suites with
+`Cannot find module '@kurtar/api-client'`, which reads like a broken checkout
+rather than a missing build step. Each package now has a `prepare` script, so
+npm builds them at install time and the obvious command works from a clean
+clone. Verified by cloning into a fresh directory and running it.
+
 That last build step is easy to skip and still "look" done — the generate step alone updates the TS source, but merchant-web/admin-web/landing/consumer all import the package via its published `dist/` output (`packages/api-client/package.json`'s `"main"`), so a stale, unrebuilt `dist/` silently keeps serving the OLD contract to every frontend even after `generate:api-client` succeeded. (`@kurtar/ui-tokens` has the exact same `dist/`-is-what-gets-imported shape, though it's rarely hand-edited the way the contract is regenerated.)
 
 Both regeneration steps (`openapi:generate` + `generate:api-client`) are enforced as CI drift gates (`.github/workflows/quality-gates.yml`'s `openapi-contract-drift` and `frontend-quality` jobs) — a controller change that forgets to regenerate fails the build, not silently ships a stale contract to four frontends. `frontend-quality` also always rebuilds `dist/` itself before linting/typechecking any frontend, which is why CI can never be fooled by a stale local `dist/` the way a local dev loop can.
