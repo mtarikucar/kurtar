@@ -362,78 +362,125 @@ export async function teardownDemo(
 ): Promise<void> {
   const byPrefix = { id: { startsWith: PREFIX } };
 
-  await client.contentReport.deleteMany({ where: byPrefix });
+  // WHAT BELONGS TO THE DEMO IS DECIDED BY OWNERSHIP, NOT BY ID SPELLING.
+  //
+  // The prefix identifies what the SEED wrote. It says nothing about what
+  // the seed's rows then accumulated once somebody used the demo — and
+  // being used is the only reason to seed it. A reservation made through
+  // the app, a settlement batch built by the nightly cycle, a rating, a
+  // favourite: every one of them gets a generated cuid and hangs off a
+  // demo merchant, store, offer or user.
+  //
+  // Deleting by prefix alone therefore left those behind and the parent
+  // delete died on its foreign key — first `reservations_offerId_fkey`,
+  // then, once that was patched, `settlement_batches_merchantId_fkey`.
+  // Two instances of one class is a signal to stop patching tables and
+  // resolve the SET once: everything below is scoped to these four id
+  // lists, walked leaf-first, so a table added later fails loudly at its
+  // own constraint instead of silently going unowned.
+  const demoIsletmeler = (
+    await client.merchant.findMany({ where: byPrefix, select: { id: true } })
+  ).map((m) => m.id);
+  const demoDukkanlar = (
+    await client.store.findMany({
+      where: { OR: [byPrefix, { merchantId: { in: demoIsletmeler } }] },
+      select: { id: true },
+    })
+  ).map((d) => d.id);
+  const demoKullanicilar = (
+    await client.user.findMany({ where: byPrefix, select: { id: true } })
+  ).map((k) => k.id);
+  const demoTeklifler = (
+    await client.dailyOffer.findMany({
+      where: { OR: [byPrefix, { storeId: { in: demoDukkanlar } }] },
+      select: { id: true },
+    })
+  ).map((t) => t.id);
+  const demoRezervasyonlar = (
+    await client.reservation.findMany({
+      where: {
+        OR: [
+          byPrefix,
+          { offerId: { in: demoTeklifler } },
+          { storeId: { in: demoDukkanlar } },
+          { userId: { in: demoKullanicilar } },
+        ],
+      },
+      select: { id: true },
+    })
+  ).map((r) => r.id);
+
+  const isletmede = { merchantId: { in: demoIsletmeler } };
+  const dukkanda = { storeId: { in: demoDukkanlar } };
+  const kullanicida = { userId: { in: demoKullanicilar } };
+  const rezervasyonda = { reservationId: { in: demoRezervasyonlar } };
+
+  // --- Leaves that hang off a reservation ---
+  // ContentReport is polymorphic (targetType/targetId), so it is reached
+  // by what it points AT, not by a foreign key.
+  await client.contentReport.deleteMany({
+    where: {
+      OR: [
+        byPrefix,
+        { targetId: { in: [...demoTeklifler, ...demoDukkanlar] } },
+      ],
+    },
+  });
   await client.complaintMessage.deleteMany({
     where: { complaintId: { startsWith: PREFIX } },
   });
-  await client.complaintTicket.deleteMany({ where: byPrefix });
+  await client.complaintTicket.deleteMany({
+    where: { OR: [byPrefix, isletmede, kullanicida, rezervasyonda] },
+  });
 
-  await client.commissionInvoice.deleteMany({ where: byPrefix });
-  // Settlement lines are keyed by reservationId, and a settled demo bag's
-  // line survives a prefix-only delete for the same reason its reservation
-  // does. Allocations cascade from the line.
+  await client.commissionInvoice.deleteMany({
+    where: { OR: [byPrefix, isletmede] },
+  });
   await client.settlementLine.deleteMany({
-    where: {
-      OR: [
-        byPrefix,
-        {
-          reservation: {
-            OR: [
-              { offerId: { startsWith: PREFIX } },
-              { storeId: { startsWith: PREFIX } },
-            ],
-          },
-        },
-      ],
-    },
-  });
-  await client.settlementBatch.deleteMany({ where: byPrefix });
-
-  // Everything below is keyed on WHICH RESERVATIONS BELONG TO THE DEMO,
-  // not on whose id happens to carry the prefix.
-  //
-  // A reservation made by USING the demo — the whole point of seeding it —
-  // gets a generated cuid, so a prefix-only teardown left it behind and the
-  // offer delete then died on `reservations_offerId_fkey`. In other words
-  // the seed could be torn down only until somebody actually used it. A
-  // reservation against a demo offer IS demo data by definition, so it is
-  // in scope; nothing here can reach a row that hangs off a real offer.
-  const demoRezervasyonlar = await client.reservation.findMany({
-    where: {
-      OR: [
-        byPrefix,
-        { offerId: { startsWith: PREFIX } },
-        { storeId: { startsWith: PREFIX } },
-      ],
-    },
-    select: { id: true },
-  });
-  const rezervasyonIdleri = demoRezervasyonlar.map((r) => r.id);
-  const rezervasyonda = { reservationId: { in: rezervasyonIdleri } };
-
-  await client.rating.deleteMany({ where: { OR: [byPrefix, rezervasyonda] } });
-  await client.impactLedger.deleteMany({
     where: { OR: [byPrefix, rezervasyonda] },
   });
-  // Refund hangs off Payment, which hangs off Reservation — so it is
-  // reached through the payments of those reservations, not directly.
+  await client.settlementBatch.deleteMany({
+    where: { OR: [byPrefix, isletmede] },
+  });
+
+  await client.rating.deleteMany({
+    where: { OR: [byPrefix, rezervasyonda, dukkanda, kullanicida] },
+  });
+  await client.impactLedger.deleteMany({
+    where: { OR: [byPrefix, rezervasyonda, dukkanda, kullanicida] },
+  });
+  // Refund hangs off Payment, which hangs off Reservation.
   await client.refund.deleteMany({
     where: { OR: [byPrefix, { payment: { is: rezervasyonda } }] },
   });
   await client.payment.deleteMany({ where: { OR: [byPrefix, rezervasyonda] } });
   await client.reservation.deleteMany({
-    where: { OR: [byPrefix, { id: { in: rezervasyonIdleri } }] },
+    where: { id: { in: demoRezervasyonlar } },
   });
 
-  await client.dailyOffer.deleteMany({ where: byPrefix });
-  await client.bagTemplate.deleteMany({ where: byPrefix });
-  await client.store.deleteMany({ where: byPrefix });
+  // --- The catalogue ---
+  await client.favorite.deleteMany({ where: { OR: [dukkanda, kullanicida] } });
+  await client.dailyOffer.deleteMany({ where: { id: { in: demoTeklifler } } });
+  await client.bagTemplate.deleteMany({ where: { OR: [byPrefix, dukkanda] } });
+  await client.store.deleteMany({ where: { id: { in: demoDukkanlar } } });
 
-  await client.membershipSubscription.deleteMany({ where: byPrefix });
-  await client.merchantUser.deleteMany({ where: byPrefix });
-  await client.merchant.deleteMany({ where: byPrefix });
+  // --- The merchant side ---
+  await client.merchantVerificationEvent.deleteMany({
+    where: { OR: [byPrefix, isletmede] },
+  });
+  await client.membershipSubscription.deleteMany({
+    where: { OR: [byPrefix, isletmede] },
+  });
+  await client.merchantUser.deleteMany({
+    where: { OR: [byPrefix, isletmede] },
+  });
+  await client.merchant.deleteMany({ where: { id: { in: demoIsletmeler } } });
 
-  await client.user.deleteMany({ where: byPrefix });
+  // --- The consumer side ---
+  await client.pushToken.deleteMany({ where: kullanicida });
+  await client.notificationPreference.deleteMany({ where: kullanicida });
+  await client.refreshToken.deleteMany({ where: kullanicida });
+  await client.user.deleteMany({ where: { id: { in: demoKullanicilar } } });
   await client.adminUser.deleteMany({ where: byPrefix });
 }
 

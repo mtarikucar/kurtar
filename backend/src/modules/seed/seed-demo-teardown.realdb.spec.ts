@@ -32,12 +32,24 @@ describe("teardownDemo — reversible after the demo has been used, and scoped t
   });
 
   async function temizle() {
-    await prisma.reservation.deleteMany({ where: { id: { startsWith: OP } } });
-    await prisma.dailyOffer.deleteMany({ where: { id: { startsWith: OP } } });
-    await prisma.bagTemplate.deleteMany({ where: { id: { startsWith: OP } } });
-    await prisma.store.deleteMany({ where: { id: { startsWith: OP } } });
-    await prisma.merchant.deleteMany({ where: { id: { startsWith: OP } } });
-    await prisma.user.deleteMany({ where: { id: { startsWith: OP } } });
+    // Both prefixes. A run that fails midway used to leave its own
+    // `kd-demo-*` rows behind, and the NEXT run then died on a unique-id
+    // collision — a test that poisons its own rerun is worse than a test
+    // that fails.
+    for (const onek of [OP, PREFIX]) {
+      await prisma.reservation.deleteMany({
+        where: { id: { startsWith: onek } },
+      });
+      await prisma.dailyOffer.deleteMany({
+        where: { id: { startsWith: onek } },
+      });
+      await prisma.bagTemplate.deleteMany({
+        where: { id: { startsWith: onek } },
+      });
+      await prisma.store.deleteMany({ where: { id: { startsWith: onek } } });
+      await prisma.merchant.deleteMany({ where: { id: { startsWith: onek } } });
+      await prisma.user.deleteMany({ where: { id: { startsWith: onek } } });
+    }
   }
 
   /** A store + offer under `ad`'s prefix, plus one reservation whose own id
@@ -144,6 +156,45 @@ describe("teardownDemo — reversible after the demo has been used, and scoped t
     expect(
       await prisma.merchant.findUnique({ where: { id: `${OP}m` } }),
     ).not.toBeNull();
+  }, 60_000);
+
+  it("removes a settlement batch built by the nightly cycle against a demo merchant", async () => {
+    // The second instance of the same class, and the reason the teardown
+    // stopped being a list of prefixes: a batch is created by the system,
+    // not by the seed, so it carries a generated id and blocked the
+    // merchant delete on `settlement_batches_merchantId_fkey`.
+    await temizle();
+    const demo = await kur(PREFIX, "cmt0batchtest", "+905559990003");
+    const isletme = await prisma.store.findUniqueOrThrow({
+      where: { id: `${PREFIX}s` },
+      select: { merchantId: true },
+    });
+    const parti = await prisma.settlementBatch.create({
+      data: {
+        merchantId: isletme.merchantId,
+        periodStart: new Date("2026-08-27T00:00:00Z"),
+        periodEnd: new Date("2026-08-27T23:59:59Z"),
+        dueAt: new Date("2026-09-03T00:00:00Z"),
+        grossCents: 1000,
+        bagFeeCents: 0,
+        bagFeeVatCents: 0,
+        withholdingCents: 0,
+        membershipOffsetCents: 0,
+        refundClawbackCents: 0,
+        netPayoutCents: 1000,
+      },
+    });
+    expect(parti.id).not.toMatch(/^kd-demo/);
+
+    await teardownDemo(prisma);
+
+    expect(
+      await prisma.settlementBatch.findUnique({ where: { id: parti.id } }),
+    ).toBeNull();
+    expect(
+      await prisma.merchant.findUnique({ where: { id: `${PREFIX}m` } }),
+    ).toBeNull();
+    expect(demo.reservation.id).toBeTruthy();
   }, 60_000);
 
   it("is a safe no-op when there is nothing to remove", async () => {
