@@ -36,6 +36,41 @@
         ]
       }
     },
+    "/api/health/ready": {
+      "get": {
+        "operationId": "HealthController_getReady",
+        "parameters": [
+          {
+            "name": "X-Client-Transport",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "cookie"
+              ]
+            },
+            "description": "Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Readiness probe: is the API able to serve? No auth required.",
+        "tags": [
+          "health"
+        ]
+      }
+    },
     "/api/auth/otp/request": {
       "post": {
         "operationId": "AuthController_requestOtp",
@@ -7280,6 +7315,32 @@
           "status",
           "service",
           "uptimeSec"
+        ]
+      },
+      "ReadyResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "degraded"
+            ]
+          },
+          "database": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "detay": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "database"
         ]
       },
       "OtpRequestDto": {

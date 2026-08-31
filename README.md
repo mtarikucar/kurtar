@@ -41,11 +41,33 @@ Every write path funnels through the backend's typed REST API (`/api/...`); no s
 - Docker + Docker Compose v2 (`docker compose version` should print `v2.x`)
 - Nothing else — every external integration (SMS, payment, push, e-document) defaults to an in-process mock in development; see `.env.example`.
 
+**Platform.** The bring-up script is `bash`, so it runs as written on Linux and
+macOS. On Windows use WSL2 — which Docker Desktop already requires, so a machine
+that meets the prerequisites above has it; run the clone and the script inside
+the WSL filesystem. There is no PowerShell path and nothing here has been tested
+under one.
+
+`ops/docker-compose.yml` pins `postgis/postgis:16-3.4`, which the upstream
+project publishes for amd64 only — every tag, not just this one. On Apple
+Silicon Docker runs it under emulation, which works and is slower on first
+start while `initdb` runs.
+
 ## One-command bring-up
 
 ```bash
 ./scripts/dev-up.sh
 ```
+
+When it finishes, check it actually came up:
+
+```bash
+curl http://localhost:4750/api/health/ready
+# {"status":"ready","database":"up"}
+```
+
+Use `/api/health/ready`, not `/api/health`. The latter is a liveness probe
+and deliberately answers `ok` even when the database is unreachable — which
+is right for an orchestrator and useless as a "did my setup work?" check.
 
 This single command, from a clean clone, does everything:
 

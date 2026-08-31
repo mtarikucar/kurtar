@@ -41,8 +41,19 @@ browser and **useless from a phone** — `localhost` is the phone. Point it at
 the machine's LAN address:
 
 ```bash
-ip -4 addr show scope global | grep -oP 'inet \K[\d.]+' | head -1   # e.g. 192.168.1.24
+# Linux (iproute2 + GNU grep):
+ip -4 addr show scope global | grep -oP 'inet \K[\d.]+' | head -1
+# macOS (no `ip`, and BSD grep has no -P):
+ipconfig getifaddr en0        # en1 on Wi-Fi-second machines
+# WSL2 on Windows — the WSL VM's own address is NOT reachable from the phone;
+# you want the Windows host's LAN address:
+powershell.exe -NoProfile -Command "(Get-NetIPAddress -AddressFamily IPv4 -PrefixOrigin Dhcp).IPAddress"
 ```
+
+Either way, check it: `curl http://<that-address>:4750/api/health/ready` from
+the machine itself must answer `{"status":"ready","database":"up"}`, and the
+phone must be on the same network. (`/api/health` answers `ok` even with the
+database down — it is a liveness probe, not a setup check.)
 
 The value is the **origin only, with no `/api` suffix** — the client appends
 it. With the suffix every request becomes `/api/api/...` and 404s, which

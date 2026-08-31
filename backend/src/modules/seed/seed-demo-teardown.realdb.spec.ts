@@ -20,185 +20,211 @@ import { teardownDemo } from "../../../prisma/seed-demo";
 const PREFIX = "kd-demo-";
 const OP = "op-teardown-scope-";
 
-describe("teardownDemo — reversible after the demo has been used, and scoped to it", () => {
-  let prisma: PrismaClient;
+/**
+ * GATED, like every other realdb spec — and here the gate is not a
+ * convention, it is a safety catch.
+ *
+ * This suite calls the real teardown, so an ungated run picks up whatever
+ * `DATABASE_URL` happens to point at and DELETES THE DEMO DATA on a
+ * developer's own dev database — the data they were about to demo. It
+ * would have done exactly that on any machine following the README, and
+ * the damage would look like the seed spontaneously emptying itself.
+ *
+ * `TEST_DATABASE_URL` is the same gate the other realdb specs use, and it
+ * is the one the CI realdb job sets. Pointing it at a throwaway database
+ * is what makes running this safe.
+ */
+const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
+const d = TEST_DATABASE_URL ? describe : describe.skip;
 
-  beforeAll(() => {
-    prisma = new PrismaClient();
-  });
-  afterAll(async () => {
-    await temizle();
-    await prisma.$disconnect();
-  });
+d(
+  "teardownDemo — reversible after the demo has been used, and scoped to it",
+  () => {
+    let prisma: PrismaClient;
 
-  async function temizle() {
-    // Both prefixes. A run that fails midway used to leave its own
-    // `kd-demo-*` rows behind, and the NEXT run then died on a unique-id
-    // collision — a test that poisons its own rerun is worse than a test
-    // that fails.
-    for (const onek of [OP, PREFIX]) {
-      await prisma.reservation.deleteMany({
-        where: { id: { startsWith: onek } },
+    beforeAll(() => {
+      prisma = new PrismaClient({
+        datasources: { db: { url: TEST_DATABASE_URL! } },
       });
-      await prisma.dailyOffer.deleteMany({
-        where: { id: { startsWith: onek } },
-      });
-      await prisma.bagTemplate.deleteMany({
-        where: { id: { startsWith: onek } },
-      });
-      await prisma.store.deleteMany({ where: { id: { startsWith: onek } } });
-      await prisma.merchant.deleteMany({ where: { id: { startsWith: onek } } });
-      await prisma.user.deleteMany({ where: { id: { startsWith: onek } } });
+    });
+    afterAll(async () => {
+      await temizle();
+      await prisma.$disconnect();
+    });
+
+    async function temizle() {
+      // Both prefixes. A run that fails midway used to leave its own
+      // `kd-demo-*` rows behind, and the NEXT run then died on a unique-id
+      // collision — a test that poisons its own rerun is worse than a test
+      // that fails.
+      for (const onek of [OP, PREFIX]) {
+        await prisma.reservation.deleteMany({
+          where: { id: { startsWith: onek } },
+        });
+        await prisma.dailyOffer.deleteMany({
+          where: { id: { startsWith: onek } },
+        });
+        await prisma.bagTemplate.deleteMany({
+          where: { id: { startsWith: onek } },
+        });
+        await prisma.store.deleteMany({ where: { id: { startsWith: onek } } });
+        await prisma.merchant.deleteMany({
+          where: { id: { startsWith: onek } },
+        });
+        await prisma.user.deleteMany({ where: { id: { startsWith: onek } } });
+      }
     }
-  }
 
-  /** A store + offer under `ad`'s prefix, plus one reservation whose own id
-   * is given separately — the shape a real purchase produces. */
-  async function kur(ad: string, rezervasyonId: string, telefon: string) {
-    const merchant = await prisma.merchant.create({
-      data: {
-        id: `${ad}m`,
-        legalName: `${ad} AŞ`,
-        tradeName: ad,
-        taxId: "1234567801",
-        iban: "TR330006100519786457841326",
-        verificationStatus: "APPROVED",
-      },
-    });
-    const store = await prisma.store.create({
-      data: {
-        id: `${ad}s`,
-        merchantId: merchant.id,
-        name: `${ad} dükkânı`,
-        address: "x",
-        district: "Kadıköy",
-        city: "İstanbul",
-        latitude: 40.99,
-        longitude: 29.03,
-      },
-    });
-    const template = await prisma.bagTemplate.create({
-      data: {
-        id: `${ad}b`,
-        storeId: store.id,
-        title: `${ad} paketi`,
-        category: "BAKERY",
-        allergenDisclaimer: "x",
-        priceCents: 1000,
-        originalValueCentsMin: 3000,
-        originalValueCentsMax: 4000,
-      },
-    });
-    const offer = await prisma.dailyOffer.create({
-      data: {
-        id: `${ad}o`,
-        bagTemplateId: template.id,
-        storeId: store.id,
-        offerDate: new Date("2026-08-27T00:00:00Z"),
-        qtyTotal: 3,
-        pickupStartAt: new Date("2026-08-27T16:00:00Z"),
-        pickupEndAt: new Date("2026-08-27T18:00:00Z"),
-        status: "PUBLISHED",
-      },
-    });
-    const user = await prisma.user.create({
-      data: { id: `${ad}u`, phoneE164: telefon },
-    });
-    const reservation = await prisma.reservation.create({
-      data: {
-        id: rezervasyonId,
-        code: `K-${telefon.slice(-4)}`,
-        userId: user.id,
-        offerId: offer.id,
-        storeId: store.id,
-        qty: 1,
-        unitPriceCents: 1000,
-        totalCents: 1000,
-        status: "CONFIRMED",
-        cancelDeadlineAt: new Date("2026-08-27T15:58:00Z"),
-      },
-    });
-    return { offer, reservation };
-  }
+    /** A store + offer under `ad`'s prefix, plus one reservation whose own id
+     * is given separately — the shape a real purchase produces. */
+    async function kur(ad: string, rezervasyonId: string, telefon: string) {
+      const merchant = await prisma.merchant.create({
+        data: {
+          id: `${ad}m`,
+          legalName: `${ad} AŞ`,
+          tradeName: ad,
+          taxId: "1234567801",
+          iban: "TR330006100519786457841326",
+          verificationStatus: "APPROVED",
+        },
+      });
+      const store = await prisma.store.create({
+        data: {
+          id: `${ad}s`,
+          merchantId: merchant.id,
+          name: `${ad} dükkânı`,
+          address: "x",
+          district: "Kadıköy",
+          city: "İstanbul",
+          latitude: 40.99,
+          longitude: 29.03,
+        },
+      });
+      const template = await prisma.bagTemplate.create({
+        data: {
+          id: `${ad}b`,
+          storeId: store.id,
+          title: `${ad} paketi`,
+          category: "BAKERY",
+          allergenDisclaimer: "x",
+          priceCents: 1000,
+          originalValueCentsMin: 3000,
+          originalValueCentsMax: 4000,
+        },
+      });
+      const offer = await prisma.dailyOffer.create({
+        data: {
+          id: `${ad}o`,
+          bagTemplateId: template.id,
+          storeId: store.id,
+          offerDate: new Date("2026-08-27T00:00:00Z"),
+          qtyTotal: 3,
+          pickupStartAt: new Date("2026-08-27T16:00:00Z"),
+          pickupEndAt: new Date("2026-08-27T18:00:00Z"),
+          status: "PUBLISHED",
+        },
+      });
+      const user = await prisma.user.create({
+        data: { id: `${ad}u`, phoneE164: telefon },
+      });
+      const reservation = await prisma.reservation.create({
+        data: {
+          id: rezervasyonId,
+          code: `K-${telefon.slice(-4)}`,
+          userId: user.id,
+          offerId: offer.id,
+          storeId: store.id,
+          qty: 1,
+          unitPriceCents: 1000,
+          totalCents: 1000,
+          status: "CONFIRMED",
+          cancelDeadlineAt: new Date("2026-08-27T15:58:00Z"),
+        },
+      });
+      return { offer, reservation };
+    }
 
-  it("removes a reservation made THROUGH the demo, whose own id carries no demo prefix", async () => {
-    await temizle();
-    // The id shape a real purchase produces: nothing about it says "demo",
-    // only what it points at does.
-    const demo = await kur(
-      PREFIX,
-      "cmt0kullanimdanrezervasyon",
-      "+905559990001",
-    );
-    const operator = await kur(OP, `${OP}r`, "+905559990002");
+    it("removes a reservation made THROUGH the demo, whose own id carries no demo prefix", async () => {
+      await temizle();
+      // The id shape a real purchase produces: nothing about it says "demo",
+      // only what it points at does.
+      const demo = await kur(
+        PREFIX,
+        "cmt0kullanimdanrezervasyon",
+        "+905559990001",
+      );
+      const operator = await kur(OP, `${OP}r`, "+905559990002");
 
-    await teardownDemo(prisma);
+      await teardownDemo(prisma);
 
-    expect(
-      await prisma.reservation.findUnique({
-        where: { id: demo.reservation.id },
-      }),
-    ).toBeNull();
-    expect(
-      await prisma.dailyOffer.findUnique({ where: { id: demo.offer.id } }),
-    ).toBeNull();
+      expect(
+        await prisma.reservation.findUnique({
+          where: { id: demo.reservation.id },
+        }),
+      ).toBeNull();
+      expect(
+        await prisma.dailyOffer.findUnique({ where: { id: demo.offer.id } }),
+      ).toBeNull();
 
-    // …and the operator's own rows are untouched. This is the assertion
-    // that makes the widened delete safe to ship.
-    expect(
-      await prisma.reservation.findUnique({
-        where: { id: operator.reservation.id },
-      }),
-    ).not.toBeNull();
-    expect(
-      await prisma.dailyOffer.findUnique({ where: { id: operator.offer.id } }),
-    ).not.toBeNull();
-    expect(
-      await prisma.merchant.findUnique({ where: { id: `${OP}m` } }),
-    ).not.toBeNull();
-  }, 60_000);
+      // …and the operator's own rows are untouched. This is the assertion
+      // that makes the widened delete safe to ship.
+      expect(
+        await prisma.reservation.findUnique({
+          where: { id: operator.reservation.id },
+        }),
+      ).not.toBeNull();
+      expect(
+        await prisma.dailyOffer.findUnique({
+          where: { id: operator.offer.id },
+        }),
+      ).not.toBeNull();
+      expect(
+        await prisma.merchant.findUnique({ where: { id: `${OP}m` } }),
+      ).not.toBeNull();
+    }, 60_000);
 
-  it("removes a settlement batch built by the nightly cycle against a demo merchant", async () => {
-    // The second instance of the same class, and the reason the teardown
-    // stopped being a list of prefixes: a batch is created by the system,
-    // not by the seed, so it carries a generated id and blocked the
-    // merchant delete on `settlement_batches_merchantId_fkey`.
-    await temizle();
-    const demo = await kur(PREFIX, "cmt0batchtest", "+905559990003");
-    const isletme = await prisma.store.findUniqueOrThrow({
-      where: { id: `${PREFIX}s` },
-      select: { merchantId: true },
-    });
-    const parti = await prisma.settlementBatch.create({
-      data: {
-        merchantId: isletme.merchantId,
-        periodStart: new Date("2026-08-27T00:00:00Z"),
-        periodEnd: new Date("2026-08-27T23:59:59Z"),
-        dueAt: new Date("2026-09-03T00:00:00Z"),
-        grossCents: 1000,
-        bagFeeCents: 0,
-        bagFeeVatCents: 0,
-        withholdingCents: 0,
-        membershipOffsetCents: 0,
-        refundClawbackCents: 0,
-        netPayoutCents: 1000,
-      },
-    });
-    expect(parti.id).not.toMatch(/^kd-demo/);
+    it("removes a settlement batch built by the nightly cycle against a demo merchant", async () => {
+      // The second instance of the same class, and the reason the teardown
+      // stopped being a list of prefixes: a batch is created by the system,
+      // not by the seed, so it carries a generated id and blocked the
+      // merchant delete on `settlement_batches_merchantId_fkey`.
+      await temizle();
+      const demo = await kur(PREFIX, "cmt0batchtest", "+905559990003");
+      const isletme = await prisma.store.findUniqueOrThrow({
+        where: { id: `${PREFIX}s` },
+        select: { merchantId: true },
+      });
+      const parti = await prisma.settlementBatch.create({
+        data: {
+          merchantId: isletme.merchantId,
+          periodStart: new Date("2026-08-27T00:00:00Z"),
+          periodEnd: new Date("2026-08-27T23:59:59Z"),
+          dueAt: new Date("2026-09-03T00:00:00Z"),
+          grossCents: 1000,
+          bagFeeCents: 0,
+          bagFeeVatCents: 0,
+          withholdingCents: 0,
+          membershipOffsetCents: 0,
+          refundClawbackCents: 0,
+          netPayoutCents: 1000,
+        },
+      });
+      expect(parti.id).not.toMatch(/^kd-demo/);
 
-    await teardownDemo(prisma);
+      await teardownDemo(prisma);
 
-    expect(
-      await prisma.settlementBatch.findUnique({ where: { id: parti.id } }),
-    ).toBeNull();
-    expect(
-      await prisma.merchant.findUnique({ where: { id: `${PREFIX}m` } }),
-    ).toBeNull();
-    expect(demo.reservation.id).toBeTruthy();
-  }, 60_000);
+      expect(
+        await prisma.settlementBatch.findUnique({ where: { id: parti.id } }),
+      ).toBeNull();
+      expect(
+        await prisma.merchant.findUnique({ where: { id: `${PREFIX}m` } }),
+      ).toBeNull();
+      expect(demo.reservation.id).toBeTruthy();
+    }, 60_000);
 
-  it("is a safe no-op when there is nothing to remove", async () => {
-    await teardownDemo(prisma);
-    await expect(teardownDemo(prisma)).resolves.not.toThrow();
-  }, 60_000);
-});
+    it("is a safe no-op when there is nothing to remove", async () => {
+      await teardownDemo(prisma);
+      await expect(teardownDemo(prisma)).resolves.not.toThrow();
+    }, 60_000);
+  },
+);

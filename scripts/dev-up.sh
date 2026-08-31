@@ -188,7 +188,14 @@ start() {
     exec "$@"
   ) >"$LOG_DIR/$name.log" 2>&1 &
   PIDS+=("$!")
-  ( exec tail -n +1 -f "$LOG_DIR/$name.log" | sed -u "s/^/[$name] /" ) &
+  # awk with an explicit fflush, not `sed -u`: the -u flag is a GNU
+  # extension and BSD sed (macOS) rejects it outright, so on a Mac the
+  # prefixing process died at once and NOTHING from any of the four
+  # servers ever reached the terminal. That is not cosmetic — the demo's
+  # OTP code is printed to the backend's log and nowhere else, so a Mac
+  # user could not sign in at all. awk's fflush is POSIX and keeps the
+  # line-at-a-time behaviour the flag was there for.
+  ( exec tail -n +1 -f "$LOG_DIR/$name.log" | awk -v ad="$name" '{ print "[" ad "] " $0; fflush() }' ) &
   TAIL_PIDS+=("$!")
 }
 

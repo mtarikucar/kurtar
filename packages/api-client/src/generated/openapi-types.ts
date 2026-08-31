@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Readiness probe: is the API able to serve? No auth required. */
+        get: operations["HealthController_getReady"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/otp/request": {
         parameters: {
             query?: never;
@@ -1468,6 +1485,13 @@ export interface components {
             service: "kurtar-api";
             uptimeSec: number;
         };
+        ReadyResponseDto: {
+            /** @enum {string} */
+            status: "ready" | "degraded";
+            /** @enum {string} */
+            database: "up" | "down";
+            detay?: string;
+        };
         OtpRequestDto: {
             phone: string;
         };
@@ -2774,6 +2798,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponseDto"];
+                };
+            };
+        };
+    };
+    HealthController_getReady: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Web panels send `cookie` on /auth/otp/verify, /auth/merchant/login, /auth/admin/login, and their OWN actor's /auth/{consumer|merchant|admin}/refresh to receive the refresh token ONLY as an httpOnly cookie, stripped out of the JSON body. Each actor's refresh cookie is named and path-scoped to that actor (refreshToken_admin at /api/auth/admin, and so on), so one surface never carries another actor's session. Omit entirely for the mobile app (reads the refresh token from the body). */
+                "X-Client-Transport"?: "cookie";
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadyResponseDto"];
                 };
             };
         };
