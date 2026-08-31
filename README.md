@@ -42,10 +42,13 @@ Every write path funnels through the backend's typed REST API (`/api/...`); no s
 - Nothing else — every external integration (SMS, payment, push, e-document) defaults to an in-process mock in development; see `.env.example`.
 
 **Platform.** The bring-up script is `bash`, so it runs as written on Linux and
-macOS. On Windows use WSL2 — which Docker Desktop already requires, so a machine
-that meets the prerequisites above has it; run the clone and the script inside
-the WSL filesystem. There is no PowerShell path and nothing here has been tested
-under one.
+macOS. On **Windows 11 use WSL2** — which Docker Desktop already requires, so a
+machine that meets the prerequisites above has it. Clone and run *inside* the
+WSL filesystem, not under `/mnt/c`: see
+[`docs/windows-11.md`](docs/windows-11.md) for the whole path, including the
+port proxy a phone needs to reach the API. There is no PowerShell entry point
+and adding one that drifts from the bash version would be worse than not having
+it.
 
 `ops/docker-compose.yml` pins `postgis/postgis:16-3.4`, which the upstream
 project publishes for amd64 only — every tag, not just this one. On Apple
