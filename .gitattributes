@@ -1,0 +1,39 @@
+# Line endings are decided HERE, not by whatever each contributor's Git is
+# configured to do.
+#
+# Git for Windows ships with `core.autocrlf=true`, so a clone on Windows
+# rewrites every text file to CRLF — including the shell scripts. The one
+# documented way to bring this project up is `./scripts/dev-up.sh`, and
+# under WSL2 a CRLF script fails with
+#
+#     ./scripts/dev-up.sh: line 22: $'\r': command not found
+#     ./scripts/dev-up.sh: line 23: set: pipefail: invalid option name
+#
+# which says nothing about line endings and sends a newcomer looking for a
+# bug in the script. Everything this repo runs on — the dev script, CI,
+# the Docker images, the deployed servers — is Unix, so LF is not a
+# preference here, it is the format the files have to be in.
+
+* text=auto eol=lf
+
+# Scripts and anything an interpreter reads by shebang: never negotiable.
+*.sh   text eol=lf
+*.mjs  text eol=lf
+*.cjs  text eol=lf
+
+# SQL migrations are applied verbatim; a stray CR inside a quoted string
+# would become part of the data.
+*.sql  text eol=lf
+
+# Binaries Git must not touch. Left alone, `text=auto` heuristics can
+# still mangle a file it guesses wrong about — a corrupted font shows up
+# as a rendering bug, not a checkout bug.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.ttf  binary
+*.otf  binary
+*.woff binary
+*.woff2 binary
+*.pdf  binary
